@@ -148,7 +148,8 @@ SLASH_CRAFTBOARD1 = "/cb"
 SLASH_CRAFTBOARD2 = "/craftboard"
 SlashCmdList["CRAFTBOARD"] = function(msg)
   local L = NS.L
-  local cmd = strlower(strtrim(msg or ""))
+  local cmd, rest = strsplit(" ", strtrim(msg or ""), 2)
+  cmd = strlower(cmd or "")
   if cmd == "" then
     if NS.UI and NS.UI.Toggle then
       NS.UI.Toggle()
@@ -165,6 +166,8 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
   elseif cmd == "debug" then
     if NS.Comm and NS.Comm.Debug then NS.Comm.Debug() end
     PrintPeers()
+  elseif cmd == "dump" then
+    if NS.DumpFrame then NS.DumpFrame(rest) end
   else
     PrintHelp()
   end
