@@ -12,7 +12,11 @@ local L = NS.L
 
 local WIDTH, HEIGHT = 560, 420          -- default and minimum size
 local MAX_W, MAX_H = 1000, 800
-local LEFT_W = 262                      -- left column incl. scrollbar
+-- List / detail split: the list gets LEFT_FRAC of the panel width (321 of 536 px at the
+-- default 560 wide window, detail 205), recomputed on resize. LEFT_W is the current value.
+local LEFT_FRAC = 0.6
+local PANEL_PAD = 24                    -- window width minus panel width (12 px each side)
+local LEFT_W = floor((WIDTH - PANEL_PAD) * LEFT_FRAC)
 local SCROLLBAR_W = 22
 local TOPBAR_H = 26                     -- search / chip row above the lists
 local FOOTER_H = 16
@@ -527,6 +531,25 @@ local function LayoutChips(chips, count, avail, gap)
   for i = count + 1, #chips do chips[i]:Hide() end
 end
 
+-- A title too long for the (narrow) detail pane drops to a smaller font on up to two lines;
+-- the profession sub line gives way to it. Re-run when the pane is resized.
+local function FitHeader(h)
+  local t = h.title
+  t:SetFontObject(Font("GameFontNormalMed3", "GameFontNormalLarge"))
+  if t.SetMaxLines then t:SetMaxLines(1) end
+  if t.SetWordWrap then t:SetWordWrap(false) end
+  local avail = t:GetWidth() or 0
+  local wrap = avail > 0 and StringWidth(t) > avail
+  if wrap then
+    t:SetFontObject("GameFontNormal")
+    if t.SetWordWrap then t:SetWordWrap(true) end
+    if t.SetMaxLines then t:SetMaxLines(2) end
+  end
+  h.sub:SetShown(not wrap)
+  -- SetFontObject resets the colour to the font's own: re-apply the item quality colour.
+  if h.rgb then t:SetTextColor(h.rgb[1], h.rgb[2], h.rgb[3]) end
+end
+
 -- Item header: large icon, quality-coloured name, muted sub line.
 local function NewHeader(parent)
   local h = {}
@@ -546,6 +569,7 @@ local function NewHeader(parent)
   h.sub = Muted(Label(parent, nil, "GameFontHighlightSmall"))
   h.sub:SetPoint("BOTTOMLEFT", parent, "TOPLEFT", 44, -35)
   h.sub:SetPoint("BOTTOMRIGHT", parent, "TOPRIGHT", -2, -35)
+  parent:HookScript("OnSizeChanged", function() FitHeader(h) end)
   return h
 end
 
@@ -554,8 +578,10 @@ local function FillHeader(h, recipeID, itemID, name, sub)
   h.icon:SetTexture(RecipeIcon(recipeID, itemID))
   local itemName = itemID and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(itemID)
   h.title:SetText(itemName or name or "")
-  h.title:SetTextColor(QualityRGB(ItemQuality(itemID)))
+  local r, g, b = QualityRGB(ItemQuality(itemID))
+  h.rgb = { r, g, b }
   h.sub:SetText(sub or "")
+  FitHeader(h)
 end
 
 -- Data --------------------------------------------------------------------
@@ -705,6 +731,12 @@ local function Matches(u, tokens)
   return true
 end
 
+local function ReadyThenName(a, b)
+  if a.ready ~= b.ready then return a.ready end
+  if a.name ~= b.name then return a.name < b.name end
+  return a.recipeID < b.recipeID
+end
+
 local function StatusOrder(a, b)
   if a.ready ~= b.ready then return a.ready end
   if (a.onlineN > 0) ~= (b.onlineN > 0) then return a.onlineN > 0 end
@@ -721,8 +753,7 @@ local function FindRow(parent, rowH)
   row.check:SetPoint("RIGHT", -4, 0)
   row.check:SetTexture(READY_TEX)
   row.status = Muted(Label(row, nil, "GameFontHighlightSmall"))
-  row.status:SetPoint("RIGHT", -22, 0)
-  row.status:SetWidth(78)
+  row.status:SetPoint("RIGHT", -22, 0)       -- no width: sized to its text, name takes the rest
   row.status:SetJustifyH("RIGHT")
   row.name = Label(row, nil, "GameFontHighlight")
   row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
@@ -737,9 +768,13 @@ local function FindRow(parent, rowH)
   return row
 end
 
--- "you" / "Alt" / "Bob" / "3 online" / "2 known", then a check if I can craft it right now.
+-- "" (only I know it) / "you" / "Alt" / "Bob" / "3 online" / "2 known", then a check if I can
+-- craft it right now.
 local function StatusText(u)
-  if u.me then return L["you"] end
+  if u.me then
+    if not u.alt and u.peersN == 0 then return "" end
+    return L["you"]
+  end
   if u.alt then return u.alt end
   if u.onlineN == 1 then return u.onlineName end
   if u.onlineN > 1 then return format(L["%d online"], u.onlineN) end
@@ -881,7 +916,7 @@ local function BuildFindSearch(p)
   box:HookScript("OnTextChanged", function(self)
     if self.cbHint then self.cbHint:SetShown((self:GetText() or "") == "") end
     find.arrowed = false
-    UI.FilterFind(false)
+    UI.FilterFind(false, true)
   end)
   find.search = box
 end
@@ -945,6 +980,7 @@ local function BuildFindDetail(p)
   divider:SetWidth(1)
   divider:SetPoint("TOPLEFT", LEFT_W + 4, -TOPBAR_H)
   divider:SetPoint("BOTTOMLEFT", LEFT_W + 4, 0)
+  find.divider = divider
 
   find.none = Placeholder(d, L["Select a recipe to see who can craft it."])
 
@@ -967,27 +1003,29 @@ local function BuildFindDetail(p)
   find.crafters.box:SetPoint("TOPLEFT", ch, "BOTTOMLEFT", 0, -2)
   find.crafters.box:SetPoint("BOTTOMRIGHT", 0, 56)
 
-  -- Action area, anchored to the bottom: note row, then qty + Whisper + Post request.
+  -- Action area, anchored to the bottom: note + qty row, then Whisper + Post request.
+  -- Fits the 205 px detail pane of a default-size window (note box ~95 px).
   local sep = Divider(body)
   sep:SetHeight(1)
   sep:SetPoint("BOTTOMLEFT", 0, 52)
   sep:SetPoint("BOTTOMRIGHT", 0, 52)
 
+  find.qty = EditBox("CraftBoardFindQty", body, 32, 4, true)
+  find.qty:SetPoint("RIGHT", body, "BOTTOMRIGHT", -4, 38)
+  find.qty:SetText("1")
+  local qtyLabel = Muted(Label(body, L["Qty"], "GameFontHighlightSmall"))
+  qtyLabel:SetPoint("RIGHT", find.qty, "LEFT", -10, 0)
+
   local noteLabel = Muted(Label(body, L["Note"], "GameFontHighlightSmall"))
   noteLabel:SetPoint("LEFT", body, "BOTTOMLEFT", 0, 38)
-  find.note = EditBox("CraftBoardFindNote", body, 200, 60)
+  find.note = EditBox("CraftBoardFindNote", body, 90, 60)
   find.note:SetPoint("LEFT", noteLabel, "RIGHT", 10, 0)
-  find.note:SetPoint("RIGHT", body, "BOTTOMRIGHT", -4, 38)
+  find.note:SetPoint("RIGHT", qtyLabel, "LEFT", -12, 0)
   find.note:SetScript("OnEnterPressed", function(self)
     self:ClearFocus()
     if find.post:IsEnabled() then find.post:Click() end
   end)
 
-  local qtyLabel = Muted(Label(body, L["Qty"], "GameFontHighlightSmall"))
-  qtyLabel:SetPoint("BOTTOMLEFT", 0, 7)
-  find.qty = EditBox("CraftBoardFindQty", body, 32, 4, true)
-  find.qty:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
-  find.qty:SetText("1")
   find.qty:HookScript("OnTextChanged", Debouncer(0.2, function() UI.RefreshDetail() end))
 
   find.post = PanelButton(body, L["Post request"], 104, 22)
@@ -1106,8 +1144,10 @@ function UI.SelectRecipe(recipeID)
   UI.RefreshDetail()
 end
 
--- Filter the cached universe by text and profession. Called on every keystroke.
-function UI.FilterFind(keepScroll)
+-- Filter the cached universe by text and profession. Called on every keystroke (typed=true).
+-- A selection the filter hides is cleared; while searching, typing selects the top hit when
+-- nothing is selected. Browsing (empty box, chips) never picks a row by itself.
+function UI.FilterFind(keepScroll, typed)
   if not find.list then return end
   local text = strtrim(find.search:GetText() or "")
   local searching = #text >= 2
@@ -1132,17 +1172,20 @@ function UI.FilterFind(keepScroll)
       return StatusOrder(a, b)
     end)
   else
-    -- Default view: what I can craft right now plus what other players can make;
-    -- everything when that is empty, so the tab is never blank once recipes exist.
-    for _, u in ipairs(candidates) do
-      if u.ready or u.peersN > 0 then results[#results + 1] = u end
-    end
-    if #results == 0 then
-      for i = 1, #candidates do results[i] = candidates[i] end
-    end
-    table.sort(results, StatusOrder)
+    -- Default view: every tradeable recipe on the board (all my chars and peers), what I
+    -- can craft right now first so the checks cluster at the top, then by name.
+    for i = 1, #candidates do results[i] = candidates[i] end
+    table.sort(results, ReadyThenName)
   end
   find.results = results
+
+  local visible = false
+  for i = 1, #results do
+    if results[i].recipeID == selectedID then visible = true break end
+  end
+  if selectedID and not visible then
+    selectedID, find.crafter = nil, nil
+  end
 
   local emptyText
   if #results == 0 then
@@ -1153,7 +1196,7 @@ function UI.FilterFind(keepScroll)
     end
   end
   find.list:SetItems(results, emptyText, keepScroll)
-  if not SelectedEntry() and results[1] then
+  if typed and searching and not selectedID and results[1] then
     UI.SelectRecipe(results[1].recipeID)
   else
     UI.RefreshDetail()
@@ -1231,6 +1274,7 @@ local function BuildMine(p)
   local chips = { anchor = CreateFrame("Frame", nil, p) }
   chips.anchor:SetPoint("TOPLEFT", 4, -3)
   chips.anchor:SetSize(LEFT_W, 18)
+  mine.chips = chips
   local chip = NewChip(chips.anchor)
   chip.label:SetText(L["Short on"])
   chips[1] = chip
@@ -1254,10 +1298,12 @@ local function BuildMine(p)
   divider:SetWidth(1)
   divider:SetPoint("TOPLEFT", LEFT_W + 4, -TOPBAR_H)
   divider:SetPoint("BOTTOMLEFT", LEFT_W + 4, 0)
+  mine.divider = divider
 
   local d = CreateFrame("Frame", nil, p)
   d:SetPoint("TOPLEFT", LEFT_W + 10, -TOPBAR_H)
   d:SetPoint("BOTTOMRIGHT")
+  mine.detail = d
 
   mine.none = Placeholder(d, L["Select a recipe to see what you're short on."])
   local body = CreateFrame("Frame", nil, d)
@@ -1286,7 +1332,7 @@ local function BuildMine(p)
 
   mine.shopStatus = Muted(Label(body, nil, "GameFontHighlightSmall"))
   mine.shopStatus:SetPoint("BOTTOMRIGHT", -2, 8)
-  mine.shopStatus:SetWidth(170)
+  mine.shopStatus:SetPoint("LEFT", mine.qty, "RIGHT", 8, 0)
   mine.shopStatus:SetJustifyH("RIGHT")
 end
 
@@ -1514,6 +1560,31 @@ function UI.RefreshFooter()
   footer:SetText(table.concat(parts, DOT))
 end
 
+-- Re-anchor list, divider and detail of Find and Mine for a window `w` px wide.
+local splitDone = false
+local function LayoutSplit(w)
+  local left = floor((max(WIDTH, w or WIDTH) - PANEL_PAD) * LEFT_FRAC)
+  if splitDone and left == LEFT_W then return end
+  splitDone, LEFT_W = true, left
+  for _, t in ipairs({ find, mine }) do
+    if t.list then t.list.box:SetWidth(left) end
+    if t.divider then
+      t.divider:ClearAllPoints()
+      t.divider:SetPoint("TOPLEFT", left + 4, -TOPBAR_H)
+      t.divider:SetPoint("BOTTOMLEFT", left + 4, 0)
+    end
+    if t.detail then
+      t.detail:ClearAllPoints()
+      t.detail:SetPoint("TOPLEFT", left + 10, -TOPBAR_H)
+      t.detail:SetPoint("BOTTOMRIGHT")
+    end
+  end
+  if mine.chips then
+    mine.chips.anchor:SetWidth(left)
+    LayoutChips(mine.chips, 1, left, 2)
+  end
+end
+
 local REFRESH = {
   function(keep) UI.RefreshFind(keep) end,
   function(keep) UI.RefreshMine(keep) end,
@@ -1668,6 +1739,8 @@ local function Create()
   BuildRequests(panels[3])
   BuildTabs(f)
   BuildResizeGrip(f)
+  LayoutSplit(f:GetWidth())
+  f:HookScript("OnSizeChanged", function(_, w) LayoutSplit(w) end)
 
   if UISpecialFrames then tinsert(UISpecialFrames, "CraftBoardFrame") end
 
