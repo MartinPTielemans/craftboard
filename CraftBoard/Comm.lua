@@ -896,6 +896,23 @@ function Comm.ChannelId()
   return ResolveChannel()
 end
 
+-- Compact status for the UI footer: { peers=, online=, posts=, channel=joined, channelOn=, guild= }.
+function Comm.Status()
+  local total, online = 0, 0
+  for _, p in pairs(Comm.Peers()) do
+    total = total + 1
+    if p.online then online = online + 1 end
+  end
+  return {
+    peers = total,
+    online = online,
+    posts = #PostList(),
+    channel = RealmChannelOn() and ResolveChannel() ~= nil,
+    channelOn = RealmChannelOn(),
+    guild = InGuild() and GuildShareOn(),
+  }
+end
+
 function Comm.Debug()
   local peers = Comm.Peers()
   local total, online = 0, 0

@@ -38,7 +38,8 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
 5. `UI.lua` — one movable window: search box, results list ("who can make X", online first,
    my own chars marked), reagent panel with have/need, buttons "Whisper" (pre-filled template) and
    "Post request". Second tab "Requests" listing open board posts. Minimal, Blizzard-styled
-   (`BasicFrameTemplateWithInset`), no external UI libs.
+   (`BasicFrameTemplateWithInset`), no external UI libs. Footer status comes from
+   `NS.Comm.Status()` → `{peers, online, posts, channel, channelOn, guild}`.
 
 ## Protocol (Comm.lua) — prefix `CBRD`, version byte first
 Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonChannel.

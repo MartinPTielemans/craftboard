@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by default, ready for translations.
 
 ### Changed
+- Window polish. Find: the search box has focus when the window opens, filters as you type
+  (2+ characters, every word must match), Enter picks the first result, arrow keys move the
+  selection, Escape clears the text and then closes the window. With no search it lists what
+  you can craft right now plus everything other players can make. Profession filter chips sit
+  above the list. Rows show a right-aligned "you" / alt / "3 online" column and a check when
+  you can craft it now. The detail pane shows a large icon and the name in item-quality colour,
+  then reagents (have/need), then crafters (click a name to open a pre-filled whisper), and
+  qty, note, Whisper and Post request at the bottom.
+- Mine: profession headers show a count, and a "Short on" chip replaces the checkbox.
+  Clicking a reagent puts its item link into an open chat box.
+- Requests: card rows ("Bob wants 3x Item", note, age) with one Offer / Retract button, and a
+  check on requests you can craft.
+- The window can be resized (the size is remembered). A footer shows recipes, peers and
+  channel state.
 - Recipes whose crafted item is Bind on Pickup (or a quest item) are no longer shared with
   other players and are hidden from the Find tab. They still appear on the Mine tab.
 - Reopening a profession window skips the full recipe read when your learned recipes haven't
