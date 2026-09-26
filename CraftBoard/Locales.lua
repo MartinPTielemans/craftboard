@@ -121,6 +121,7 @@ local enUS = {
   "Forgot all peer data.",
   "Settings panel not available.",
   "Can't open settings in combat.",
+  "Open CraftBoard",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 
