@@ -42,12 +42,28 @@ local function MakeButton(name, parent)
   return b
 end
 
--- Professions overview. Modern: ProfessionsBookFrame (Blizzard_ProfessionsBook).
--- Older layouts: SpellBookFrame's professions tab (SpellBookProfessionFrame).
--- Anchor: top-right corner inside the first primary-profession card (free space right of the
--- "Leatherworking" header, above the skill bar and its unlearn button); frame corner as fallback.
+-- Professions overview. On this client (see docs/professionsframe-dump.txt) the overview is a page
+-- inside ProfessionsFrame: ProfessionsFrame.BookPage (673x594, same rect as the frame), with
+-- BookPage.ProfessionsContentFrame holding the cards. PrimaryProfession1 is 664x142 at TOPLEFT 5,-41;
+-- its name sits at 20,-24 and its 441x18 StatusBar (+ UnlearnButton) is centred vertically at
+-- RIGHT -40, so the card's top-right corner (y 0..-50) is free. Parented to BookPage so it hides
+-- with the page. Older layouts: ProfessionsBookFrame (Blizzard_ProfessionsBook), then
+-- SpellBookFrame's professions tab (SpellBookProfessionFrame).
 local function HookBook()
   if done.book then return end
+  local page = ProfessionsFrame and ProfessionsFrame.BookPage
+  if page then
+    done.book = true
+    local b = MakeButton("CraftBoardProfessionsBookButton", page)
+    local content = page.ProfessionsContentFrame
+    local card = content and content.PrimaryProfession1
+    if card then
+      b:SetPoint("TOPRIGHT", card, "TOPRIGHT", -20, -18)
+    else
+      b:SetPoint("TOPRIGHT", page, "TOPRIGHT", -24, -58)
+    end
+    return
+  end
   local parent, frame = nil, nil
   if ProfessionsBookFrame then
     parent, frame = ProfessionsBookFrame, ProfessionsBookFrame
@@ -66,8 +82,12 @@ local function HookBook()
 end
 
 -- Crafting window: ProfessionsFrame.CraftingPage (Blizzard_Professions). Parented to the crafting
--- page so it hides on the other tabs. Anchor: right of the link-to-chat icon next to the rank bar;
--- then right of the rank bar; then the frame's top-right below the title bar.
+-- page so it hides on the other tabs. From the dump: CraftingPage is 673x594; RankBar is 453x18 at
+-- TOPLEFT 110,-40 (right edge x=563); LinkButton is 23x23, LEFT->RankBar.RIGHT -2,-4, so it spans
+-- x=561..584. That leaves 89px to the frame edge, minus the metal border: the button goes 4px right
+-- of LinkButton and is capped at 75 wide so its right edge stays at or left of x=663.
+-- Fallbacks: right of the rank bar; then the frame's top-right below the title bar.
+local CRAFT_MAX_W = 75
 local function HookCrafting()
   if done.crafting then return end
   local pf = ProfessionsFrame
@@ -75,10 +95,11 @@ local function HookCrafting()
   if not page then return end
   done.crafting = true
   local b = MakeButton("CraftBoardCraftingButton", page)
+  if b:GetWidth() > CRAFT_MAX_W then b:SetWidth(CRAFT_MAX_W) end
   if page.LinkButton then
-    b:SetPoint("LEFT", page.LinkButton, "RIGHT", 6, 0)
+    b:SetPoint("LEFT", page.LinkButton, "RIGHT", 4, 0)
   elseif page.RankBar then
-    b:SetPoint("LEFT", page.RankBar, "RIGHT", 36, 0)
+    b:SetPoint("LEFT", page.RankBar, "RIGHT", 8, -4)
   else
     b:SetPoint("TOPRIGHT", pf, "TOPRIGHT", -12, -30)
   end
@@ -103,10 +124,11 @@ NS.Register("ADDON_LOADED", function(_, name)
     HookBook()
   elseif name == "Blizzard_Professions" then
     HookCrafting()
+    HookBook()
   end
 end)
 
 -- Already loaded before us (another addon forced them), or the old always-loaded SpellBookFrame.
 if IsLoaded("Blizzard_ProfessionsBook") or SpellBookProfessionFrame then HookBook() end
-if IsLoaded("Blizzard_Professions") then HookCrafting() end
+if IsLoaded("Blizzard_Professions") then HookCrafting(); HookBook() end
 NS.Register("PLAYER_LOGIN", TryAll)
