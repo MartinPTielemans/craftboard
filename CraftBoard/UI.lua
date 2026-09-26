@@ -191,7 +191,14 @@ end
 
 local function ShowTooltip(anchor, itemID, recipeID)
   if not GameTooltip then return end
-  GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
+  -- Anchor to the window's right edge so the tooltip never covers the recipe page.
+  if frame and frame.GetRight then
+    GameTooltip:SetOwner(frame, "ANCHOR_NONE")
+    GameTooltip:ClearAllPoints()
+    GameTooltip:SetPoint("TOPLEFT", frame, "TOPRIGHT", 4, -30)
+  else
+    GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
+  end
   local ok
   if type(itemID) == "number" then
     if GameTooltip.SetItemByID then
