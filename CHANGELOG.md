@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-26
+
+First public beta. The sync layer has not yet been exercised between two players; please report
+anything odd from `/cb debug`.
+
 ### Added
 - Options panel in the game settings (`/cb options` or `/cb config`): share recipes on the realm
   channel, share recipes with your guild (new, on by default; off stops all guild broadcasts),
