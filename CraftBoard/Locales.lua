@@ -109,6 +109,12 @@ local enUS = {
   "You want %dx %s",
   "channel ok",
   "channel off",
+  "Apprentice",
+  "Journeyman",
+  "Expert",
+  "Artisan",
+  "Master",
+  "Grand Master",
 
   -- Options
   "Share recipes on the realm channel",
