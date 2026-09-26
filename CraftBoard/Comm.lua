@@ -300,7 +300,8 @@ local function MyProfs()
   if type(profs) == "table" then
     for id, p in pairs(profs) do
       if type(id) == "number" and type(p) == "table" then
-        out[id] = { n = p.name, r = p.rank, m = p.max }
+        -- Recipes stores profs positionally: { name, rank, max }.
+        out[id] = { n = p.name or p[1], r = p.rank or p[2], m = p.max or p[3] }
       end
     end
   end
@@ -577,7 +578,15 @@ function Comm.Retract(id)
   return true
 end
 
--- Plain chat whisper to a crafter (never SAY/YELL/party).
+-- Plain chat whisper (never SAY/YELL/party). Newer clients moved it to C_ChatInfo.
+function Comm.Whisper(toName, msg)
+  local target = FullName(toName)
+  if not target or IsMe(target) or type(msg) ~= "string" or msg == "" then return false end
+  local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+  if not send then return false end
+  return (pcall(send, msg, "WHISPER", nil, ShortName(target)))
+end
+
 function Comm.Request(itemID, qty, toName)
   itemID = PosInt(tonumber(itemID), 1e8)
   qty = PosInt(floor(tonumber(qty) or 1), 1000) or 1
@@ -594,9 +603,7 @@ function Comm.Request(itemID, qty, toName)
   if not label and C_Item and C_Item.GetItemNameByID then label = C_Item.GetItemNameByID(itemID) end
   label = label or ("item " .. itemID)
   local msg = "[CraftBoard] Could you craft " .. qty .. "x " .. label .. " for me? I have/can get the mats."
-  if not SendChatMessage then return false end
-  local ok = pcall(SendChatMessage, msg, "WHISPER", nil, ShortName(target))
-  return ok
+  return Comm.Whisper(target, msg)
 end
 
 -- Receiving -------------------------------------------------------------

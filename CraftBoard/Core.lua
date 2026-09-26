@@ -157,6 +157,7 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
       NS.Print(n and ("scanned " .. n .. " recipe(s)") or ("scan skipped: " .. tostring(why)))
     end
   elseif cmd == "debug" then
+    if NS.Comm and NS.Comm.Debug then NS.Comm.Debug() end
     PrintPeers()
   else
     PrintHelp()

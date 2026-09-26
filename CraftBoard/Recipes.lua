@@ -74,7 +74,8 @@ local BASIC = (Enum and Enum.CraftingReagentType and Enum.CraftingReagentType.Ba
 
 -- Item and Enchant recipes are kept (enchants usually have no output item; flagged e=true).
 local function AcceptType(recipeType)
-  if not RT or recipeType == nil then return true, false end
+  -- Unknown enum shape (e.g. no .Item on this client): accept rather than record nothing.
+  if not RT or recipeType == nil or RT.Item == nil then return true, false end
   if recipeType == RT.Item then return true, false end
   if RT.Enchant and recipeType == RT.Enchant then return true, true end
   return false, false
@@ -91,7 +92,8 @@ local function ReadRecipe(recipeID, info, profID)
     if not rec.n then rec.n = schem.name end
     if type(schem.reagentSlotSchematics) == "table" then
       for _, slot in ipairs(schem.reagentSlotSchematics) do
-        if slot.reagentType == BASIC and type(slot.reagents) == "table" and slot.reagents[1] then
+        -- Schematics without reagentType (older shape) only list basic reagents.
+        if (slot.reagentType == nil or slot.reagentType == BASIC) and type(slot.reagents) == "table" and slot.reagents[1] then
           local itemID = slot.reagents[1].itemID
           local qty = slot.quantityRequired
           if itemID and qty and qty > 0 then
