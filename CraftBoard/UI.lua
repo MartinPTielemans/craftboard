@@ -45,7 +45,6 @@ local ROW = {
 }
 local SUBROW_H = 18                     -- crafter rows
 local REAGENT_H = 50                    -- reagent slot frame (39 px slot + name)
-local REQUEST_H = 44
 local ICON_SIZE = 47                    -- SchematicForm.OutputIcon
 local TEX = {
   question = "Interface\\Icons\\INV_Misc_QuestionMark",
@@ -814,11 +813,22 @@ end
 end
 
 -- 23x23 tertiary square button with an icon (CraftingPage.LinkButton:
--- common-button-tertiary-square-normal + common-icon-chatlink 25x25), used for Whisper.
--- Falls back to a text button.
-local function SquareButton(parent, fallbackText)
-  if not HasAtlases(A.square, A.chat) then
-    return PanelButton(parent, fallbackText, 82, 22)
+-- common-button-tertiary-square-normal + common-icon-chatlink 25x25), used for Whisper; with
+-- iconFile, that icon (trimmed, 17x17) instead of the chat-link atlas (Advertise). Falls back
+-- to a text button `fallbackW` (default 82) px wide.
+local function SquareButton(parent, fallbackText, iconFile, fallbackW)
+  if not (HasAtlas(A.square) and (iconFile or HasAtlas(A.chat))) then
+    return PanelButton(parent, fallbackText, fallbackW or 82, 22)
+  end
+  local function art(t, size)
+    if iconFile then
+      t:SetTexture(iconFile)
+      t:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+      t:SetSize(size - 8, size - 8)
+    else
+      t:SetAtlas(A.chat, false)
+      t:SetSize(size, size)
+    end
   end
   local b = CreateFrame("Button", nil, parent)
   b:SetSize(23, 23)
@@ -826,12 +836,10 @@ local function SquareButton(parent, fallbackText)
   bg:SetAtlas(A.square, false)
   bg:SetAllPoints()
   local icon = b:CreateTexture(nil, "ARTWORK")
-  icon:SetAtlas(A.chat, false)
-  icon:SetSize(25, 25)
+  art(icon, 25)
   icon:SetPoint("CENTER")
   local hl = b:CreateTexture(nil, "HIGHLIGHT")
-  hl:SetAtlas(A.chat, false)
-  hl:SetSize(25, 25)
+  art(hl, 25)
   hl:SetPoint("CENTER")
   hl:SetBlendMode("ADD")
   hl:SetAlpha(0.4)
@@ -879,9 +887,12 @@ local function NewList(name, parent, rowHeight, makeRow, fillRow, opts)
   local scroll, bar, barW, legacy
   if opts.bar ~= false then
     -- ScrollUtil sets the frame's OnVerticalScroll / OnScrollRangeChanged scripts, so it runs
-    -- before the HookScript calls below.
+    -- before the HookScript calls below. MinimalScrollBar is an EventFrame template: created
+    -- as a plain "Frame" its CallbackRegistry OnLoad never runs and every scroll then errors
+    -- in CallbackRegistry (executingEvents is nil). If it cannot be created or wired, the
+    -- legacy UIPanelScrollFrameTemplate below takes over.
     if ScrollUtil and ScrollUtil.InitScrollFrameWithScrollBar and HasTemplate("MinimalScrollBar") then
-      local ok, b = pcall(CreateFrame, "Frame", nil, box, "MinimalScrollBar")
+      local ok, b = pcall(CreateFrame, "EventFrame", nil, box, "MinimalScrollBar")
       if ok and b then
         scroll = CreateFrame("ScrollFrame", name, box)
         if pcall(ScrollUtil.InitScrollFrameWithScrollBar, scroll, b) then
@@ -893,7 +904,9 @@ local function NewList(name, parent, rowHeight, makeRow, fillRow, opts)
           bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", gap, -inset)
           bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", gap, inset)
         else
-          b:Hide()               -- keep the plain frame; the wheel still scrolls it
+          b:Hide()
+          scroll:Hide()
+          scroll = nil
         end
       end
     end
@@ -1304,7 +1317,7 @@ local function NewHeader(parent)
   holder:SetSize(ICON_SIZE, ICON_SIZE)
   holder:SetPoint("TOPLEFT", 28, -28)
   holder:SetScript("OnEnter", function(self)
-    if h.recipeID then ShowTooltip(self, h.itemID, h.recipeID) end
+    if h.recipeID or h.itemID then ShowTooltip(self, h.itemID, h.recipeID) end
   end)
   holder:SetScript("OnLeave", HideTooltip)
   -- Like shift-clicking the output icon: drop the item link into an open chat box.
@@ -1833,10 +1846,14 @@ end
 -- RecipeList.SearchBox: SearchBoxTemplate at TOPLEFT 13,-8 of the list, 20 px tall, its
 -- right edge 4 px left of the Filter button; common-search-border-* border, the 10x10
 -- magnifying glass (grey 0.6) at LEFT 1,-1, text (10 pt) and the "Search" hint 16 px in.
--- Keys for the Find list (t): Enter picks the arrowed or first visible recipe,
--- arrows move the selection through the visible recipes (t.results), Escape clears the
--- text first and then closes the window.
+-- Keys for the list t: Enter picks the arrowed or first visible entry, arrows move the
+-- selection through the visible entries (t.results), Escape clears the text first and then
+-- closes the window. t.keyOf / t.selectedKey / t.selectKey map entries to the selection
+-- (default: Find's recipe IDs).
 local function NewSearchBox(name, parent, t)
+  local keyOf = t.keyOf or function(u) return u.recipeID end
+  local current = t.selectedKey or function() return selectedID end
+  local selectKey = t.selectKey or function(key) UI.SelectRecipe(key) end
   local box
   if HasTemplate("SearchBoxTemplate") then
     local ok, e = pcall(CreateFrame, "EditBox", name, parent, "SearchBoxTemplate")
@@ -1883,8 +1900,8 @@ local function NewSearchBox(name, parent, t)
 
   box:SetScript("OnEnterPressed", function(self)
     local list = t.results or {}
-    local pick = (t.arrowed and selectedID) or (list[1] and list[1].recipeID)
-    if pick then UI.SelectRecipe(pick) end
+    local pick = (t.arrowed and current()) or (list[1] and keyOf(list[1]))
+    if pick then selectKey(pick) end
     self:ClearFocus()
   end)
   box:SetScript("OnEscapePressed", function(self)
@@ -1898,9 +1915,9 @@ local function NewSearchBox(name, parent, t)
   box:SetScript("OnArrowPressed", function(_, key)
     local list = t.results or {}
     if #list == 0 then return end
-    local idx = 0
+    local idx, cur = 0, current()
     for i, u in ipairs(list) do
-      if u.recipeID == selectedID then idx = i break end
+      if keyOf(u) == cur then idx = i break end
     end
     if key == "DOWN" then
       idx = min(#list, idx + 1)
@@ -1910,7 +1927,7 @@ local function NewSearchBox(name, parent, t)
       return
     end
     t.arrowed = true
-    UI.SelectRecipe(list[idx].recipeID)
+    selectKey(keyOf(list[idx]))
     t.list:ScrollTo(list[idx].idx)
   end)
   box:HookScript("OnTextChanged", function(self)
@@ -1950,7 +1967,7 @@ end
 -- in the 8 px right of it; rows 5 px in from the top and right). Right: SchematicForm
 -- (TOPLEFT->list.TOPRIGHT 2,0 down to 38 px above the frame bottom) with the profession
 -- card background under common-insideframe. Returns the form.
-local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset)
+local function ListColumn(p, t)
   local left = CreateFrame("Frame", nil, p)
   left:SetPoint("TOPLEFT", p, "TOPLEFT", G.listX, G.listY)
   left:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", G.listX, G.listB)
@@ -1967,6 +1984,30 @@ local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset
     inset:SetPoint("BOTTOMRIGHT")
     t.listInset = inset
   end
+  return left
+end
+
+local function CardForm(p, t, left)
+  local form = CreateFrame("Frame", nil, p)
+  form:SetPoint("TOPLEFT", left, "TOPRIGHT", G.formGap, 0)
+  form:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -G.formR, G.formB)
+  t.form = form
+  t.bg, t.cardStyle = Framed(form, nil)
+  return form
+end
+
+-- The recipe list's grouped rows under the search box: ScrollBox at 8,-35 / -20,5 (rows 5 px
+-- in from the top and right, MinimalScrollBar in the 8 px right of them).
+local function GroupList(t, left, listName, makeRow, fill)
+  t.list = NewList(listName, left, ROW.recipe, makeRow, fill, { heightOf = GroupHeight,
+    indentOf = GroupIndent, stripes = false, padTop = 5, padRight = 5, barGap = 0, emptyWidth = 200 })
+  t.list.box:SetPoint("TOPLEFT", left, "TOPLEFT", 8, -35)
+  t.list.box:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", min(-4, -20 + t.list.barW), 5)
+  return t.list
+end
+
+local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset)
+  local left = ListColumn(p, t)
 
   t.filterEntries = entries
   t.filter = NewFilterButton(left, entries, isDefault, reset)
@@ -1986,19 +2027,10 @@ local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset
   t.search:SetPoint("TOPLEFT", left, "TOPLEFT", 13, -8)
   t.search:SetPoint("RIGHT", t.filter, "LEFT", -4, 0)
 
-  t.list = NewList(listName, left, ROW.recipe,
+  GroupList(t, left, listName,
     GroupRowFactory(function(it) UI.SelectRecipe(it.recipeID) end, function(it) ToggleGroup(t, it) end),
-    GroupFill(fillEntry), { heightOf = GroupHeight, indentOf = GroupIndent, stripes = false,
-      padTop = 5, padRight = 5, barGap = 0, emptyWidth = 200 })
-  t.list.box:SetPoint("TOPLEFT", left, "TOPLEFT", 8, -35)
-  t.list.box:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", min(-4, -20 + t.list.barW), 5)
-
-  local form = CreateFrame("Frame", nil, p)
-  form:SetPoint("TOPLEFT", left, "TOPRIGHT", G.formGap, 0)
-  form:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -G.formR, G.formB)
-  t.form = form
-  t.bg, t.cardStyle = Framed(form, nil)
-  return form
+    GroupFill(fillEntry))
+  return CardForm(p, t, left)
 end
 
 -- Button row under the recipe card (CreateAllButton / CreateMultipleInputBox / CreateButton):
@@ -2102,6 +2134,95 @@ local function FillFindEntry(row, u)
   row.sel:SetShown(u.recipeID == selectedID)
 end
 
+-- Advertise ------------------------------------------------------------------
+-- One plain "LF crafter" line in a public channel (Options: General / Trade / Off) for players
+-- without CraftBoard. Only ever sent from the button's click (a hardware event), at most once
+-- a minute; never automatically.
+local ADVERTISE_ICON = "Interface\\Icons\\Ability_Warrior_BattleShout"
+local Advertise, AdvertiseChoice, AdvertiseText, ChannelLabel
+do
+local ADVERTISE_GAP = 60
+local CHANNELS = { General = L["General"], Trade = L["Trade"], Off = L["Off"] }
+local lastAdvertise
+
+function ChannelLabel(choice)
+  return CHANNELS[choice] or choice
+end
+
+function AdvertiseChoice()
+  if NS.Options and NS.Options.AdvertiseChannel then return NS.Options.AdvertiseChannel() end
+  local v = type(CraftBoardDB) == "table" and CraftBoardDB.advertiseChannel
+  if v == "Trade" or v == "Off" then return v end
+  return "General"
+end
+
+-- Joined channel id for "General" / "Trade" ("General - Orgrimmar", "Trade - City"), or nil.
+local function PublicChannelId(choice)
+  local bases = { strlower(ChannelLabel(choice)), strlower(choice) }
+  local function matches(n)
+    if type(n) ~= "string" then return false end
+    n = strlower(n)
+    for _, b in ipairs(bases) do
+      if n == b or n:sub(1, #b + 1) == b .. " " then return true end
+    end
+    return false
+  end
+  if GetChannelList then
+    -- id, name, disabled triples; pack with the count (disabled may be nil).
+    local list = (function(...) return { n = select("#", ...), ... } end)(GetChannelList())
+    for i = 1, list.n, 3 do
+      local id, n, disabled = list[i], list[i + 1], list[i + 2]
+      if type(id) == "number" and id > 0 and not disabled and matches(n) then return id end
+    end
+  end
+  if GetChannelName then
+    local ok, id = pcall(GetChannelName, ChannelLabel(choice))
+    if ok and type(id) == "number" and id > 0 then return id end
+  end
+  return nil
+end
+
+function AdvertiseText(itemID, qty)
+  return format(L["LF crafter: %dx %s, have mats \226\128\148 whisper me (CraftBoard)"], qty,
+    ItemLink(itemID) or ItemName(itemID))
+end
+
+local function Now()
+  return (GetTime and GetTime()) or time()
+end
+
+function Advertise(itemID, qty)
+  if not itemID then return false end
+  local choice = AdvertiseChoice()
+  if choice == "Off" then
+    NS.Print(L["Advertising is off in the CraftBoard options."])
+    return false
+  end
+  local now = Now()
+  if lastAdvertise and now - lastAdvertise < ADVERTISE_GAP then
+    NS.Print(format(L["Please wait %d seconds before advertising again."], ceil(ADVERTISE_GAP - (now - lastAdvertise))))
+    return false
+  end
+  local id = PublicChannelId(choice)
+  if not id then
+    NS.Print(format(L["You are not in the %s channel here."], ChannelLabel(choice)))
+    return false
+  end
+  local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+  if not (send and pcall(send, AdvertiseText(itemID, qty), "CHANNEL", nil, id)) then
+    NS.Print(format(L["Could not post in %s."], ChannelLabel(choice)))
+    return false
+  end
+  lastAdvertise = now
+  return true
+end
+end
+
+function UI.UpdateAdvertise()
+  if not find.advertise then return end
+  find.advertise:SetEnabled(find.itemID ~= nil and AdvertiseChoice() ~= "Off")
+end
+
 local function BuildFind(p)
   find.refilter = function(keep) UI.FilterFind(keep) end
   local d = BuildColumns(p, find, "CraftBoardFindScroll", FillFindEntry, ProfEntries(find),
@@ -2156,9 +2277,28 @@ local function BuildFind(p)
   end)
   find.post:SetScript("OnLeave", HideTooltip)
 
+  find.advertise = SquareButton(bar, L["Advertise"], ADVERTISE_ICON, 70)
+  find.advertise.cbKind = "advertise"
+  find.advertise:SetPoint("RIGHT", find.post, "LEFT", find.advertise.cbSquare and -6 or -4, 0)
+  find.advertise:SetScript("OnClick", function()
+    Advertise(find.itemID, ReadQty(find.qty))
+  end)
+  find.advertise:SetScript("OnEnter", function(self)
+    local choice = AdvertiseChoice()
+    if choice == "Off" then
+      TextTooltip(self, L["Announce in chat"], L["Advertising is off in the CraftBoard options."])
+    elseif not find.itemID then
+      TextTooltip(self, L["This recipe makes no item to request"])
+    else
+      TextTooltip(self, L["Announce in chat"], format(L["Posts once in %s: %s"], ChannelLabel(choice),
+        AdvertiseText(find.itemID, ReadQty(find.qty))))
+    end
+  end)
+  find.advertise:SetScript("OnLeave", HideTooltip)
+
   find.whisper = SquareButton(bar, L["Whisper"])
   find.whisper.cbKind = "whisper"
-  find.whisper:SetPoint("RIGHT", find.post, "LEFT", find.whisper.cbSquare and -6 or -4, 0)
+  find.whisper:SetPoint("RIGHT", find.advertise, "LEFT", -4, 0)
   find.whisper:SetScript("OnClick", function()
     local name, itemID = find.whisperTo, find.itemID
     if not (name and itemID and NS.Comm and NS.Comm.Request) then return end
@@ -2231,6 +2371,7 @@ function UI.RefreshDetail()
     find.none:Show()
     find.post:SetEnabled(false)
     find.whisper:SetEnabled(false)
+    UI.UpdateAdvertise()
     SetDetailBackground(find, nil)
     UI.RefreshStatus()
     return
@@ -2269,6 +2410,7 @@ function UI.RefreshDetail()
   find.crafters:SetItems(e.crafters, L["No known crafters."], true)
 
   find.post:SetEnabled(itemID ~= nil)
+  UI.UpdateAdvertise()
   UI.UpdateWhisper()
   UI.RefreshStatus()
 end
@@ -2356,137 +2498,351 @@ function UI.RefreshFind(keepScroll)
 end
 
 -- Requests tab --------------------------------------------------------------
+-- The same two panels as Find, so it reads as the same window: the request list on the left
+-- (search box over the summary-list background, gold "Open requests" / "My requests" bars,
+-- 20 px rows with the quality-coloured item name and a muted "3x · 8m", a ready check where
+-- the recipe label's skill-up mark sits when I can craft it right now), the selected request
+-- as a recipe card on the right (icon, "Requested by Bob · 8m ago", the note, reagent slots
+-- with my bags' have/need when one of my chars knows the recipe, the requested quantity),
+-- and in the Create row Offer + whisper for other players' posts, Retract for mine.
 
+local BuildRequests
+do
 local function IsMyPost(post)
-  return post.mine or (NS.Me and post.from == NS.Me)
+  return post.mine or (NS.Me and post.from == NS.Me) or false
 end
 
-local function RequestRow(parent, rowH)
-  local row = CreateFrame("Frame", nil, parent)
-  row:SetHeight(rowH)
-  row:EnableMouse(true)
-  local card = row:CreateTexture(nil, "BACKGROUND")
-  card:SetPoint("TOPLEFT", 0, -2)
-  card:SetPoint("BOTTOMRIGHT", 0, 2)
-  card:SetColorTexture(1, 1, 1, 0.045)
-  local hl = row:CreateTexture(nil, "HIGHLIGHT")
-  hl:SetAllPoints(card)
-  if HasAtlas(A.hover) then
-    hl:SetAtlas(A.hover, false)
-    hl:SetAlpha(0.5)
-  else
-    hl:SetColorTexture(1, 1, 1, 0.04)
-  end
-  -- Item in a reagent-style slot (Professions-Slot-bg / -Frame), else a bordered icon.
-  if HasAtlases(A.slotBg, A.slotFrame) then
-    local slotBg = row:CreateTexture(nil, "BORDER")
-    slotBg:SetAtlas(A.slotBg, false)
-    slotBg:SetSize(30, 30)
-    slotBg:SetPoint("LEFT", 6, 0)
-    row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetAllPoints(slotBg)
-    local slotFrame = row:CreateTexture(nil, "OVERLAY")
-    slotFrame:SetAtlas(A.slotFrame, false)
-    slotFrame:SetPoint("TOPLEFT", slotBg, "TOPLEFT", -4, 3)
-    slotFrame:SetPoint("BOTTOMRIGHT", slotBg, "BOTTOMRIGHT", 3, -4)
-  else
-    row.icon = BorderedIcon(row, 28)
-    row.icon:SetPoint("LEFT", 7, 0)
-  end
+-- "just now" / "8m ago" / "2h ago"
+local function AgoText(t)
+  if time() - (t or time()) < 60 then return L["just now"] end
+  return format(L["%s ago"], Age(t))
+end
 
-  row.action = RedButton(row, L["Offer"], 84, 22)
-  row.action:SetPoint("RIGHT", -6, 0)
-  row.action:SetScript("OnClick", function()
-    local post = row.post
-    if not post then return end
-    if IsMyPost(post) then
-      if NS.Comm and NS.Comm.Retract then NS.Comm.Retract(post.id) end
-      UI.Refresh()
-    else
-      local msg = format(L["[CraftBoard] I can craft %s for you."], ItemLink(post.item) or ItemName(post.item))
-      if not (NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(post.from, msg)) then
-        NS.Print(format(L["Could not whisper %s."], Short(post.from)))
+-- What I know about each craftable item: { rec=, recipeID=, prof=, current= } from my chars'
+-- records (the current char first, current = true), else { recipeID=, prof= } from the shared
+-- recipe catalogue (for the card background only).
+local function RecipesByOutput()
+  local out = {}
+  local db = type(CraftBoardDB) == "table" and CraftBoardDB or {}
+  local chars = type(db.chars) == "table" and db.chars or {}
+  local function take(c, current)
+    if type(c) ~= "table" or type(c.recipes) ~= "table" then return end
+    for id, rec in pairs(c.recipes) do
+      if type(rec) == "table" and type(rec.o) == "number" and not out[rec.o] then
+        out[rec.o] = { rec = rec, recipeID = id, prof = rec.p, current = current }
       end
     end
-  end)
-  row.action:SetScript("OnEnter", function(self)
-    local post = row.post
-    if post and not IsMyPost(post) then
-      TextTooltip(self, format(L["Whisper %s"], Short(post.from)),
-        format(L["[CraftBoard] I can craft %s for you."], ItemName(post.item)))
+  end
+  if NS.Me then take(chars[NS.Me], true) end
+  for key, c in pairs(chars) do
+    if key ~= NS.Me then take(c, false) end
+  end
+  if type(db.recipeNames) == "table" then
+    for id, e in pairs(db.recipeNames) do
+      if type(e) == "table" and type(e.o) == "number" and not out[e.o] then
+        out[e.o] = { recipeID = id, prof = e.p }
+      end
+    end
+  end
+  return out
+end
+
+local function ReqCollapsed()
+  local db = UIDB()
+  if not db then return {} end
+  if type(db.reqCollapsed) ~= "table" then db.reqCollapsed = {} end
+  return db.reqCollapsed
+end
+
+-- Collapse / expand "Open requests" / "My requests" (not while searching).
+local function ToggleRequestGroup(it)
+  if reqs.searching then return end
+  local c = ReqCollapsed()
+  if c[it.key] then c[it.key] = nil else c[it.key] = true end
+  UI.FilterRequests(true)
+end
+
+-- Find's grouped row plus the ready check in the 21 px before the label.
+local function RequestRowFactory()
+  local base = GroupRowFactory(function(it) UI.SelectRequest(it.id) end, ToggleRequestGroup)
+  return function(parent)
+    local row = base(parent)
+    local check = row:CreateTexture(nil, "OVERLAY")
+    check:SetSize(12, 12)
+    check:SetTexture(TEX.ready)
+    check:SetPoint("CENTER", row, "TOPLEFT", floor(ROW.labelX / 2), -ROW.recipeBar / 2)
+    check:Hide()
+    row.check = check
+    row.recipeParts[#row.recipeParts + 1] = check
+    return row
+  end
+end
+
+local function FillRequestEntry(row, e)
+  local post = e.post
+  row.name:SetText(e.name)
+  row.name:SetTextColor(NameRGB(post.item))
+  row.status:SetText(format(L["%dx"], post.qty or 1) .. DOT .. Age(post.t))
+  row.check:SetShown(e.ready)
+  row.sel:SetShown(e.id == reqs.selected)
+end
+
+-- Opens the chat box in whisper mode to `name` (like clicking a player name in chat).
+local function OpenTell(name)
+  local tell = ChatFrame_SendTell or (ChatFrameUtil and ChatFrameUtil.SendTell)
+  if tell and type(name) == "string" and pcall(tell, Short(name)) then return true end
+  NS.Print(format(L["Could not whisper %s."], Short(name)))
+  return false
+end
+
+local function OfferText(post)
+  return format(L["[CraftBoard] I can craft %s for you."], ItemLink(post.item) or ItemName(post.item))
+end
+
+function BuildRequests(p)
+  reqs.keyOf = function(e) return e.id end
+  reqs.selectedKey = function() return reqs.selected end
+  reqs.selectKey = function(id) UI.SelectRequest(id) end
+  reqs.refilter = function(keep) UI.FilterRequests(keep) end
+
+  local left = ListColumn(p, reqs)
+  reqs.search = NewSearchBox("CraftBoardRequestsSearchBox", left, reqs)
+  reqs.search:SetPoint("TOPLEFT", left, "TOPLEFT", 13, -8)
+  reqs.search:SetPoint("TOPRIGHT", left, "TOPRIGHT", -12, -8)
+  GroupList(reqs, left, "CraftBoardRequestsScroll", RequestRowFactory(), GroupFill(FillRequestEntry))
+  -- Empty board: "No open requests" (the list's no-results text) and a grey line under it.
+  local sub = Label(reqs.list.box, L["Posts from other CraftBoard users appear here."],
+    Font("GameFontDisableSmall", "GameFontDisable"))
+  sub:SetPoint("TOP", reqs.list.empty, "BOTTOM", 0, -6)
+  sub:SetWidth(200)
+  sub:SetJustifyH("CENTER")
+  if sub.SetWordWrap then sub:SetWordWrap(true) end
+  if sub.SetMaxLines then sub:SetMaxLines(3) end
+  sub:Hide()
+  reqs.emptySub = sub
+
+  local d = CardForm(p, reqs, left)
+  reqs.none = Placeholder(d, "")
+  local body = CreateFrame("Frame", nil, d)
+  body:SetAllPoints()
+  reqs.body = body
+  reqs.header = NewHeader(body)
+  reqs.header.desc:SetTextColor(C.short[1], C.short[2], C.short[3])
+
+  reqs.reagLabel = SectionLabel(body, L["Reagents:"])
+  reqs.reagLabel:SetPoint("TOPLEFT", reqs.header.holder, "BOTTOMLEFT", -1, -12)
+  reqs.reagents = NewList("CraftBoardRequestReagentsScroll", body, REAGENT_H, ReagentRow, FillReagentRow,
+    { bar = false, inline = true, stripes = false })
+  reqs.reagents.box:SetPoint("TOPLEFT", reqs.reagLabel, "TOPLEFT", 1, -20)
+  reqs.reagents.box:SetPoint("RIGHT", body, "RIGHT", -20, 0)
+  reqs.reagents.box:SetHeight(REAGENT_H)
+  reqs.qtyLine = SectionLabel(body, nil)
+  reqs.qtyLine:SetWidth(300)
+  reqs.qtyLine:SetPoint("TOPLEFT", reqs.reagents.box, "BOTTOMLEFT", -1, -12)
+
+  -- Create row: Offer (red, where Create is) with the whisper square left of it, or Retract.
+  local bar = NewBar(p, d)
+  reqs.bar = bar
+  reqs.offer = RedButton(bar, L["Offer"], 112, 28)
+  reqs.offer:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -9, 7)
+  reqs.offer:SetScript("OnClick", function()
+    local e = reqs.entry
+    if not e or e.mine then return end
+    if not (NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, OfferText(e.post))) then
+      NS.Print(format(L["Could not whisper %s."], Short(e.post.from)))
     end
   end)
-  row.action:SetScript("OnLeave", HideTooltip)
+  reqs.offer:SetScript("OnEnter", function(self)
+    local e = reqs.entry
+    if e and not e.mine then
+      TextTooltip(self, format(L["Whisper %s"], Short(e.post.from)),
+        format(L["[CraftBoard] I can craft %s for you."], ItemName(e.post.item)))
+    end
+  end)
+  reqs.offer:SetScript("OnLeave", HideTooltip)
 
-  -- Icon spans x 6..34; title and note sit in two lines beside it, age top-right.
-  row.age = Muted(Label(row, nil, "GameFontHighlightSmall"))
-  row.age:SetPoint("TOPRIGHT", -92, -9)
-  row.age:SetJustifyH("RIGHT")
-  row.check = row:CreateTexture(nil, "ARTWORK")
-  row.check:SetSize(12, 12)
-  row.check:SetTexture(TEX.ready)
-  row.check:SetPoint("RIGHT", row.age, "LEFT", -4, 0)
-  row.title = Label(row, nil, FontOf(FONTS.row))
-  row.title:SetPoint("TOPLEFT", 42, -9)
-  row.title:SetPoint("TOPRIGHT", -146, -9)
-  row.note = Muted(Label(row, nil, "GameFontHighlightSmall"))
-  row.note:SetPoint("BOTTOMLEFT", 42, 9)
-  row.note:SetPoint("BOTTOMRIGHT", -92, 9)
-  row:SetScript("OnEnter", function(self)
-    if self.post then ShowTooltip(self, self.post.item) end
+  reqs.retract = RedButton(bar, L["Retract"], 112, 28)
+  reqs.retract:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -9, 7)
+  reqs.retract:SetScript("OnClick", function()
+    local e = reqs.entry
+    if not (e and e.mine and NS.Comm and NS.Comm.Retract) then return end
+    NS.Comm.Retract(e.id)
+    UI.Refresh()
   end)
-  row:SetScript("OnLeave", HideTooltip)
-  row:SetScript("OnMouseUp", function(self)
-    if self.post then InsertLink(ItemLink(self.post.item)) end
+  reqs.retract:SetScript("OnEnter", function(self)
+    TextTooltip(self, L["Retract"], L["Takes the request off the board for everyone."])
   end)
-  return row
+  reqs.retract:SetScript("OnLeave", HideTooltip)
+  reqs.retract:Hide()
+
+  reqs.whisper = SquareButton(bar, L["Whisper"])
+  reqs.whisper.cbKind = "whisper"
+  reqs.whisper:SetPoint("RIGHT", reqs.offer, "LEFT", reqs.whisper.cbSquare and -6 or -4, 0)
+  reqs.whisper:SetScript("OnClick", function()
+    local e = reqs.entry
+    if e and not e.mine then OpenTell(e.post.from) end
+  end)
+  reqs.whisper:SetScript("OnEnter", function(self)
+    local e = reqs.entry
+    if e and not e.mine then TextTooltip(self, format(L["Whisper %s"], Short(e.post.from))) end
+  end)
+  reqs.whisper:SetScript("OnLeave", HideTooltip)
 end
 
-local function FillRequestRow(row, post)
-  row.post = post
-  row.icon:SetTexture(ItemIcon(post.item) or TEX.question)
-  local item = QualityHex(ItemQuality(post.item)) .. ItemName(post.item) .. "|r"
-  local mineP = IsMyPost(post)
-  if mineP then
-    row.title:SetText(format(L["You want %dx %s"], post.qty or 1, item))
-  else
-    row.title:SetText(format(L["%s wants %dx %s"], Short(post.from), post.qty or 1, item))
+-- Reagent slots shown without scrolling: what fits between the header and the quantity line.
+local function RequestReagentRows(body, n)
+  local h = body:GetHeight() or 0
+  local fit = h > 0 and floor((h - 190) / REAGENT_H) or 4
+  return min(max(1, n), max(2, fit))
+end
+
+function UI.RefreshRequestDetail()
+  if not reqs.body then return end
+  local e = reqs.selected and reqs.byID and reqs.byID[reqs.selected] or nil
+  reqs.entry = e
+  local mine = e and e.mine or false
+  reqs.retract:SetShown(mine)
+  reqs.retract:SetEnabled(mine)
+  reqs.offer:SetShown(not mine)
+  reqs.offer:SetEnabled(e ~= nil and not mine)
+  reqs.whisper:SetShown(not mine)
+  reqs.whisper:SetEnabled(e ~= nil and not mine)
+  if not e then
+    reqs.body:Hide()
+    reqs.none:SetText(reqs.noneText or "")
+    reqs.none:Show()
+    SetDetailBackground(reqs, nil)
+    return
   end
-  local note = type(post.note) == "string" and post.note or ""
-  row.note:SetText(note ~= "" and ("\"" .. note .. "\"") or "")
-  row.age:SetText(Age(post.t))
-  row.check:SetShown(not mineP and reqs.canMake and reqs.canMake[post.item] or false)
-  row.action:SetText(mineP and L["Retract"] or L["Offer"])
+  reqs.none:Hide()
+  reqs.body:Show()
+
+  local post, know = e.post, e.know
+  local who = mine and L["you"] or Short(post.from)
+  local note = type(post.note) == "string" and post.note ~= "" and ("\"" .. post.note .. "\"") or nil
+  FillHeader(reqs.header, know and know.recipeID, post.item, e.name,
+    format(L["Requested by %s"], who) .. DOT .. AgoText(post.t), note)
+  AnchorBelowHeader(reqs.header, reqs.reagLabel)
+  SetDetailBackground(reqs, know and know.prof)
+
+  local qty = post.qty or 1
+  local rec = know and know.rec
+  local reagents, emptyText = {}, nil
+  if rec and type(rec.r) == "table" and #rec.r > 0 and NS.Inventory and NS.Inventory.CanCraft then
+    reagents = NS.Inventory.CanCraft(rec, qty).reagents or {}
+  elseif rec then
+    emptyText = L["No reagents recorded."]
+  else
+    emptyText = L["Reagents unknown"]
+  end
+  reqs.reagents.box:SetHeight(#reagents > 0 and REAGENT_H * RequestReagentRows(reqs.body, #reagents) or SUBROW_H)
+  reqs.reagents:SetItems(reagents, emptyText, true)
+  reqs.qtyLine:SetText(format(L["Requested quantity: %d"], qty))
 end
 
--- One framed area over the list and card area (no button row on this tab): the recipe
--- list's summary background under the card border.
-local function BuildRequests(p)
-  local area = CreateFrame("Frame", nil, p)
-  area:SetPoint("TOPLEFT", p, "TOPLEFT", G.listX, G.listY)
-  area:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -G.formR, G.listB)
-  reqs.area = area
-  local bg = Framed(area, A.listBg)
-  reqs.bg = bg
-  reqs.list = NewList("CraftBoardRequestsScroll", area, REQUEST_H, RequestRow, FillRequestRow, { stripes = false })
-  reqs.list.box:SetPoint("TOPLEFT", 8, -8)
-  reqs.list.box:SetPoint("BOTTOMRIGHT", -8, 8)
+function UI.SelectRequest(id)
+  reqs.selected = id
+  if reqs.list then reqs.list:Render() end
+  UI.RefreshRequestDetail()
 end
 
+-- Filter the annotated posts by item name / requester and group them: other players'
+-- requests first, then mine, newest first within each. A selection the filter hides is
+-- replaced by the first visible request.
+function UI.FilterRequests(keepScroll)
+  if not reqs.list then return end
+  local all = reqs.all or {}
+  local text = strtrim(reqs.search:GetText() or "")
+  local searching = #text >= 2
+  reqs.searching = searching
+  local results = {}
+  if searching then
+    local tokens = Tokens(text)
+    for _, e in ipairs(all) do
+      local ok = true
+      for i = 1, #tokens do
+        local t = tokens[i]
+        if not (e.lname:find(t, 1, true) or e.lfrom:find(t, 1, true)) then ok = false break end
+      end
+      if ok then results[#results + 1] = e end
+    end
+  else
+    for i = 1, #all do results[i] = all[i] end
+  end
+
+  local visible = false
+  for _, e in ipairs(results) do
+    if e.id == reqs.selected then visible = true break end
+  end
+  if not visible then reqs.selected = nil end
+
+  local groups = { { key = "open", name = L["Open requests"], list = {} }, { key = "mine", name = L["My requests"], list = {} } }
+  for _, e in ipairs(results) do
+    local g = e.mine and groups[2] or groups[1]
+    g.list[#g.list + 1] = e
+  end
+  local collapsed = searching and {} or ReqCollapsed()
+  local items, nav = {}, {}
+  for _, g in ipairs(groups) do
+    if #g.list > 0 then
+      local open = not collapsed[g.key]
+      items[#items + 1] = { kind = "cat", key = g.key, name = g.name, count = #g.list, depth = 0, collapsed = not open }
+      if open then
+        for i, e in ipairs(g.list) do
+          e.depth, e.gap = 1, i == #g.list
+          items[#items + 1] = e
+          e.idx = #items
+          nav[#nav + 1] = e
+        end
+      end
+    end
+  end
+  reqs.results = nav
+
+  local emptyText
+  if #all == 0 then
+    emptyText = L["No open requests"]
+    reqs.noneText = PeerCounts() == 0 and EMPTY_PEERS or L["No open requests. Post one from the Find tab."]
+  else
+    if #results == 0 then emptyText = format(L["No request matches \"%s\"."], text) end
+    reqs.noneText = L["Select a request to see its details."]
+  end
+  reqs.emptySub:SetShown(#all == 0)
+  reqs.list:SetItems(items, emptyText, keepScroll)
+  local pick = not reqs.selected and (nav[1] or results[1])
+  if pick then
+    UI.SelectRequest(pick.id)
+  else
+    UI.RefreshRequestDetail()
+  end
+end
+
+-- Rebuild the annotated posts (names, requester, my recipe for the item, ready now).
 function UI.RefreshRequests(keepScroll)
   if not reqs.list then return end
   local posts = NS.Comm and NS.Comm.Requests and NS.Comm.Requests() or {}
-  -- Items my current char can make: marked with a check on other players' requests.
-  local canMake = {}
-  for _, rec in pairs(NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine() or {}) do
-    if type(rec) == "table" and rec.o then canMake[rec.o] = true end
+  local byOut = RecipesByOutput()
+  local canCraft = NS.Inventory and NS.Inventory.CanCraft
+  local all, byID = {}, {}
+  for _, post in ipairs(posts) do
+    if type(post) == "table" and type(post.item) == "number" and post.id ~= nil then
+      local know = byOut[post.item]
+      local name = ItemName(post.item)
+      local e = {
+        post = post, id = post.id, outputItemID = post.item, mine = IsMyPost(post), know = know,
+        name = name, lname = strlower(name), lfrom = strlower(Short(post.from)), ready = false,
+      }
+      -- Ready: the current char knows it and has the reagents for the whole request.
+      if know and know.current and know.rec and canCraft then
+        e.ready = canCraft(know.rec, post.qty or 1).ready and true or false
+      end
+      all[#all + 1] = e
+      byID[e.id] = e
+    end
   end
-  reqs.canMake = canMake
-  local emptyText
-  if #posts == 0 then
-    emptyText = PeerCounts() == 0 and EMPTY_PEERS or L["No open requests. Post one from the Find tab."]
-  end
-  reqs.list:SetItems(posts, emptyText, keepScroll)
+  reqs.all, reqs.byID = all, byID
+  UI.FilterRequests(keepScroll)
+end
 end
 -- Window --------------------------------------------------------------------
 
@@ -2596,6 +2952,7 @@ local function LayoutSplit(w)
   if splitDone and left == LEFT_W then return end
   splitDone, LEFT_W = true, left
   if find.left then find.left:SetWidth(left) end
+  if reqs.left then reqs.left:SetWidth(left) end
 end
 
 local REFRESH = {
@@ -2629,6 +2986,7 @@ local function SelectTab(i)
     end
   end
   if i ~= 1 and find.search then find.search:ClearFocus() end
+  if i ~= 2 and reqs.search then reqs.search:ClearFocus() end
   if i == 2 then UpdatePortrait(nil) end
   REFRESH[i](false)
   UI.RefreshStatus()
@@ -2891,6 +3249,7 @@ local function Create()
   f:HookScript("OnHide", function()
     HideTooltip()
     if find.search then find.search:ClearFocus() end
+    if reqs.search then reqs.search:ClearFocus() end
   end)
 
   local db = UIDB()

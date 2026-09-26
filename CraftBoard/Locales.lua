@@ -103,8 +103,6 @@ local enUS = {
   "Whisper %s",
   "Only you and your alts know this recipe.",
   "Offer",
-  "%s wants %dx %s",
-  "You want %dx %s",
   "channel ok",
   "channel off",
   "Search",
@@ -128,6 +126,32 @@ local enUS = {
   "Artisan",
   "Master",
   "Grand Master",
+  -- Requests tab
+  "Open requests",
+  "My requests",
+  "No open requests",
+  "Posts from other CraftBoard users appear here.",
+  "No request matches \"%s\".",
+  "Select a request to see its details.",
+  "%dx",
+  "Requested by %s",
+  "just now",
+  "%s ago",
+  "Reagents unknown",
+  "Requested quantity: %d",
+  "Takes the request off the board for everyone.",
+  -- Advertise (Find) and its channel names
+  "Advertise",
+  "Announce in chat",
+  "Posts once in %s: %s",
+  "LF crafter: %dx %s, have mats \226\128\148 whisper me (CraftBoard)",
+  "Advertising is off in the CraftBoard options.",
+  "Please wait %d seconds before advertising again.",
+  "You are not in the %s channel here.",
+  "Could not post in %s.",
+  "General",
+  "Trade",
+  "Off",
 
   -- Options
   "Share recipes on the realm channel",
@@ -141,6 +165,10 @@ local enUS = {
   "Settings panel not available.",
   "Can't open settings in combat.",
   "Open CraftBoard",
+  "Advertise channel",
+  "Advertise channel: %s",
+  "Change",
+  "Where the Advertise button in Find posts one line for players without CraftBoard. Trade chat exists in cities only. Nothing is ever sent without a click.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

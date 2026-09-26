@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and "Forget all peer data" to clear known crafters and board posts.
 - Localization: every user-visible string goes through a locale table (`Locales.lua`), English
   by default, ready for translations.
+- Advertise button (small square next to Post request in Find, tooltip "Announce in chat"):
+  posts one plain line for players without CraftBoard, e.g. `LF crafter: 2x [Dark Leather
+  Belt], have mats — whisper me (CraftBoard)`, in the channel chosen in Options ("Advertise
+  channel": General by default, Trade (cities only), or Off). Only on your click, at most
+  once a minute; nothing is ever sent automatically.
 
 ### Changed
 - The window now looks and works like Blizzard's Professions crafting page, rebuilt from the
@@ -45,8 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   then reagents (have/need), then crafters (click a name to open a pre-filled whisper), and
   qty, note, Whisper and Post request at the bottom.
 - Clicking a reagent puts its item link into an open chat box.
-- Requests: card rows ("Bob wants 3x Item", note, age) with one Offer / Retract button, and a
-  check on requests you can craft.
+- Requests now uses the same two panels as Find, so it feels like the same window. Left: a
+  search box (item name or requester) over the recipe list background, with gold
+  "Open requests" and "My requests" bars (collapsible) and 20 px rows: the item name in its
+  quality colour, "3x · 8m" on the right, and a ready check when your current character can
+  craft the whole request right now. Right: the selected request as a recipe card (round
+  icon in its quality ring, "Requested by Bob · 8m ago", the note, reagent slots with your
+  bags' have/need when one of your characters knows the recipe, else "Reagents unknown",
+  and "Requested quantity: 3"). Under the card: a red Offer button (whispers "I can craft
+  [item] for you") and a chat button that opens a whisper to the requester, or Retract for
+  your own posts. The first request is selected automatically; an empty board says
+  "No open requests".
 - The window can be resized (the size is remembered).
 - Recipes whose crafted item is Bind on Pickup (or a quest item) are no longer shared with
   other players and are hidden from the Find tab.
@@ -54,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed; `/cb scan` still forces a full rescan.
 - Reagents with several quality tiers count every tier you own toward have/need, craftable
   counts and the shopping list.
+
+### Fixed
+- Scrolling a list no longer throws a Lua error on every scroll (`executingEvents` in
+  CallbackRegistry): the list scrollbar is now created as the EventFrame its template needs,
+  and falls back to the classic scrollbar if it cannot be set up.
 
 ### Removed
 - The Mine tab (its recipe list, "Short on" filter and shopping list panel). What you are

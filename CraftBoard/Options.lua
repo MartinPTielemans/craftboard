@@ -8,6 +8,7 @@ local Options = {}
 NS.Options = Options
 
 local L = NS.L
+local format = string.format
 local CATEGORY_NAME = "CraftBoard"
 local PANEL_NAME = "CraftBoardOptionsPanel"   -- the plain-frame fallback's global name
 
@@ -46,6 +47,36 @@ local function SetGuildShare(v)
   if type(CraftBoardDB) == "table" then CraftBoardDB.guildShare = v and true or false end
 end
 
+-- Advertise channel: where Find's Advertise button posts its one line ("General" by default,
+-- "Trade" (cities only), or "Off").
+local ADVERTISE = { "General", "Trade", "Off" }
+local ADVERTISE_LABEL = { General = L["General"], Trade = L["Trade"], Off = L["Off"] }
+
+function Options.AdvertiseChannel()
+  local v = type(CraftBoardDB) == "table" and CraftBoardDB.advertiseChannel
+  if v == "Trade" or v == "Off" then return v end
+  return "General"
+end
+
+function Options.SetAdvertiseChannel(v)
+  if v ~= "Trade" and v ~= "Off" then v = "General" end
+  if type(CraftBoardDB) == "table" then CraftBoardDB.advertiseChannel = v end
+  if NS.UI and NS.UI.Refresh then NS.UI.Refresh() end
+end
+
+-- General -> Trade -> Off -> General; returns the new choice.
+local function CycleAdvertise()
+  local cur = Options.AdvertiseChannel()
+  local nextV = ADVERTISE[1]
+  for i, v in ipairs(ADVERTISE) do
+    if v == cur then nextV = ADVERTISE[i % #ADVERTISE + 1] end
+  end
+  Options.SetAdvertiseChannel(nextV)
+  return nextV
+end
+
+local ADVERTISE_TIP = L["Where the Advertise button in Find posts one line for players without CraftBoard. Trade chat exists in cities only. Nothing is ever sent without a click."]
+
 -- Modern: vertical layout ------------------------------------------------------
 
 local function HasVerticalAPI()
@@ -69,6 +100,24 @@ local function RegisterVertical()
   local guild = S.RegisterAddOnSetting(category, "CRAFTBOARD_GUILD_SHARE", "guildShare", CraftBoardDB, bool,
     L["Share recipes with my guild"], true)
   createCheckbox(category, guild, L["Announce your recipes and board posts to guildmates who use CraftBoard."])
+
+  -- Advertise channel: a dropdown where the API has one, else a button that cycles.
+  local dropdown = S.CreateDropdown and S.CreateControlTextContainer and pcall(function()
+    local str = S.VarType and S.VarType.String or "string"
+    local adv = S.RegisterProxySetting(category, "CRAFTBOARD_ADVERTISE_CHANNEL", str,
+      L["Advertise channel"], "General", Options.AdvertiseChannel, Options.SetAdvertiseChannel)
+    local function choices()
+      local c = S.CreateControlTextContainer()
+      for _, v in ipairs(ADVERTISE) do c:Add(v, ADVERTISE_LABEL[v]) end
+      return c:GetData()
+    end
+    S.CreateDropdown(category, adv, choices, ADVERTISE_TIP)
+  end)
+  if not dropdown then
+    layout:AddInitializer(CreateSettingsButtonInitializer(L["Advertise channel"], L["Change"], function()
+      NS.Print(format(L["Advertise channel: %s"], ADVERTISE_LABEL[CycleAdvertise()]))
+    end, ADVERTISE_TIP, true))
+  end
 
   local forget = CreateSettingsButtonInitializer(L["Forget all peer data"], L["Forget"], Options.ForgetPeers,
     L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."],
@@ -127,9 +176,25 @@ local function BuildPanel()
     L["Announce your recipes and board posts to guildmates who use CraftBoard."],
     -76, GetGuildShare, SetGuildShare)
 
+  local advertise = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+  advertise:SetSize(220, 22)
+  advertise:SetPoint("TOPLEFT", 20, -114)
+  advertise.label = L["Advertise channel"]
+  advertise.tip = ADVERTISE_TIP
+  local function syncAdvertise()
+    advertise:SetText(format(L["Advertise channel: %s"], ADVERTISE_LABEL[Options.AdvertiseChannel()]))
+  end
+  advertise:SetScript("OnClick", function()
+    CycleAdvertise()
+    syncAdvertise()
+  end)
+  advertise:SetScript("OnEnter", ShowTip)
+  advertise:SetScript("OnLeave", HideTip)
+  syncAdvertise()
+
   local forget = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   forget:SetSize(180, 22)
-  forget:SetPoint("TOPLEFT", 20, -114)
+  forget:SetPoint("TOPLEFT", 20, -146)
   forget:SetText(L["Forget all peer data"])
   forget.label = L["Forget all peer data"]
   forget.tip = L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."]
@@ -139,6 +204,7 @@ local function BuildPanel()
 
   p:SetScript("OnShow", function()
     for i = 1, #checks do checks[i]:SetChecked(checks[i].get()) end
+    syncAdvertise()
   end)
   return p
 end
