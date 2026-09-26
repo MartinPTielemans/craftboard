@@ -8,6 +8,7 @@
 ## X-Category: Professions
 ## X-License: MIT
 ## X-Website: https://github.com/MartinPTielemans/craftboard
+## X-Curse-Project-ID: 1713474
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
