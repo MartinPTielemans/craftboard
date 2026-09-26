@@ -1,6 +1,11 @@
--- CraftBoard UI: one movable, resizable window with three tabs (Find, Mine, Requests).
--- Plain frames only: no ScrollBox/DataProvider, no external UI libs. Every row, chip and
--- button is created once (lists pool their visible rows); refreshes only re-fill them.
+-- CraftBoard UI: one movable, resizable window with three tabs (Find, Mine, Requests), laid
+-- out like Blizzard's Professions crafting page: a left column (search box + Filter dropdown
+-- over a bordered inset holding the recipe list, grouped under gold collapsible headers), a
+-- right inset with the recipe page (round icon, name, description, reagent boxes, crafters)
+-- and the frame's bottom button bar for the actions.
+-- Plain frames only: no ScrollBox/DataProvider, no external UI libs. Every row and button is
+-- created once (lists pool their visible rows); refreshes only re-fill them. Every Blizzard
+-- template and atlas is checked before use, with a plain fallback.
 local ADDON, NS = ...
 
 local UI = {}
@@ -10,42 +15,55 @@ local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local format = string.format
 local L = NS.L
 
-local WIDTH, HEIGHT = 560, 420          -- default and minimum size
-local MAX_W, MAX_H = 1000, 800
--- List / detail split: the list gets LEFT_FRAC of the panel width (321 of 536 px at the
--- default 560 wide window, detail 205), recomputed on resize. LEFT_W is the current value.
-local LEFT_FRAC = 0.6
-local PANEL_PAD = 24                    -- window width minus panel width (content insets, both styles)
-local LEFT_W = floor((WIDTH - PANEL_PAD) * LEFT_FRAC)
+local WIDTH, HEIGHT = 760, 520          -- default size
+local MIN_W, MIN_H = 640, 460
+local MAX_W, MAX_H = 1200, 900
+-- The list column gets LEFT_FRAC of the column area (334 of 744 px at the default width);
+-- the detail inset takes the rest. LEFT_W is the current value (LayoutSplit).
+local LEFT_FRAC = 0.45
+local COL_GAP = 6                       -- list column to detail inset
+local SEARCH_ROW = 28                   -- search box + Filter row above the list inset
 local SCROLLBAR_W = 22                  -- room for the legacy UIPanelScrollFrameTemplate bar
 local MINIBAR_W = 14                    -- room for a MinimalScrollBar
--- Window chrome, per frame style (offsets from the window's top-left corner). The portrait
--- frame puts the search / chip band beside the portrait, above the dark inset; the legacy
--- BasicFrameTemplateWithInset keeps the band at the top of its inset.
+-- Window chrome per frame style (offsets from the window edges). col*: the column area under
+-- the portrait band; band*: the status line beside the portrait (where Blizzard shows the
+-- rank bar); bar*: the bottom button bar row.
 local STYLE = {
-  modern = { contentL = 11, contentTop = 26, contentR = 13, contentB = 10, insetTop = 60,
-    bandMid = 16, bandX = 50, tabX = 11, tabGap = 3, grip = 6 },
-  legacy = { contentL = 12, contentTop = 30, contentR = 12, contentB = 8,
-    bandMid = 12, bandX = 0, tabX = 10, tabGap = 4, grip = 4 },
+  modern = { colL = 8, colR = 8, colTop = 62, colB = 28, bandMid = 42, bandX = 64,
+    barL = 12, barR = 28, barB = 4, tabX = 11, tabGap = 3, grip = 6 },
+  legacy = { colL = 10, colR = 10, colTop = 52, colB = 34, bandMid = 38, bandX = 14,
+    barL = 14, barR = 28, barB = 8, tabX = 10, tabGap = 4, grip = 4 },
 }
--- Set by Create() from STYLE before any tab is built.
+local STY = STYLE.legacy                -- set by Create()
 local MODERN = false
-local TOPBAR_H = 26                     -- panel top to the lists (the search / chip band)
-local TOPBAR_X = 0                      -- band left offset (clears the portrait)
-local BAND_MID = 12                     -- panel top to the band's vertical centre
-local ROW_H, SUBROW_H = 24, 18          -- main list rows; reagent / crafter rows
-local HEADER_ICON = 40
-local FOOTER_H = 16
-local SEARCH_W = 186
+local LEFT_W = floor((WIDTH - 16) * LEFT_FRAC)
+local RECIPE_H, CAT_H, PROF_H = 20, 29, 30   -- grouped list rows (Blizzard: 20 / 25 + gap)
+local INDENT = 10                            -- per tree level, like the Professions list
+local SUBROW_H = 18                          -- crafter rows
+local REAGENT_H = 40                         -- reagent boxes (36 px icon)
+local REQUEST_H = 44
+local ICON_SIZE = 46                         -- recipe page icon (CircularGiantItemButton)
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local READY_TEX = "Interface\\RaidFrame\\ReadyCheck-Ready"
 local PORTRAIT_TEX = "Interface\\Icons\\INV_Misc_Note_01"
 local HIGHLIGHT_TEX = "Interface\\Buttons\\UI-Listbox-Highlight2"
+local ROUND_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+-- Blizzard atlases (Blizzard_ProfessionsTemplates); each is checked with GetAtlasInfo.
 local DIVIDER_ATLAS = "Options_HorizontalDivider"
+local HEADER_L, HEADER_M, HEADER_R = "Professions-recipe-header-left", "Professions-recipe-header-middle", "Professions-recipe-header-right"
+local COLLAPSE_ATLAS, EXPAND_ATLAS = "Professions-recipe-header-collapse", "Professions-recipe-header-expand"
+local SELECTED_ATLAS, HOVER_ATLAS = "Professions_Recipe_Active", "Professions_Recipe_Hover"
+local LIST_BG_ATLAS = "Professions-background-summarylist"
+local RING_ATLAS = "auctionhouse-itemicon-border-white"
+local MASK_ATLAS = "CircleMaskScalable"
 local DOT = " \194\183 "                -- " · "
+local EN_DASH = "\226\128\147"
 local GREEN, RED, GREY = "|cff40ff40", "|cffff4040", "|cff9d9d9d"
 local MUTED = { 0.62, 0.62, 0.62 }
 local GOLD_RGB = { 1, 0.82, 0 }
+local ONLINE_RGB = { 0.25, 1, 0.25 }
+local SHORT_RGB = { 1, 0.25, 0.25 }
+local RING_RGB = { 0.62, 0.5, 0.32 }    -- ring tint for common items (and the plain ring)
 
 local EMPTY_RECIPES = L["Open a profession window to record your recipes."]
 local EMPTY_PEERS = L["No one on the board yet \226\128\148 guildmates who install CraftBoard appear here."]
@@ -53,11 +71,12 @@ local EMPTY_PEERS = L["No one on the board yet \226\128\148 guildmates who insta
 local frame                    -- main window, created on first show
 local tabs, panels = {}, {}
 local activeTab = 1
-local selectedID               -- recipeID selected in Find (shared with Mine)
+local selectedID               -- recipeID selected in Find / Mine (shared)
 local dirty = true
 local owner = {}               -- callback owner; CallbackHandler refuses NS itself
 local find, mine, reqs = {}, {}, {}
 local footer
+local portraitNow
 
 -- Helpers ---------------------------------------------------------------
 
@@ -67,6 +86,12 @@ local function UIDB()
   return CraftBoardDB.ui
 end
 
+local function Collapsed()
+  local db = UIDB()
+  if not db then return {} end
+  if type(db.collapsed) ~= "table" then db.collapsed = {} end
+  return db.collapsed
+end
 local function Short(name)
   if type(name) ~= "string" then return "?" end
   if Ambiguate then return Ambiguate(name, "none") end
@@ -309,15 +334,6 @@ local function HRule(parent)
   return t
 end
 
--- Gold section header with a thin rule under it, like the Professions window's group
--- headers. Callers anchor the label's TOPLEFT and hang content off the returned rule.
-local function SectionHeader(parent, text)
-  local fs = Label(parent, text, "GameFontNormal")
-  local rule = HRule(parent)
-  rule:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -3)
-  rule:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
-  return fs, rule
-end
 
 -- Icon trimmed of its baked-in edge, on a 1 px dark backdrop (icon.border).
 local function BorderedIcon(parent, size)
@@ -364,17 +380,261 @@ local function OpenWhisper(name, itemID, qty)
   return false
 end
 
+-- Dark bordered panel: InsetFrameTemplate when present, else a dark fill with a 1 px edge.
+local function NewInset(parent)
+  if HasTemplate("InsetFrameTemplate") then
+    local ok, inset = pcall(CreateFrame, "Frame", nil, parent, "InsetFrameTemplate")
+    if ok and inset then return inset end
+  end
+  local inset = CreateFrame("Frame", nil, parent)
+  local bg = inset:CreateTexture(nil, "BACKGROUND", nil, -5)
+  bg:SetAllPoints()
+  bg:SetColorTexture(0, 0, 0, 0.45)
+  for _, side in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }) do
+    local edge = inset:CreateTexture(nil, "BORDER")
+    edge:SetPoint(side[1])
+    edge:SetPoint(side[2])
+    if side[1] == "TOPLEFT" and side[2] == "BOTTOMLEFT" or side[1] == "TOPRIGHT" then edge:SetWidth(1) else edge:SetHeight(1) end
+    edge:SetColorTexture(0.35, 0.3, 0.2, 0.8)
+  end
+  return inset
+end
+
+-- Full-size decorative texture on an inset (above its own background).
+local function InsetArt(inset, atlas, alpha)
+  if not HasAtlas(atlas) then return nil end
+  local t = inset:CreateTexture(nil, "BACKGROUND", nil, 1)
+  t:SetPoint("TOPLEFT", 3, -3)
+  t:SetPoint("BOTTOMRIGHT", -3, 3)
+  t:SetAtlas(atlas, false)
+  t:SetAlpha(alpha or 1)
+  return t
+end
+
+-- Quantity box: Blizzard's NumericInputSpinnerTemplate (the "< 1 >" box of the Create row)
+-- when present, else a plain numeric edit box. Returns the box and whether it is a spinner.
+local function QtyBox(name, parent)
+  if HasTemplate("NumericInputSpinnerTemplate") then
+    local ok, e = pcall(CreateFrame, "EditBox", name, parent, "NumericInputSpinnerTemplate")
+    if ok and e then
+      if e.SetMinMaxValues then pcall(e.SetMinMaxValues, e, 1, 999) end
+      if e.SetValue then pcall(e.SetValue, e, 1) end
+      if (e:GetText() or "") == "" then e:SetText("1") end
+      return e, true
+    end
+  end
+  local e = EditBox(name, parent, 36, 4, true)
+  e:SetText("1")
+  return e, false
+end
+
+-- Filter button, like the Professions list's "Filter" dropdown. entries() returns
+-- { kind = "radio" | "check" | "divider", text =, get = fn -> bool, set = fn, tip = } lists;
+-- isDefault() tells whether the filters are at their defaults, reset() restores them.
+-- Uses WowStyle1FilterDropdownTemplate + SetupMenu, else a plain button opening
+-- MenuUtil.CreateContextMenu, else a plain button: click cycles the radio entries and
+-- right-click toggles the first check entry.
+local function MenuGenerator(entries)
+  return function(_, root)
+    for _, e in ipairs(entries()) do
+      local desc
+      if e.kind == "radio" and root.CreateRadio then
+        desc = root:CreateRadio(e.text, e.get, e.set)
+      elseif e.kind == "check" and root.CreateCheckbox then
+        desc = root:CreateCheckbox(e.text, e.get, e.set)
+      elseif e.kind == "divider" and root.CreateDivider then
+        root:CreateDivider()
+      end
+      if desc and e.tip and desc.SetTooltip then
+        desc:SetTooltip(function(tooltip)
+          tooltip:SetText(e.text)
+          tooltip:AddLine(e.tip, 1, 1, 1, true)
+        end)
+      end
+    end
+  end
+end
+
+local function NewFilterButton(parent, entries, isDefault, reset)
+  if HasTemplate("WowStyle1FilterDropdownTemplate") then
+    local ok, dd = pcall(CreateFrame, "DropdownButton", nil, parent, "WowStyle1FilterDropdownTemplate")
+    if ok and dd and dd.SetupMenu and pcall(dd.SetupMenu, dd, MenuGenerator(entries)) then
+      if dd.SetIsDefaultCallback then pcall(dd.SetIsDefaultCallback, dd, isDefault) end
+      if dd.SetDefaultCallback then pcall(dd.SetDefaultCallback, dd, reset) end
+      dd.cbMode = "dropdown"
+      return dd
+    elseif ok and dd then
+      dd:Hide()
+    end
+  end
+  local b = PanelButton(parent, L["Filter"], 93, 22)
+  if b.RegisterForClicks then b:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+  if MenuUtil and MenuUtil.CreateContextMenu then
+    b.cbMode = "menu"
+    b:SetScript("OnClick", function(self)
+      pcall(MenuUtil.CreateContextMenu, self, MenuGenerator(entries))
+    end)
+    return b
+  end
+  b.cbMode = "cycle"
+  b:SetScript("OnClick", function(_, button)
+    local list = entries()
+    if button == "RightButton" then
+      for _, e in ipairs(list) do
+        if e.kind == "check" then e.set() break end
+      end
+      return
+    end
+    local radios, cur = {}, 0
+    for _, e in ipairs(list) do
+      if e.kind == "radio" then
+        radios[#radios + 1] = e
+        if e.get() then cur = #radios end
+      end
+    end
+    if #radios > 0 then radios[cur % #radios + 1].set() end
+  end)
+  b:SetScript("OnEnter", function(self)
+    local body
+    for _, e in ipairs(entries()) do
+      if e.kind == "radio" and e.get() then body = e.text end
+      if e.kind == "check" then
+        body = (body and body .. "\n" or "") .. format(L["Right-click: %s"], e.text)
+      end
+    end
+    TextTooltip(self, L["Filter"], body)
+  end)
+  b:SetScript("OnLeave", HideTooltip)
+  return b
+end
+
+-- After a filter change: the dropdown's reset "x", or the cycling button's label.
+local function SyncFilterButton(b, entries)
+  if not b then return end
+  if b.cbMode == "dropdown" then
+    if b.ValidateResetState then pcall(b.ValidateResetState, b) end
+  elseif b.cbMode == "cycle" then
+    local label = L["Filter"]
+    for _, e in ipairs(entries()) do
+      if e.kind == "radio" and e.get() then label = e.text end
+    end
+    b:SetText(label)
+  end
+end
+
+-- Professions: portrait icon and recipe page background --------------------
+
+-- Enum.Profession keys by skill line, for Blizzard's "Professions-Recipe-Background-<Kit>".
+local PROF_KITS = {
+  [129] = "FirstAid", [164] = "Blacksmithing", [165] = "Leatherworking", [171] = "Alchemy",
+  [182] = "Herbalism", [185] = "Cooking", [186] = "Mining", [197] = "Tailoring",
+  [202] = "Engineering", [333] = "Enchanting", [356] = "Fishing", [393] = "Skinning",
+  [755] = "Jewelcrafting", [773] = "Inscription",
+}
+
+local function ProfKit(profID)
+  if type(profID) ~= "number" then return nil end
+  if PROF_KITS[profID] then return PROF_KITS[profID] end
+  local T = C_TradeSkillUI
+  if T and T.GetProfessionInfoBySkillLineID and Enum and type(Enum.Profession) == "table" then
+    local ok, info = pcall(T.GetProfessionInfoBySkillLineID, profID)
+    if ok and type(info) == "table" and info.profession ~= nil then
+      for k, v in pairs(Enum.Profession) do
+        if v == info.profession then return k end
+      end
+    end
+  end
+  return nil
+end
+
+local function BackgroundAtlas(profID)
+  local kit = ProfKit(profID)
+  if kit then
+    for _, fmt in ipairs({ "Professions-Recipe-Background-%s", "Professions-Background-%s" }) do
+      local name = format(fmt, kit)
+      if HasAtlas(name) then return name end
+    end
+  end
+  if HasAtlas("Professions-Recipe-Background") then return "Professions-Recipe-Background" end
+  return nil
+end
+
+-- Decorative page background of a detail inset (t.bg), per profession, at low alpha.
+local function SetDetailBackground(t, profID)
+  if not t.bg then return end
+  local atlas = BackgroundAtlas(profID)
+  if atlas == t.bgAtlas and t.bgSet then return end
+  t.bgAtlas, t.bgSet = atlas, true
+  if atlas then
+    t.bg:SetAtlas(atlas, false)
+    t.bg:SetAlpha(0.45)
+    t.bg:Show()
+  else
+    t.bg:Hide()
+  end
+end
+
+-- Profession icon: stored by the scan on one of my chars, else asked from the client.
+local function ProfIcon(profID)
+  if profID == nil then return nil end
+  if type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" then
+    local function iconOf(c)
+      local p = type(c) == "table" and type(c.profs) == "table" and c.profs[profID]
+      return type(p) == "table" and p.icon or nil
+    end
+    local t = NS.Me and iconOf(CraftBoardDB.chars[NS.Me])
+    if t then return t end
+    for _, c in pairs(CraftBoardDB.chars) do
+      t = iconOf(c)
+      if t then return t end
+    end
+  end
+  return NS.Recipes and NS.Recipes.ProfessionIcon and NS.Recipes.ProfessionIcon(profID) or nil
+end
+
+-- Item description for the recipe page: Blizzard's recipe description for my recipes, else
+-- the item tooltip's "Use:" line, else its flavour text. nil when none.
+local function ItemDescription(recipeID, itemID)
+  local T = C_TradeSkillUI
+  if T and T.GetRecipeDescription and type(recipeID) == "number"
+    and NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(recipeID) then
+    local ok, d = pcall(T.GetRecipeDescription, recipeID, {})
+    if ok and type(d) == "string" and d ~= "" then return d end
+  end
+  if type(itemID) ~= "number" or not (C_TooltipInfo and C_TooltipInfo.GetItemByID) then return nil end
+  local ok, data = pcall(C_TooltipInfo.GetItemByID, itemID)
+  if not ok or type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+  local use, flavor
+  local useP = type(ITEM_SPELL_TRIGGER_ONUSE) == "string" and ITEM_SPELL_TRIGGER_ONUSE or "Use:"
+  local equipP = type(ITEM_SPELL_TRIGGER_ONEQUIP) == "string" and ITEM_SPELL_TRIGGER_ONEQUIP or "Equip:"
+  for i = 2, #data.lines do
+    local line = data.lines[i]
+    if type(line) == "table" then
+      if line.leftText == nil and TooltipUtil and TooltipUtil.SurfaceArgs then pcall(TooltipUtil.SurfaceArgs, line) end
+      local t = line.leftText
+      if type(t) == "string" and t ~= "" then
+        if not use and (t:sub(1, #useP) == useP or t:sub(1, #equipP) == equipP) then use = t end
+        if not flavor and t:sub(1, 1) == "\"" then flavor = t end
+      end
+    end
+  end
+  return use or flavor
+end
+
 -- Virtual list --------------------------------------------------------------
 -- A plain ScrollFrame whose child is sized for every item; only the visible rows exist and
--- are re-anchored on scroll. opts: bar (scrollbar, default true), inline (empty text
--- top-left instead of centered). The bar is a retail MinimalScrollBar wired by ScrollUtil
--- when both exist, else the legacy UIPanelScrollFrameTemplate.
+-- are re-anchored on scroll. Rows may differ in height (opts.heightOf(item), default
+-- rowHeight): item tops are summed once per SetItems. opts: bar (scrollbar, default true),
+-- inline (empty text top-left instead of centered), stripes (default true). The bar is a
+-- retail MinimalScrollBar wired by ScrollUtil when both exist, else the legacy
+-- UIPanelScrollFrameTemplate.
 local List = {}
 List.__index = List
 
 local function NewList(name, parent, rowHeight, makeRow, fillRow, opts)
   opts = opts or {}
-  local self = setmetatable({ rowHeight = rowHeight, items = {}, rows = {}, makeRow = makeRow, fillRow = fillRow }, List)
+  local self = setmetatable({ rowHeight = rowHeight, items = {}, tops = {}, total = 0, rows = {},
+    makeRow = makeRow, fillRow = fillRow, heightOf = opts.heightOf, stripes = opts.stripes ~= false }, List)
   local box = CreateFrame("Frame", nil, parent)
   self.box = box
 
@@ -413,7 +673,7 @@ local function NewList(name, parent, rowHeight, makeRow, fillRow, opts)
   if not legacy then
     scroll:EnableMouseWheel(true)
     scroll:SetScript("OnMouseWheel", function(s, delta)
-      local range = max(0, #self.items * rowHeight - (s:GetHeight() or 0))
+      local range = max(0, self.total - (s:GetHeight() or 0))
       s:SetVerticalScroll(min(range, max(0, (s:GetVerticalScroll() or 0) - delta * rowHeight * 3)))
       self:Render()
     end)
@@ -445,8 +705,19 @@ local function NewList(name, parent, rowHeight, makeRow, fillRow, opts)
   return self
 end
 
+function List:HeightAt(i)
+  local hf = self.heightOf
+  return hf and hf(self.items[i]) or self.rowHeight
+end
+
 function List:SetItems(items, emptyText, keepScroll)
   self.items = items or {}
+  local tops, y = {}, 0
+  for i = 1, #self.items do
+    tops[i] = y
+    y = y + self:HeightAt(i)
+  end
+  self.tops, self.total = tops, y
   if not keepScroll then self.scroll:SetVerticalScroll(0) end
   self.empty:SetText(emptyText or "")
   self.empty:SetShown(#self.items == 0 and emptyText ~= nil)
@@ -465,53 +736,55 @@ function List:Render()
   -- Setting the scroll below re-enters through OnVerticalScroll (and the bar's callback).
   if self.rendering then return end
   self.rendering = true
-  local rowH = self.rowHeight
-  local total = #self.items
+  local items, tops, total = self.items, self.tops, self.total
+  local n = #items
   local h = self.scroll:GetHeight() or 0
-  if h <= 0 then h = rowH * 10 end
-  self:UpdateBar(total * rowH > h + 0.5)
+  if h <= 0 then h = self.rowHeight * 10 end
+  self:UpdateBar(total > h + 0.5)
   self.child:SetWidth(max(1, self.scroll:GetWidth() or 1))
-  self.child:SetHeight(max(1, total * rowH))
+  self.child:SetHeight(max(1, total))
 
-  local maxScroll = max(0, total * rowH - h)
+  local maxScroll = max(0, total - h)
   local offset = self.scroll:GetVerticalScroll() or 0
   if offset > maxScroll then
     offset = maxScroll
     self.scroll:SetVerticalScroll(maxScroll)
   end
 
-  local first = floor(offset / rowH) + 1
-  local visible = ceil(h / rowH) + 1
-  for i = 1, visible do
-    local idx = first + i - 1
-    local row = self.rows[i]
-    if idx <= total then
-      if not row then
-        row = self.makeRow(self.child, rowH)
-        self.rows[i] = row
-      end
-      row:ClearAllPoints()
-      row:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -(idx - 1) * rowH)
-      row:SetPoint("TOPRIGHT", self.child, "TOPRIGHT", 0, -(idx - 1) * rowH)
-      row:SetHeight(rowH)
-      row.index = idx
-      if row.stripe then row.stripe:SetShown(idx % 2 == 0) end
-      self.fillRow(row, self.items[idx], idx)
-      row:Show()
-    elseif row then
-      row:Hide()
-    end
+  -- Last item whose top is at or above the offset (binary search), then down the viewport.
+  local lo, hi = 1, n
+  while lo < hi do
+    local mid = floor((lo + hi + 1) / 2)
+    if tops[mid] <= offset then lo = mid else hi = mid - 1 end
   end
-  for i = visible + 1, #self.rows do self.rows[i]:Hide() end
+  local slot, idx = 0, lo
+  while idx <= n and tops[idx] < offset + h do
+    slot = slot + 1
+    local row = self.rows[slot]
+    if not row then
+      row = self.makeRow(self.child, self.rowHeight)
+      self.rows[slot] = row
+    end
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -tops[idx])
+    row:SetPoint("TOPRIGHT", self.child, "TOPRIGHT", 0, -tops[idx])
+    row:SetHeight(self:HeightAt(idx))
+    row.index = idx
+    if row.stripe then row.stripe:SetShown(self.stripes and idx % 2 == 0) end
+    self.fillRow(row, items[idx], idx)
+    row:Show()
+    idx = idx + 1
+  end
+  for i = slot + 1, #self.rows do self.rows[i]:Hide() end
   self.rendering = false
 end
 
 -- Scroll just enough for item idx to be fully visible.
 function List:ScrollTo(idx)
-  local rowH = self.rowHeight
   local h = self.scroll:GetHeight() or 0
-  if h <= 0 or not idx then return end
-  local top, bottom = (idx - 1) * rowH, idx * rowH
+  if h <= 0 or not idx or not self.tops[idx] then return end
+  local top = self.tops[idx]
+  local bottom = top + self:HeightAt(idx)
   local offset = self.scroll:GetVerticalScroll() or 0
   if top < offset then
     self.scroll:SetVerticalScroll(top)
@@ -521,9 +794,9 @@ function List:ScrollTo(idx)
   self:Render()
 end
 
--- Row base: button with the standard list-box hover highlight, a soft gold selection tint
--- and a very faint stripe on even rows.
-local function RowBase(parent, rowH)
+-- Row base: button with a hover highlight, a selection tint and a very faint stripe on even
+-- rows. blizzard=true uses the Professions list's selected / hover atlases when present.
+local function RowBase(parent, rowH, blizzard)
   local row = CreateFrame("Button", nil, parent)
   row:SetHeight(rowH)
   local stripe = row:CreateTexture(nil, "BACKGROUND", nil, -1)
@@ -533,104 +806,190 @@ local function RowBase(parent, rowH)
   row.stripe = stripe
   local sel = row:CreateTexture(nil, "BACKGROUND")
   sel:SetAllPoints()
-  sel:SetColorTexture(1, 0.82, 0, 0.14)
+  if blizzard and HasAtlas(SELECTED_ATLAS) then
+    sel:SetAtlas(SELECTED_ATLAS, false)
+  else
+    sel:SetColorTexture(1, 0.82, 0, 0.14)
+  end
   sel:Hide()
   row.sel = sel
   local hl = row:CreateTexture(nil, "HIGHLIGHT")
   hl:SetAllPoints()
-  if hl:SetTexture(HIGHLIGHT_TEX) then
+  local hlAlpha = 1
+  if blizzard and HasAtlas(HOVER_ATLAS) then
+    hl:SetAtlas(HOVER_ATLAS, false)
+    hlAlpha = 0.5
+  elseif hl:SetTexture(HIGHLIGHT_TEX) then
     hl:SetBlendMode("ADD")
     hl:SetVertexColor(1, 1, 1, 0.5)
   else
     hl:SetColorTexture(1, 1, 1, 0.08)
   end
+  row.hl = hl
+  row.hlAlpha = hlAlpha
+  hl:SetAlpha(hlAlpha)
   row:SetScript("OnLeave", HideTooltip)
   return row
 end
 
-local function IconRow(parent, rowH, iconSize)
-  local row = RowBase(parent, rowH)
-  row.icon = BorderedIcon(row, iconSize)
-  row.icon:SetPoint("LEFT", 4, 0)
-  return row
+local function ShowParts(parts, on)
+  for i = 1, #parts do parts[i]:SetShown(on) end
 end
 
--- Chips: small flat toggle buttons (gold text + underline when active). Template-free.
-local function NewChip(parent)
-  local b = CreateFrame("Button", nil, parent)
-  b:SetHeight(20)
-  local bg = b:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(1, 0.82, 0, 0.10)
-  b.bg = bg
-  local line = b:CreateTexture(nil, "ARTWORK")
-  line:SetHeight(1)
-  line:SetPoint("BOTTOMLEFT")
-  line:SetPoint("BOTTOMRIGHT")
-  line:SetColorTexture(1, 0.82, 0, 0.8)
-  b.line = line
-  local hl = b:CreateTexture(nil, "HIGHLIGHT")
-  hl:SetAllPoints()
-  hl:SetColorTexture(1, 1, 1, 0.08)
-  b.label = Label(b, nil, "GameFontHighlightSmall")
-  b.label:SetPoint("LEFT", 6, 0)
-  b.label:SetPoint("RIGHT", -6, 0)
-  b.label:SetJustifyH("CENTER")
-  b:SetScript("OnLeave", HideTooltip)
-  return b
-end
+-- Grouped recipe list row: a recipe (icon, name, right-aligned status, check) or a group
+-- header. Category headers use the Professions list's header bar (gold label, collapse
+-- toggle on the right); profession headers (the "All professions" view) a large gold label
+-- with the profession icon over a rule. One pooled row type serves all three.
+local function GroupRowFactory(onSelect, onToggle)
+  return function(parent, rowH)
+    local row = RowBase(parent, rowH, true)
+    -- Recipe parts.
+    row.icon = BorderedIcon(row, 16)
+    row.check = row:CreateTexture(nil, "ARTWORK")
+    row.check:SetSize(14, 14)
+    row.check:SetPoint("RIGHT", -4, 0)
+    row.check:SetTexture(READY_TEX)
+    row.status = Muted(Label(row, nil, "GameFontHighlightSmall"))
+    row.status:SetPoint("RIGHT", -22, 0)       -- no width: sized to its text, name takes the rest
+    row.status:SetJustifyH("RIGHT")
+    row.name = Label(row, nil, "GameFontHighlight")
+    row.name:SetPoint("LEFT", row.icon, "RIGHT", 5, 0)
+    row.name:SetPoint("RIGHT", row.status, "LEFT", -6, 0)
+    row.recipeParts = { row.icon, row.icon.border, row.name, row.status }
 
-local function SetChipActive(chip, on)
-  chip.active = on and true or false
-  chip.bg:SetShown(chip.active)
-  chip.line:SetShown(chip.active)
-  if chip.active then
-    chip.label:SetTextColor(GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3])
-  else
-    chip.label:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
+    -- Category header bar, bottom-aligned 25 px like ProfessionsRecipeListCategoryTemplate.
+    row.catParts = {}
+    if HasAtlas(HEADER_L) and HasAtlas(HEADER_M) and HasAtlas(HEADER_R) then
+      local l = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+      l:SetAtlas(HEADER_L, true)
+      local r = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+      r:SetAtlas(HEADER_R, true)
+      r:SetPoint("RIGHT", row, "BOTTOMRIGHT", 0, 14)
+      local m = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+      m:SetAtlas(HEADER_M, false)
+      m:SetPoint("TOPLEFT", l, "TOPRIGHT")
+      m:SetPoint("BOTTOMRIGHT", r, "BOTTOMLEFT")
+      row.barLeft = l
+      row.catParts = { l, m, r }
+    else
+      local bg = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+      bg:SetColorTexture(0.12, 0.09, 0.03, 0.9)
+      bg:SetPoint("BOTTOMRIGHT", 0, 2)
+      bg:SetHeight(23)
+      local line = row:CreateTexture(nil, "BACKGROUND", nil, 2)
+      line:SetColorTexture(GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3], 0.7)
+      line:SetPoint("BOTTOMLEFT", bg, "BOTTOMLEFT")
+      line:SetPoint("BOTTOMRIGHT", bg, "BOTTOMRIGHT")
+      line:SetHeight(1)
+      row.barLeft = bg
+      row.catParts = { bg, line }
+    end
+
+    -- Profession header: icon, large label, count, rule.
+    row.profIcon = BorderedIcon(row, 18)
+    row.count = Muted(Label(row, nil, "GameFontHighlightSmall"))
+    row.count:SetPoint("RIGHT", row, "BOTTOMRIGHT", -30, 13)
+    row.count:SetJustifyH("RIGHT")
+    row.rule = HRule(row)
+    row.rule:SetPoint("BOTTOMRIGHT", 0, 1)
+    row.profParts = { row.profIcon, row.profIcon.border, row.count, row.rule }
+
+    -- Shared by both headers: gold label and the collapse toggle.
+    row.header = Label(row, nil, "GameFontNormal")
+    if HasAtlas(COLLAPSE_ATLAS) and HasAtlas(EXPAND_ATLAS) then
+      row.toggle = row:CreateTexture(nil, "ARTWORK")
+      row.toggleAtlas = true
+    else
+      row.toggleAtlas = false
+      row.toggle = Label(row, nil, "GameFontNormalLarge")
+      row.toggle:SetJustifyH("CENTER")
+    end
+    row.toggle:SetPoint("RIGHT", row, "BOTTOMRIGHT", -10, 13)
+    row.headerParts = { row.header, row.toggle }
+
+    row:SetScript("OnEnter", function(self)
+      local it = self.item
+      if it and not it.kind then ShowTooltip(self, it.outputItemID, it.recipeID) end
+    end)
+    row:SetScript("OnClick", function(self)
+      local it = self.item
+      if not it then return end
+      if it.kind then onToggle(it) else onSelect(it) end
+    end)
+    return row
   end
 end
 
--- Lay out chips left to right within `avail` px; wide labels shrink (truncated with "...").
-local function LayoutChips(chips, count, avail, gap)
-  local nat = {}
-  local total = 0
-  for i = 1, count do
-    nat[i] = ceil(StringWidth(chips[i].label)) + 16
-    total = total + nat[i]
-  end
-  local budget = avail - gap * (count - 1)
-  local cap
-  if total > budget then
-    -- Fair share: narrow chips keep their width, the rest split what is left.
-    local order = {}
-    for i = 1, count do order[i] = i end
-    table.sort(order, function(a, b) return nat[a] < nat[b] end)
-    local left, n = budget, count
-    cap = floor(budget / count)
-    for _, i in ipairs(order) do
-      if nat[i] <= left / n then
-        left, n = left - nat[i], n - 1
+local function GroupFill(fillEntry)
+  return function(row, it)
+    row.item = it
+    local kind = it.kind
+    local x = (it.depth or 0) * INDENT
+    ShowParts(row.recipeParts, kind == nil)
+    ShowParts(row.catParts, kind == "cat")
+    ShowParts(row.profParts, kind == "prof")
+    ShowParts(row.headerParts, kind ~= nil)
+    if kind == nil then
+      row.entry = it
+      row.hl:SetAlpha(row.hlAlpha)
+      row.icon:ClearAllPoints()
+      row.icon:SetPoint("LEFT", x + 6, 0)
+      fillEntry(row, it)
+      return
+    end
+    row.entry = nil
+    row.check:Hide()
+    row.sel:Hide()
+    row.hl:SetAlpha(0.35)
+    row.header:ClearAllPoints()
+    if kind == "cat" then
+      row.barLeft:ClearAllPoints()
+      if row.catParts[3] then
+        row.barLeft:SetPoint("LEFT", row, "BOTTOMLEFT", x, 14)
       else
-        cap = max(28, floor(left / n))
-        break
+        row.barLeft:SetPoint("BOTTOMLEFT", x, 2)
       end
+      row.header:SetFontObject("GameFontNormal")
+      row.header:SetPoint("LEFT", row, "BOTTOMLEFT", x + 10, 14)
+    else
+      row.profIcon:ClearAllPoints()
+      row.profIcon:SetPoint("LEFT", row, "BOTTOMLEFT", x + 3, 13)
+      local icon = ProfIcon(it.prof)
+      row.profIcon:SetTexture(icon or QUESTION)
+      row.profIcon:SetShown(icon ~= nil)
+      row.profIcon.border:SetShown(icon ~= nil)
+      row.header:SetFontObject(Font("GameFontNormalLarge", "GameFontNormal"))
+      row.header:SetPoint("LEFT", row, "BOTTOMLEFT", x + (icon and 27 or 3), 13)
+      row.count:SetText(it.count or "")
+      row.rule:ClearAllPoints()
+      row.rule:SetPoint("BOTTOMLEFT", x, 1)
+      row.rule:SetPoint("BOTTOMRIGHT", 0, 1)
+    end
+    row.header:SetPoint("RIGHT", row, "BOTTOMRIGHT", kind == "prof" and -60 or -30, 13)
+    row.header:SetText(it.name)
+    row.header:SetTextColor(GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3])
+    if row.toggleAtlas then
+      row.toggle:SetAtlas(it.collapsed and EXPAND_ATLAS or COLLAPSE_ATLAS, true)
+    else
+      row.toggle:SetText(it.collapsed and "+" or EN_DASH)
+      row.toggle:SetTextColor(GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3])
     end
   end
-  local x = 0
-  for i = 1, count do
-    local w = cap and min(nat[i], cap) or nat[i]
-    chips[i]:SetWidth(w)
-    chips[i]:ClearAllPoints()
-    chips[i]:SetPoint("LEFT", chips.anchor, "LEFT", x, 0)
-    chips[i]:Show()
-    x = x + w + gap
-  end
-  for i = count + 1, #chips do chips[i]:Hide() end
 end
 
--- A title too long for the (narrow) detail pane drops to a smaller font on up to two lines;
--- the profession sub line gives way to it. Re-run when the pane is resized.
+local function GroupHeight(it)
+  if it.kind == "prof" then return PROF_H end
+  if it.kind == "cat" then return CAT_H end
+  return RECIPE_H
+end
+
+-- Recipe page header ------------------------------------------------------
+-- Like the Professions recipe page: a round 46 px icon in a ring (Blizzard's
+-- CircularGiantItemButton: round mask + the quality-tinted auction house ring; a masked
+-- bronze disc when that atlas is missing), the quality-coloured name beside it, a muted
+-- "Profession · Rank" line under the name and the item's description under the icon.
+-- Without mask support the icon is the square 40 px bordered one.
+
 local function FitHeader(h)
   local t = h.title
   t:SetFontObject(Font("GameFontNormalMed3", "GameFontNormalLarge"))
@@ -648,30 +1007,80 @@ local function FitHeader(h)
   if h.rgb then t:SetTextColor(h.rgb[1], h.rgb[2], h.rgb[3]) end
 end
 
--- Item header, like the Professions recipe header: bordered 40 px icon, quality-coloured
--- name, muted "Profession · Rank" line under it.
+local function RoundMask(holder, target, inset)
+  local mask = holder.CreateMaskTexture and holder:CreateMaskTexture()
+  if not (mask and target.AddMaskTexture) then return nil end
+  if HasAtlas(MASK_ATLAS) then
+    mask:SetAtlas(MASK_ATLAS, false)
+  else
+    mask:SetTexture(ROUND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+  end
+  mask:SetPoint("TOPLEFT", target, "TOPLEFT", inset, -inset)
+  mask:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", -inset, inset)
+  target:AddMaskTexture(mask)
+  return mask
+end
+
 local function NewHeader(parent)
   local h = {}
-  h.icon = BorderedIcon(parent, HEADER_ICON)
-  h.icon:SetPoint("TOPLEFT", 1, -1)
-  local hit = CreateFrame("Frame", nil, parent)
-  hit:SetAllPoints(h.icon)
-  hit:EnableMouse(true)
-  hit:SetScript("OnEnter", function(self)
+  local holder = CreateFrame("Frame", nil, parent)
+  holder:SetSize(ICON_SIZE + 8, ICON_SIZE + 8)
+  holder:SetPoint("TOPLEFT", 0, 0)
+  holder:EnableMouse(true)
+  holder:SetScript("OnEnter", function(self)
     if h.recipeID then ShowTooltip(self, h.itemID, h.recipeID) end
   end)
-  hit:SetScript("OnLeave", HideTooltip)
+  holder:SetScript("OnLeave", HideTooltip)
+  h.holder = holder
+
+  local icon = holder:CreateTexture(nil, "ARTWORK")
+  icon:SetSize(ICON_SIZE, ICON_SIZE)
+  icon:SetPoint("CENTER")
+  icon:SetTexCoord(0.078125, 0.921875, 0.078125, 0.921875)
+  h.icon = icon
+  if RoundMask(holder, icon, 2) then
+    h.round = true
+    if HasAtlas(RING_ATLAS) then
+      local ring = holder:CreateTexture(nil, "OVERLAY")
+      ring:SetAtlas(RING_ATLAS, false)
+      ring:SetSize(ICON_SIZE + 22, ICON_SIZE + 22)
+      ring:SetPoint("CENTER")
+      h.ring = ring
+    else
+      local disc = holder:CreateTexture(nil, "BORDER")
+      disc:SetSize(ICON_SIZE + 2, ICON_SIZE + 2)
+      disc:SetPoint("CENTER")
+      disc:SetColorTexture(RING_RGB[1], RING_RGB[2], RING_RGB[3], 1)
+      RoundMask(holder, disc, 0)
+      h.ring = disc
+    end
+  else
+    icon:SetSize(40, 40)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    local border = holder:CreateTexture(nil, "BORDER")
+    border:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
+    border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
+    border:SetColorTexture(0, 0, 0, 0.85)
+    icon.border = border
+  end
+
+  local textX = ICON_SIZE + 16
   h.title = Label(parent, nil, Font("GameFontNormalMed3", "GameFontNormalLarge"))
-  h.title:SetPoint("TOPLEFT", HEADER_ICON + 10, -4)
-  h.title:SetPoint("TOPRIGHT", -2, -4)
+  h.title:SetPoint("TOPLEFT", textX, -9)
+  h.title:SetPoint("TOPRIGHT", -2, -9)
   h.sub = Muted(Label(parent, nil, "GameFontHighlightSmall"))
-  h.sub:SetPoint("BOTTOMLEFT", parent, "TOPLEFT", HEADER_ICON + 10, -38)
-  h.sub:SetPoint("BOTTOMRIGHT", parent, "TOPRIGHT", -2, -38)
+  h.sub:SetPoint("TOPLEFT", textX, -32)
+  h.sub:SetPoint("TOPRIGHT", -2, -32)
+  h.desc = Label(parent, nil, "GameFontHighlight")
+  h.desc:SetPoint("TOPLEFT", holder, "BOTTOMLEFT", 0, -6)
+  h.desc:SetPoint("RIGHT", parent, "RIGHT", -2, 0)
+  if h.desc.SetWordWrap then h.desc:SetWordWrap(true) end
+  if h.desc.SetMaxLines then h.desc:SetMaxLines(3) end
   parent:HookScript("OnSizeChanged", function() FitHeader(h) end)
   return h
 end
 
-local function FillHeader(h, recipeID, itemID, name, sub)
+local function FillHeader(h, recipeID, itemID, name, sub, desc)
   h.recipeID, h.itemID = recipeID, itemID
   h.icon:SetTexture(RecipeIcon(recipeID, itemID))
   local itemName = itemID and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(itemID)
@@ -679,9 +1088,104 @@ local function FillHeader(h, recipeID, itemID, name, sub)
   local r, g, b = NameRGB(itemID)
   h.rgb = { r, g, b }
   h.sub:SetText(sub or "")
+  h.hasDesc = type(desc) == "string" and desc ~= ""
+  h.desc:SetText(h.hasDesc and desc or "")
+  h.desc:SetShown(h.hasDesc)
+  if h.ring and h.ring.SetVertexColor then
+    local q = ItemQuality(itemID)
+    if type(q) == "number" and q >= 2 then
+      h.ring:SetVertexColor(QualityRGB(q))
+    else
+      h.ring:SetVertexColor(RING_RGB[1], RING_RGB[2], RING_RGB[3])
+    end
+  end
   FitHeader(h)
 end
 
+-- Anchor a section label ("Reagents:") under the header: under the description when there
+-- is one, else under the icon.
+local function AnchorBelowHeader(h, fs)
+  fs:ClearAllPoints()
+  if h.hasDesc then
+    fs:SetPoint("TOPLEFT", h.desc, "BOTTOMLEFT", 0, -12)
+  else
+    fs:SetPoint("TOPLEFT", h.holder, "BOTTOMLEFT", 0, -8)
+  end
+end
+
+-- Detail rows ---------------------------------------------------------------
+
+-- Crafter: name green when online, grey when offline; me and my alts marked.
+local function CrafterRow(parent, rowH)
+  local row = RowBase(parent, rowH)
+  row.state = Muted(Label(row, nil, "GameFontHighlightSmall"))
+  row.state:SetPoint("RIGHT", -4, 0)
+  row.state:SetJustifyH("RIGHT")
+  row.name = Label(row, nil, "GameFontHighlight")
+  row.name:SetPoint("LEFT", 4, 0)
+  row.name:SetPoint("RIGHT", row.state, "LEFT", -6, 0)
+  row:SetScript("OnEnter", function(self)
+    local c = self.crafter
+    if c and not c.mine then
+      TextTooltip(self, Short(c.name), find.itemID and L["Click to whisper a request."] or nil)
+    end
+  end)
+  row:SetScript("OnClick", function(self)
+    local c = self.crafter
+    if not c or c.mine then return end
+    find.crafter = c.name
+    find.crafters:Render()
+    UI.UpdateWhisper()
+    if find.itemID then OpenWhisper(c.name, find.itemID, ReadQty(find.qty)) end
+  end)
+  return row
+end
+
+local function FillCrafterRow(row, c)
+  row.crafter = c
+  row.name:SetText(Short(c.name))
+  if c.online then
+    row.name:SetTextColor(ONLINE_RGB[1], ONLINE_RGB[2], ONLINE_RGB[3])
+  else
+    row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
+  end
+  if c.mine then
+    row.state:SetText("|cffffd100" .. (c.name == NS.Me and L["you"] or L["alt"]) .. "|r")
+  elseif c.online then
+    row.state:SetText(GREEN .. L["online"] .. "|r")
+  else
+    row.state:SetText(L["offline"])
+  end
+  row:EnableMouse(not c.mine)
+  row.sel:SetShown(not c.mine and c.name == find.crafter)
+end
+
+-- Reagent box, like the recipe page's reagent slots: 36 px icon, "have/need Name" beside it,
+-- red when short, white when enough.
+local function ReagentRow(parent, rowH)
+  local row = RowBase(parent, rowH)
+  row.icon = BorderedIcon(row, 36)
+  row.icon:SetPoint("LEFT", 2, 0)
+  row.name = Label(row, nil, "GameFontHighlight")
+  row.name:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
+  row.name:SetPoint("RIGHT", -4, 0)
+  row:SetScript("OnEnter", function(self) ShowTooltip(self, self.itemID) end)
+  -- Like a shift-click: drop the item link into an open chat box (handy for asking guild).
+  row:SetScript("OnClick", function(self) InsertLink(ItemLink(self.itemID)) end)
+  return row
+end
+
+-- reagent: {itemID=, need=, have=}
+local function FillReagentRow(row, r)
+  row.itemID = r.itemID
+  row.icon:SetTexture(ItemIcon(r.itemID) or QUESTION)
+  row.name:SetText(format(L["%d/%d %s"], r.have, r.need, ItemName(r.itemID)))
+  if r.have >= r.need then
+    row.name:SetTextColor(1, 1, 1)
+  else
+    row.name:SetTextColor(SHORT_RGB[1], SHORT_RGB[2], SHORT_RGB[3])
+  end
+end
 -- Data --------------------------------------------------------------------
 
 local function PeerCounts()
@@ -821,7 +1325,7 @@ local function BuildUniverse()
     local u = {
       recipeID = e.recipeID, name = name, outputItemID = out, crafters = e.crafters or {},
       lname = strlower(name or ""), litem = itemName and strlower(itemName) or nil,
-      prof = ProfOf(e.recipeID), me = false, alt = nil, onlineN = 0, onlineName = nil,
+      prof = ProfOf(e.recipeID), group = R and R.GroupOf and R.GroupOf(e.recipeID, out) or L["Other"], me = false, alt = nil, onlineN = 0, onlineName = nil,
       peersN = 0, peerName = nil, ready = false, times = 0,
     }
     for _, c in ipairs(u.crafters) do
@@ -882,31 +1386,6 @@ local function StatusOrder(a, b)
   if a.name ~= b.name then return a.name < b.name end
   return a.recipeID < b.recipeID
 end
-
--- Find tab ------------------------------------------------------------------
-
-local function FindRow(parent, rowH)
-  local row = IconRow(parent, rowH, 20)
-  row.check = row:CreateTexture(nil, "ARTWORK")
-  row.check:SetSize(14, 14)
-  row.check:SetPoint("RIGHT", -4, 0)
-  row.check:SetTexture(READY_TEX)
-  row.status = Muted(Label(row, nil, "GameFontHighlightSmall"))
-  row.status:SetPoint("RIGHT", -22, 0)       -- no width: sized to its text, name takes the rest
-  row.status:SetJustifyH("RIGHT")
-  row.name = Label(row, nil, "GameFontHighlight")
-  row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-  row.name:SetPoint("RIGHT", row.status, "LEFT", -6, 0)
-  row:SetScript("OnEnter", function(self)
-    if self.entry then ShowTooltip(self, self.entry.outputItemID, self.entry.recipeID) end
-  end)
-  row:SetScript("OnClick", function(self)
-    if not self.entry then return end
-    UI.SelectRecipe(self.entry.recipeID)
-  end)
-  return row
-end
-
 -- "" (only I know it) / "you" / "Alt" / "Bob" / "3 online" / "2 known", then a check if I can
 -- craft it right now.
 local function StatusText(u)
@@ -922,94 +1401,133 @@ local function StatusText(u)
   return ""
 end
 
-local function FillFindRow(row, u)
-  row.entry = u
-  row.icon:SetTexture(RecipeIcon(u.recipeID, u.outputItemID))
-  row.name:SetText(u.name)
-  row.name:SetTextColor(NameRGB(u.outputItemID))
-  row.status:SetText(StatusText(u))
-  row.check:SetShown(u.ready)
-  row.sel:SetShown(u.recipeID == selectedID)
+-- Grouping ------------------------------------------------------------------
+-- entries (already in display order within a group) -> list items: with byProf, profession
+-- headers (sorted by name) each holding category headers; else category headers only.
+-- Categories sort by name, "Other" last. Collapsed groups (CraftBoardDB.ui.collapsed[name])
+-- keep their header only; expandAll (while searching) opens every group that has a match.
+-- Returns items and nav: the visible recipes in order, each with .idx (its item index).
+
+local function CatLess(a, b)
+  local oa, ob = a == L["Other"], b == L["Other"]
+  if oa ~= ob then return ob end
+  return a < b
 end
 
-local function CrafterRow(parent, rowH)
-  local row = RowBase(parent, rowH)
-  row.state = Muted(Label(row, nil, "GameFontHighlightSmall"))
-  row.state:SetPoint("RIGHT", -4, 0)
-  row.state:SetJustifyH("RIGHT")
-  row.name = Label(row, nil, "GameFontHighlightSmall")
-  row.name:SetPoint("LEFT", 4, 0)
-  row.name:SetPoint("RIGHT", row.state, "LEFT", -6, 0)
-  row:SetScript("OnEnter", function(self)
-    local c = self.crafter
-    if c and not c.mine then
-      TextTooltip(self, Short(c.name), find.itemID and L["Click to whisper a request."] or nil)
+local function Grouped(entries, byProf, expandAll, names)
+  local collapsed = expandAll and {} or Collapsed()
+  local profs, profOrder = {}, {}
+  for _, e in ipairs(entries) do
+    local pk = byProf and (e.prof ~= nil and e.prof or "?") or 1
+    local pg = profs[pk]
+    if not pg then
+      pg = { prof = e.prof, name = ProfName(names or {}, e.prof), cats = {}, order = {}, n = 0 }
+      profs[pk] = pg
+      profOrder[#profOrder + 1] = pk
     end
-  end)
-  row:SetScript("OnClick", function(self)
-    local c = self.crafter
-    if not c or c.mine then return end
-    find.crafter = c.name
-    find.crafters:Render()
-    UI.UpdateWhisper()
-    if find.itemID then OpenWhisper(c.name, find.itemID, ReadQty(find.qty)) end
-  end)
-  return row
-end
-
-local function FillCrafterRow(row, c)
-  row.crafter = c
-  if c.mine then
-    row.name:SetText(Short(c.name))
-    row.name:SetTextColor(GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3])
-    row.state:SetText(c.name == NS.Me and L["you"] or L["alt"])
-  elseif c.online then
-    row.name:SetText(Short(c.name))
-    row.name:SetTextColor(1, 1, 1)
-    row.state:SetText(GREEN .. L["online"] .. "|r")
-  else
-    row.name:SetText(Short(c.name))
-    row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
-    row.state:SetText(L["offline"])
+    local cname = e.group or L["Other"]
+    local cg = pg.cats[cname]
+    if not cg then
+      cg = {}
+      pg.cats[cname] = cg
+      pg.order[#pg.order + 1] = cname
+    end
+    cg[#cg + 1] = e
+    pg.n = pg.n + 1
   end
-  row:EnableMouse(not c.mine)
-  row.sel:SetShown(not c.mine and c.name == find.crafter)
+  table.sort(profOrder, function(a, b)
+    if profs[a].name ~= profs[b].name then return profs[a].name < profs[b].name end
+    return tostring(a) < tostring(b)
+  end)
+
+  local items, nav = {}, {}
+  for _, pk in ipairs(profOrder) do
+    local pg = profs[pk]
+    local depth, open = 0, true
+    if byProf then
+      open = not collapsed[pg.name]
+      items[#items + 1] = { kind = "prof", name = pg.name, prof = pg.prof, count = pg.n, depth = 0, collapsed = not open }
+      depth = 1
+    end
+    if open then
+      table.sort(pg.order, CatLess)
+      for _, cname in ipairs(pg.order) do
+        local list = pg.cats[cname]
+        local catOpen = not collapsed[cname]
+        items[#items + 1] = { kind = "cat", name = cname, count = #list, depth = depth, collapsed = not catOpen }
+        if catOpen then
+          for _, e in ipairs(list) do
+            e.depth = depth + 1
+            items[#items + 1] = e
+            e.idx = #items
+            nav[#nav + 1] = e
+          end
+        end
+      end
+    end
+  end
+  return items, nav
 end
 
-local function ReagentRow(parent, rowH)
-  local row = IconRow(parent, rowH, 16)
-  row.count = Label(row, nil, "GameFontHighlightSmall")
-  row.count:SetPoint("RIGHT", -4, 0)
-  row.count:SetJustifyH("RIGHT")
-  row.name = Label(row, nil, "GameFontHighlightSmall")
-  row.name:SetPoint("LEFT", row.icon, "RIGHT", 5, 0)
-  row.name:SetPoint("RIGHT", row.count, "LEFT", -6, 0)
-  row:SetScript("OnEnter", function(self) ShowTooltip(self, self.itemID) end)
-  -- Like a shift-click: drop the item link into an open chat box (handy for asking guild).
-  row:SetScript("OnClick", function(self) InsertLink(ItemLink(self.itemID)) end)
-  return row
+-- Collapse / expand a group header (not while searching: every group is open then).
+local function ToggleGroup(t, it)
+  if t.searching then return end
+  local c = Collapsed()
+  if c[it.name] then c[it.name] = nil else c[it.name] = true end
+  t.refilter(true)
 end
 
--- reagent: {itemID=, need=, have=}
-local function FillReagentRow(row, r)
-  row.itemID = r.itemID
-  row.icon:SetTexture(ItemIcon(r.itemID) or QUESTION)
-  row.name:SetText(ItemName(r.itemID))
-  local color = (r.have >= r.need) and GREEN or RED
-  row.count:SetText(color .. r.have .. "/" .. r.need .. "|r")
+-- The profession filter is shared by Find and Mine (CraftBoardDB.ui.findProf); each tab only
+-- honours it when that profession is in its list.
+local function ValidProf(profList, id)
+  if id == nil then return nil end
+  for _, pr in ipairs(profList or {}) do
+    if pr.id == id then return id end
+  end
+  return nil
 end
 
-local function BuildFindSearch(p)
+local function SortedProfs(profCount, names)
+  local out = {}
+  for id in pairs(profCount) do out[#out + 1] = { id = id, name = ProfName(names, id) } end
+  table.sort(out, function(a, b)
+    if a.name ~= b.name then return a.name < b.name end
+    return tostring(a.id) < tostring(b.id)
+  end)
+  return out
+end
+
+local function SetProf(id)
+  local db = UIDB()
+  if db then db.findProf = id end
+  if activeTab == 2 then UI.FilterMine(false) else UI.FilterFind(false) end
+end
+
+local SetPortrait   -- Window section
+
+-- Portrait: the selected profession's icon, else CraftBoard's own.
+local function UpdatePortrait(profID)
+  if not (frame and MODERN) then return end
+  local tex = (profID ~= nil and ProfIcon(profID)) or PORTRAIT_TEX
+  if tex == portraitNow then return end
+  portraitNow = tex
+  SetPortrait(frame, tex)
+end
+
+-- Search box --------------------------------------------------------------------
+-- Top-left of a list column, like the Professions list. Shared keys for Find and Mine (t):
+-- Enter picks the arrowed or first visible recipe, arrows move the selection through the
+-- visible recipes (t.results), Escape clears the text first and then closes the window.
+local function NewSearchBox(name, parent, t)
   local box
   if HasTemplate("SearchBoxTemplate") then
-    local ok, e = pcall(CreateFrame, "EditBox", "CraftBoardSearchBox", p, "SearchBoxTemplate")
+    local ok, e = pcall(CreateFrame, "EditBox", name, parent, "SearchBoxTemplate")
     if ok then box = e end
   end
   if not box then
-    box = CreateFrame("EditBox", "CraftBoardSearchBox", p, "InputBoxTemplate")
+    box = CreateFrame("EditBox", name, parent, "InputBoxTemplate")
   end
-  box:SetSize(SEARCH_W, 20)
-  box:SetPoint("LEFT", p, "TOPLEFT", TOPBAR_X + 6, -BAND_MID)
+  box:SetHeight(20)
   box:SetAutoFocus(false)
   -- Soft hint while empty: the template's own instructions text, else our own label.
   local hint = box.Instructions
@@ -1018,15 +1536,14 @@ local function BuildFindSearch(p)
     hint:SetPoint("LEFT", 2, 0)
     box.cbHint = hint
   end
-  hint:SetText(L["Type to search"])
+  hint:SetText(L["Search"])
 
   box:SetScript("OnEnterPressed", function(self)
-    local list = find.results or {}
-    local pick = (find.arrowed and selectedID) or (list[1] and list[1].recipeID)
+    local list = t.results or {}
+    local pick = (t.arrowed and selectedID) or (list[1] and list[1].recipeID)
     if pick then UI.SelectRecipe(pick) end
     self:ClearFocus()
   end)
-  -- Escape clears the text first; on an empty box it closes the window.
   box:SetScript("OnEscapePressed", function(self)
     if (self:GetText() or "") ~= "" then
       self:SetText("")
@@ -1036,7 +1553,7 @@ local function BuildFindSearch(p)
     end
   end)
   box:SetScript("OnArrowPressed", function(_, key)
-    local list = find.results or {}
+    local list = t.results or {}
     if #list == 0 then return end
     local idx = 0
     for i, u in ipairs(list) do
@@ -1049,128 +1566,143 @@ local function BuildFindSearch(p)
     else
       return
     end
-    find.arrowed = true
+    t.arrowed = true
     UI.SelectRecipe(list[idx].recipeID)
-    find.list:ScrollTo(idx)
+    t.list:ScrollTo(list[idx].idx)
   end)
   box:HookScript("OnTextChanged", function(self)
     if self.cbHint then self.cbHint:SetShown((self:GetText() or "") == "") end
-    find.arrowed = false
-    UI.FilterFind(false, true)
+    t.arrowed = false
+    t.refilter(false)
   end)
-  find.search = box
+  return box
 end
 
-local function BuildFindChips(p)
-  -- Same vertical centre as the search box; chips are centred on the anchor.
-  local anchor = CreateFrame("Frame", nil, p)
-  anchor:SetPoint("LEFT", p, "TOPLEFT", TOPBAR_X + SEARCH_W + 20, -BAND_MID)
-  anchor:SetPoint("RIGHT", p, "TOPRIGHT", 0, -BAND_MID)
-  anchor:SetHeight(20)
-  find.chips = { anchor = anchor }
-  anchor:SetScript("OnSizeChanged", function() UI.LayoutFindChips() end)
+-- Left column: search box + Filter button over the list inset. Right: the detail inset with
+-- its page background. Returns the detail content frame.
+local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset)
+  local left = CreateFrame("Frame", nil, p)
+  left:SetPoint("TOPLEFT")
+  left:SetPoint("BOTTOMLEFT")
+  left:SetWidth(LEFT_W)
+  t.left = left
+
+  t.filterEntries = entries
+  t.filter = NewFilterButton(left, entries, isDefault, reset)
+  t.filter:SetPoint("TOPRIGHT", left, "TOPRIGHT", -4, -4)
+  t.search = NewSearchBox(listName == "CraftBoardFindScroll" and "CraftBoardSearchBox" or "CraftBoardMineSearchBox", left, t)
+  t.search:SetPoint("TOPLEFT", left, "TOPLEFT", 10, -4)
+  t.search:SetPoint("RIGHT", t.filter, "LEFT", -8, 0)
+
+  local inset = NewInset(left)
+  inset:SetPoint("TOPLEFT", 0, -SEARCH_ROW)
+  inset:SetPoint("BOTTOMRIGHT")
+  t.listInset = inset
+  InsetArt(inset, LIST_BG_ATLAS, 1)
+  t.list = NewList(listName, inset, RECIPE_H,
+    GroupRowFactory(function(it) UI.SelectRecipe(it.recipeID) end, function(it) ToggleGroup(t, it) end),
+    GroupFill(fillEntry), { heightOf = GroupHeight, stripes = false })
+  t.list.box:SetPoint("TOPLEFT", 4, -4)
+  t.list.box:SetPoint("BOTTOMRIGHT", -4, 4)
+
+  local dInset = NewInset(p)
+  dInset:SetPoint("TOPLEFT", left, "TOPRIGHT", COL_GAP, 0)
+  dInset:SetPoint("BOTTOMRIGHT")
+  t.detailInset = dInset
+  t.bg = dInset:CreateTexture(nil, "BACKGROUND", nil, 1)
+  t.bg:SetPoint("TOPLEFT", 3, -3)
+  t.bg:SetPoint("BOTTOMRIGHT", -3, 3)
+  t.bg:Hide()
+  local d = CreateFrame("Frame", nil, dInset)
+  d:SetPoint("TOPLEFT", 14, -12)
+  d:SetPoint("BOTTOMRIGHT", -12, 10)
+  t.detail = d
+  return d
 end
 
--- One chip per profession present on the board ("All" first); hidden with < 2 professions.
-function UI.LayoutFindChips()
-  local chips = find.chips
-  if not chips then return end
-  local db = UIDB()
-  local current = db and db.findProf
-  local defs = {}
-  if #universeProfs >= 2 then
-    defs[1] = { id = nil, name = L["All"] }
-    for _, pr in ipairs(universeProfs) do defs[#defs + 1] = pr end
+-- Bottom button bar row (the frame's own bar on the portrait frame): a strip along the
+-- window's bottom edge, shown with its tab.
+local function NewBar(p)
+  local bar = CreateFrame("Frame", nil, p)
+  bar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", STY.barL, STY.barB)
+  bar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -STY.barR, STY.barB)
+  bar:SetHeight(22)
+  -- Without the portrait frame's own button bar, a rule marks the action row.
+  if not (MODERN and ButtonFrameTemplate_ShowButtonBar) then
+    local rule = HRule(bar)
+    rule:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", 0, 3)
+    rule:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", 0, 3)
   end
-  local valid = false
-  for _, d in ipairs(defs) do
-    if d.id ~= nil and d.id == current then valid = true end
-  end
-  if not valid then current = nil end
-  for i, d in ipairs(defs) do
-    local chip = chips[i]
-    if not chip then
-      chip = NewChip(chips.anchor)
-      chip:SetScript("OnClick", function(self)
-        local u = UIDB()
-        if u then u.findProf = self.profID end
-        find.prof = self.profID
-        UI.LayoutFindChips()
-        UI.FilterFind(false)
-      end)
-      chip:SetScript("OnEnter", function(self)
-        if self.label:IsTruncated() then TextTooltip(self, self.fullName) end
-      end)
-      chips[i] = chip
+  return bar
+end
+
+-- "Qty" label + quantity box at the bar's left edge; returns the box and the x to continue at.
+local function BarQty(bar, name)
+  local label = Muted(Label(bar, L["Qty"], "GameFontHighlightSmall"))
+  label:SetPoint("LEFT", 0, 0)
+  local box, spinner = QtyBox(name, bar)
+  -- The spinner's arrow buttons sit outside its edit box.
+  box:SetPoint("LEFT", label, "RIGHT", spinner and 30 or 10, 0)
+  return box, spinner and 30 or 12
+end
+
+local function ProfEntries(t)
+  return function()
+    local e = { { kind = "radio", text = L["All professions"],
+      get = function() return t.prof == nil end, set = function() SetProf(nil) end } }
+    for _, pr in ipairs(t.profs or {}) do
+      e[#e + 1] = { kind = "radio", text = pr.name,
+        get = function() return t.prof == pr.id end, set = function() SetProf(pr.id) end }
     end
-    chip.profID, chip.fullName = d.id, d.name
-    chip.label:SetText(d.name)
-    SetChipActive(chip, d.id == current)
+    return e
   end
-  find.prof = current
-  LayoutChips(chips, #defs, max(60, chips.anchor:GetWidth() or 0), 4)
 end
 
-local function BuildFindDetail(p)
-  local d = CreateFrame("Frame", nil, p)
-  d:SetPoint("TOPLEFT", LEFT_W + 10, -TOPBAR_H)
-  d:SetPoint("BOTTOMRIGHT")
-  find.detail = d
+-- Find tab ------------------------------------------------------------------
 
-  local divider = Divider(p)
-  divider:SetWidth(1)
-  divider:SetPoint("TOPLEFT", LEFT_W + 4, -TOPBAR_H)
-  divider:SetPoint("BOTTOMLEFT", LEFT_W + 4, 0)
-  find.divider = divider
+local function FillFindEntry(row, u)
+  row.icon:SetTexture(RecipeIcon(u.recipeID, u.outputItemID))
+  row.name:SetText(u.name)
+  row.name:SetTextColor(NameRGB(u.outputItemID))
+  row.status:SetText(StatusText(u))
+  row.check:SetShown(u.ready)
+  row.sel:SetShown(u.recipeID == selectedID)
+end
+
+local function BuildFind(p)
+  find.refilter = function(keep) UI.FilterFind(keep) end
+  local d = BuildColumns(p, find, "CraftBoardFindScroll", FillFindEntry, ProfEntries(find),
+    function() return find.prof == nil end, function() SetProf(nil) end)
 
   find.none = Placeholder(d, L["Select a recipe to see who can craft it."])
-
   local body = CreateFrame("Frame", nil, d)
   body:SetAllPoints()
   find.body = body
-
   find.header = NewHeader(body)
 
-  local rh, rrule = SectionHeader(body, L["Reagents"])
-  rh:SetPoint("TOPLEFT", 0, -(HEADER_ICON + 10))
-  find.reagents = NewList("CraftBoardReagentsScroll", body, SUBROW_H, ReagentRow, FillReagentRow, { bar = false, inline = true })
-  find.reagents.box:SetPoint("TOPLEFT", rrule, "BOTTOMLEFT", 0, -4)
-  find.reagents.box:SetPoint("TOPRIGHT", rrule, "BOTTOMRIGHT", 0, -4)
-  find.reagents.box:SetHeight(SUBROW_H)
+  find.reagLabel = Label(body, L["Reagents:"], Font("GameFontNormalSmall", "GameFontNormal"))
+  find.reagLabel:SetPoint("TOPLEFT", find.header.holder, "BOTTOMLEFT", 0, -8)
+  find.reagents = NewList("CraftBoardReagentsScroll", body, REAGENT_H, ReagentRow, FillReagentRow, { bar = false, inline = true, stripes = false })
+  find.reagents.box:SetPoint("TOPLEFT", find.reagLabel, "BOTTOMLEFT", 0, -6)
+  find.reagents.box:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+  find.reagents.box:SetHeight(REAGENT_H)
 
-  local ch, crule = SectionHeader(body, L["Crafters"])
-  ch:SetPoint("TOPLEFT", find.reagents.box, "BOTTOMLEFT", 0, -10)
+  find.crafterLabel = Label(body, L["Crafters:"], Font("GameFontNormalSmall", "GameFontNormal"))
+  find.crafterLabel:SetPoint("TOPLEFT", find.reagents.box, "BOTTOMLEFT", 0, -10)
   find.crafters = NewList("CraftBoardCraftersScroll", body, SUBROW_H, CrafterRow, FillCrafterRow, { inline = true })
-  find.crafters.box:SetPoint("TOPLEFT", crule, "BOTTOMLEFT", 0, -4)
-  find.crafters.box:SetPoint("BOTTOMRIGHT", 0, 56)
+  find.crafters.box:SetPoint("TOPLEFT", find.crafterLabel, "BOTTOMLEFT", 0, -4)
+  find.crafters.box:SetPoint("BOTTOMRIGHT")
 
-  -- Action area, anchored to the bottom: note + qty row, then Whisper + Post request.
-  -- Fits the 205 px detail pane of a default-size window (note box ~95 px).
-  local sep = Divider(body)
-  sep:SetHeight(1)
-  sep:SetPoint("BOTTOMLEFT", 0, 52)
-  sep:SetPoint("BOTTOMRIGHT", 0, 52)
-
-  find.qty = EditBox("CraftBoardFindQty", body, 32, 4, true)
-  find.qty:SetPoint("RIGHT", body, "BOTTOMRIGHT", -4, 38)
-  find.qty:SetText("1")
-  local qtyLabel = Muted(Label(body, L["Qty"], "GameFontHighlightSmall"))
-  qtyLabel:SetPoint("RIGHT", find.qty, "LEFT", -10, 0)
-
-  local noteLabel = Muted(Label(body, L["Note"], "GameFontHighlightSmall"))
-  noteLabel:SetPoint("LEFT", body, "BOTTOMLEFT", 0, 38)
-  find.note = EditBox("CraftBoardFindNote", body, 90, 60)
-  find.note:SetPoint("LEFT", noteLabel, "RIGHT", 10, 0)
-  find.note:SetPoint("RIGHT", qtyLabel, "LEFT", -12, 0)
-  find.note:SetScript("OnEnterPressed", function(self)
-    self:ClearFocus()
-    if find.post:IsEnabled() then find.post:Click() end
-  end)
-
+  -- Bottom bar, like the recipe page's "Create All / < 1 > / Create" row: qty on the left,
+  -- note in the middle, Whisper and Post request on the right.
+  local bar = NewBar(p)
+  find.bar = bar
+  local qtyGap
+  find.qty, qtyGap = BarQty(bar, "CraftBoardFindQty")
   find.qty:HookScript("OnTextChanged", Debouncer(0.2, function() UI.RefreshDetail() end))
 
-  find.post = PanelButton(body, L["Post request"], 104, 22)
-  find.post:SetPoint("BOTTOMRIGHT", 0, 2)
+  find.post = PanelButton(bar, L["Post request"], 112, 22)
+  find.post:SetPoint("RIGHT", 0, 0)
   find.post:SetScript("OnClick", function()
     local itemID = find.itemID
     if not (itemID and NS.Comm and NS.Comm.PostRequest) then return end
@@ -1190,7 +1722,7 @@ local function BuildFindDetail(p)
   end)
   find.post:SetScript("OnLeave", HideTooltip)
 
-  find.whisper = PanelButton(body, L["Whisper"], 76, 22)
+  find.whisper = PanelButton(bar, L["Whisper"], 82, 22)
   find.whisper:SetPoint("RIGHT", find.post, "LEFT", -4, 0)
   find.whisper:SetScript("OnClick", function()
     local name, itemID = find.whisperTo, find.itemID
@@ -1209,16 +1741,16 @@ local function BuildFindDetail(p)
     end
   end)
   find.whisper:SetScript("OnLeave", HideTooltip)
-end
 
-local function BuildFind(p)
-  BuildFindSearch(p)
-  BuildFindChips(p)
-  find.list = NewList("CraftBoardFindScroll", p, ROW_H, FindRow, FillFindRow)
-  find.list.box:SetPoint("TOPLEFT", 0, -TOPBAR_H)
-  find.list.box:SetPoint("BOTTOMLEFT", 0, 0)
-  find.list.box:SetWidth(LEFT_W)
-  BuildFindDetail(p)
+  local noteLabel = Muted(Label(bar, L["Note"], "GameFontHighlightSmall"))
+  noteLabel:SetPoint("LEFT", find.qty, "RIGHT", qtyGap, 0)
+  find.note = EditBox("CraftBoardFindNote", bar, 90, 60)
+  find.note:SetPoint("LEFT", noteLabel, "RIGHT", 10, 0)
+  find.note:SetPoint("RIGHT", find.whisper, "LEFT", -12, 0)
+  find.note:SetScript("OnEnterPressed", function(self)
+    self:ClearFocus()
+    if find.post:IsEnabled() then find.post:Click() end
+  end)
 end
 
 -- Whisper target: the chosen crafter if still listed, else the first other player (the list
@@ -1243,6 +1775,13 @@ local function SelectedEntry()
   return universeByID[selectedID]
 end
 
+-- Reagent boxes shown without scrolling: what fits above a few crafter rows.
+local function ReagentRows(body, n)
+  local h = body:GetHeight() or 0
+  local fit = h > 0 and floor((h - 190) / REAGENT_H) or 4
+  return min(max(1, n), max(2, fit))
+end
+
 function UI.RefreshDetail()
   if not find.body then return end
   local e = SelectedEntry()
@@ -1251,6 +1790,9 @@ function UI.RefreshDetail()
     find.itemID = nil
     find.body:Hide()
     find.none:Show()
+    find.post:SetEnabled(false)
+    find.whisper:SetEnabled(false)
+    SetDetailBackground(find, nil)
     return
   end
   find.none:Hide()
@@ -1258,7 +1800,10 @@ function UI.RefreshDetail()
 
   local itemID = OutputOf(e.recipeID, e)
   find.itemID = itemID
-  FillHeader(find.header, e.recipeID, itemID, e.name, ProfLine(find.profNames or {}, e.prof))
+  FillHeader(find.header, e.recipeID, itemID, e.name, ProfLine(find.profNames or {}, e.prof),
+    ItemDescription(e.recipeID, itemID))
+  AnchorBelowHeader(find.header, find.reagLabel)
+  SetDetailBackground(find, e.prof)
 
   local qty = ReadQty(find.qty)
   local rec = NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(e.recipeID)
@@ -1270,7 +1815,7 @@ function UI.RefreshDetail()
   else
     emptyText = L["Reagents unknown (peer recipe)."]
   end
-  find.reagents.box:SetHeight(SUBROW_H * min(5, max(1, #reagents)))
+  find.reagents.box:SetHeight(#reagents > 0 and REAGENT_H * ReagentRows(find.body, #reagents) or SUBROW_H)
   find.reagents:SetItems(reagents, emptyText, true)
   find.crafters:SetItems(e.crafters, L["No known crafters."], true)
 
@@ -1278,20 +1823,29 @@ function UI.RefreshDetail()
   UI.UpdateWhisper()
 end
 
+-- Select a recipe on the visible tab (Find and Mine share the selection).
 function UI.SelectRecipe(recipeID)
   if selectedID ~= recipeID then find.crafter = nil end
   selectedID = recipeID
-  if find.list then find.list:Render() end
-  UI.RefreshDetail()
+  if activeTab == 2 then
+    if mine.list then mine.list:Render() end
+    UI.RefreshShopping()
+  else
+    if find.list then find.list:Render() end
+    UI.RefreshDetail()
+  end
 end
 
--- Filter the cached universe by text and profession. Called on every keystroke (typed=true).
--- A selection the filter hides is cleared; while searching, typing selects the top hit when
--- nothing is selected. Browsing (empty box, chips) never picks a row by itself.
-function UI.FilterFind(keepScroll, typed)
+-- Filter the cached universe by text and profession and group it. Called on every
+-- keystroke. A selection the filter hides is replaced by the first visible recipe, so the
+-- recipe page is never empty while the list has something (like the Professions window).
+function UI.FilterFind(keepScroll)
   if not find.list then return end
+  local db = UIDB()
+  find.prof = ValidProf(find.profs, db and db.findProf)
   local text = strtrim(find.search:GetText() or "")
   local searching = #text >= 2
+  find.searching = searching
   local prof = find.prof
   local candidates = {}
   for _, u in ipairs(universe) do
@@ -1313,12 +1867,11 @@ function UI.FilterFind(keepScroll, typed)
       return StatusOrder(a, b)
     end)
   else
-    -- Default view: every tradeable recipe on the board (all my chars and peers), what I
-    -- can craft right now first so the checks cluster at the top, then by name.
+    -- Every tradeable recipe on the board (all my chars and peers); within a group what I
+    -- can craft right now first, then by name.
     for i = 1, #candidates do results[i] = candidates[i] end
     table.sort(results, ReadyThenName)
   end
-  find.results = results
 
   local visible = false
   for i = 1, #results do
@@ -1328,6 +1881,9 @@ function UI.FilterFind(keepScroll, typed)
     selectedID, find.crafter = nil, nil
   end
 
+  local items, nav = Grouped(results, prof == nil, searching, find.profNames)
+  find.results = nav
+
   local emptyText
   if #results == 0 then
     if #universe == 0 then
@@ -1336,9 +1892,12 @@ function UI.FilterFind(keepScroll, typed)
       emptyText = format(L["No known crafter for \"%s\"."], text)
     end
   end
-  find.list:SetItems(results, emptyText, keepScroll)
-  if typed and searching and not selectedID and results[1] then
-    UI.SelectRecipe(results[1].recipeID)
+  find.list:SetItems(items, emptyText, keepScroll)
+  SyncFilterButton(find.filter, find.filterEntries)
+  if activeTab == 1 then UpdatePortrait(prof) end
+  local pick = not selectedID and (nav[1] or results[1])
+  if pick then
+    UI.SelectRecipe(pick.recipeID)
   else
     UI.RefreshDetail()
   end
@@ -1347,221 +1906,170 @@ end
 function UI.RefreshFind(keepScroll)
   if not find.list then return end
   BuildUniverse()
-  UI.LayoutFindChips()
+  find.profs = universeProfs
   UI.FilterFind(keepScroll)
 end
 
 -- Mine tab ------------------------------------------------------------------
 
-local function MineRow(parent, rowH)
-  local row = IconRow(parent, rowH, 20)
-  row.count = Label(row, nil, "GameFontHighlightSmall")
-  row.count:SetPoint("RIGHT", -4, 0)
-  row.count:SetJustifyH("RIGHT")
-  row.name = Label(row, nil, "GameFontHighlight")
-  row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-  row.name:SetPoint("RIGHT", row.count, "LEFT", -6, 0)
-  -- Profession group header: gold label over a thin rule.
-  row.header = Label(row, nil, "GameFontNormal")
-  row.header:SetPoint("BOTTOMLEFT", 2, 5)
-  row.headerCount = Muted(Label(row, nil, "GameFontHighlightSmall"))
-  row.headerCount:SetPoint("BOTTOMRIGHT", -4, 5)
-  row.rule = HRule(row)
-  row.rule:SetPoint("BOTTOMLEFT", 0, 1)
-  row.rule:SetPoint("BOTTOMRIGHT", 0, 1)
-  row:SetScript("OnEnter", function(self)
-    local it = self.item
-    if it and not it.header then ShowTooltip(self, it.outputItemID, it.recipeID) end
-  end)
-  row:SetScript("OnClick", function(self)
-    local it = self.item
-    if not it or it.header then return end
-    selectedID = it.recipeID
-    find.crafter = nil
-    mine.list:Render()
-    UI.RefreshShopping()
-  end)
-  return row
-end
-
-local function FillMineRow(row, it)
-  row.item = it
-  local isHeader = it.header ~= nil
-  row.header:SetShown(isHeader)
-  row.headerCount:SetShown(isHeader)
-  row.rule:SetShown(isHeader)
-  row.icon:SetShown(not isHeader)
-  row.icon.border:SetShown(not isHeader)
-  row.name:SetShown(not isHeader)
-  row.count:SetShown(not isHeader)
-  row:EnableMouse(not isHeader)
-  if isHeader then
-    row.header:SetText(it.header)
-    row.headerCount:SetText(it.count)
-    row.sel:Hide()
-    row.stripe:Hide()
-    return
-  end
+local function FillMineEntry(row, it)
   row.icon:SetTexture(RecipeIcon(it.recipeID, it.outputItemID))
   row.name:SetText(it.name)
   row.name:SetTextColor(NameRGB(it.outputItemID))
   if it.ready then
-    row.count:SetText(GREEN .. format(L["x%d"], it.times or 1) .. "|r")
+    row.status:SetText(GREEN .. format(L["x%d"], it.times or 1) .. "|r")
   else
-    row.count:SetText(RED .. format(L["%d short"], it.missing) .. "|r")
+    row.status:SetText(RED .. format(L["%d short"], it.missing) .. "|r")
   end
+  row.check:Hide()
   row.sel:SetShown(it.recipeID == selectedID)
 end
 
+local function MineEntries()
+  local radios = ProfEntries(mine)
+  return function()
+    local e = radios()
+    e[#e + 1] = { kind = "divider" }
+    e[#e + 1] = { kind = "check", text = L["Short on"], tip = L["Also list recipes you're missing reagents for."],
+      get = function()
+        local db = UIDB()
+        return db and db.showAll or false
+      end,
+      set = function()
+        local db = UIDB()
+        if db then db.showAll = not db.showAll end
+        UI.FilterMine(false)
+      end }
+    return e
+  end
+end
+
 local function BuildMine(p)
-  local chips = { anchor = CreateFrame("Frame", nil, p) }
-  chips.anchor:SetPoint("LEFT", p, "TOPLEFT", TOPBAR_X + 4, -BAND_MID)
-  chips.anchor:SetSize(LEFT_W, 20)
-  mine.chips = chips
-  local chip = NewChip(chips.anchor)
-  chip.label:SetText(L["Short on"])
-  chips[1] = chip
-  chip:SetScript("OnClick", function(self)
-    local db = UIDB()
-    if db then db.showAll = not self.active end
-    UI.RefreshMine()
-  end)
-  chip:SetScript("OnEnter", function(self)
-    TextTooltip(self, L["Short on"], L["Also list recipes you're missing reagents for."])
-  end)
-  mine.chip = chip
-  LayoutChips(chips, 1, LEFT_W, 4)
-
-  mine.list = NewList("CraftBoardMineScroll", p, ROW_H, MineRow, FillMineRow)
-  mine.list.box:SetPoint("TOPLEFT", 0, -TOPBAR_H)
-  mine.list.box:SetPoint("BOTTOMLEFT", 0, 0)
-  mine.list.box:SetWidth(LEFT_W)
-
-  local divider = Divider(p)
-  divider:SetWidth(1)
-  divider:SetPoint("TOPLEFT", LEFT_W + 4, -TOPBAR_H)
-  divider:SetPoint("BOTTOMLEFT", LEFT_W + 4, 0)
-  mine.divider = divider
-
-  local d = CreateFrame("Frame", nil, p)
-  d:SetPoint("TOPLEFT", LEFT_W + 10, -TOPBAR_H)
-  d:SetPoint("BOTTOMRIGHT")
-  mine.detail = d
+  mine.refilter = function(keep) UI.FilterMine(keep) end
+  local d = BuildColumns(p, mine, "CraftBoardMineScroll", FillMineEntry, MineEntries(),
+    function()
+      local db = UIDB()
+      return mine.prof == nil and not (db and db.showAll)
+    end,
+    function()
+      local db = UIDB()
+      if db then db.showAll = false end
+      SetProf(nil)
+    end)
 
   mine.none = Placeholder(d, L["Select a recipe to see what you're short on."])
   local body = CreateFrame("Frame", nil, d)
   body:SetAllPoints()
   mine.body = body
-
   mine.header = NewHeader(body)
 
-  local sh, srule = SectionHeader(body, L["Shopping list"])
-  sh:SetPoint("TOPLEFT", 0, -(HEADER_ICON + 10))
-  mine.shop = NewList("CraftBoardShopScroll", body, SUBROW_H, ReagentRow, FillReagentRow, { inline = true })
-  mine.shop.box:SetPoint("TOPLEFT", srule, "BOTTOMLEFT", 0, -4)
-  mine.shop.box:SetPoint("BOTTOMRIGHT", 0, 30)
+  mine.reagLabel = Label(body, L["Reagents:"], Font("GameFontNormalSmall", "GameFontNormal"))
+  mine.reagLabel:SetPoint("TOPLEFT", mine.header.holder, "BOTTOMLEFT", 0, -8)
+  mine.shop = NewList("CraftBoardShopScroll", body, REAGENT_H, ReagentRow, FillReagentRow, { inline = true, stripes = false })
+  mine.shop.box:SetPoint("TOPLEFT", mine.reagLabel, "BOTTOMLEFT", 0, -6)
+  mine.shop.box:SetPoint("BOTTOMRIGHT")
 
-  local sep = Divider(body)
-  sep:SetHeight(1)
-  sep:SetPoint("BOTTOMLEFT", 0, 28)
-  sep:SetPoint("BOTTOMRIGHT", 0, 28)
-
-  local qtyLabel = Muted(Label(body, L["Qty"], "GameFontHighlightSmall"))
-  qtyLabel:SetPoint("BOTTOMLEFT", 0, 7)
-  mine.qty = EditBox("CraftBoardMineQty", body, 32, 4, true)
-  mine.qty:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
-  mine.qty:SetText("1")
+  local bar = NewBar(p)
+  mine.bar = bar
+  mine.qty = BarQty(bar, "CraftBoardMineQty")
   mine.qty:HookScript("OnTextChanged", Debouncer(0.2, function() UI.RefreshShopping() end))
-
-  mine.shopStatus = Muted(Label(body, nil, "GameFontHighlightSmall"))
-  mine.shopStatus:SetPoint("BOTTOMRIGHT", -2, 8)
-  mine.shopStatus:SetPoint("LEFT", mine.qty, "RIGHT", 8, 0)
+  mine.shopStatus = Muted(Label(bar, nil, "GameFontHighlightSmall"))
+  mine.shopStatus:SetPoint("RIGHT", 0, 0)
+  mine.shopStatus:SetPoint("LEFT", mine.qty, "RIGHT", 36, 0)
   mine.shopStatus:SetJustifyH("RIGHT")
 end
 
+-- Mine detail: the recipe page with every reagent's have/need for the chosen quantity.
 function UI.RefreshShopping()
   if not mine.shop then return end
-  local R = NS.Recipes
+  local R, I = NS.Recipes, NS.Inventory
   local rec = selectedID and R and R.Mine and R.Mine()[selectedID]
   if not rec then
     mine.body:Hide()
     mine.none:Show()
+    mine.shopStatus:SetText("")
+    SetDetailBackground(mine, nil)
     return
   end
   mine.none:Hide()
   mine.body:Show()
   local name = rec.n or (R.NameOf and R.NameOf(selectedID)) or format(L["Recipe %d"], selectedID)
-  FillHeader(mine.header, selectedID, rec.o, name, ProfLine(ProfNames(), rec.p))
+  FillHeader(mine.header, selectedID, rec.o, name, ProfLine(ProfNames(), rec.p), ItemDescription(selectedID, rec.o))
+  AnchorBelowHeader(mine.header, mine.reagLabel)
+  SetDetailBackground(mine, rec.p)
   local qty = ReadQty(mine.qty)
-  local list = {}
-  if NS.Inventory and NS.Inventory.ShoppingList then
-    list = NS.Inventory.ShoppingList({ { selectedID, qty } })
-  end
-  if #list == 0 then
-    mine.shop:SetItems({}, format(L["You have everything for %dx."], qty))
-    mine.shopStatus:SetText("")
+  local cc = I and I.CanCraft and I.CanCraft(rec, qty) or { reagents = {}, missing = {} }
+  mine.shop:SetItems(cc.reagents, L["No reagents recorded."], true)
+  if #cc.missing > 0 then
+    mine.shopStatus:SetText(RED .. format(L["%d reagent(s) short"], #cc.missing) .. "|r")
   else
-    mine.shop:SetItems(list, nil, true)
-    mine.shopStatus:SetText(RED .. format(L["%d reagent(s) short"], #list) .. "|r")
+    mine.shopStatus:SetText(GREEN .. format(L["You have everything for %dx."], qty) .. "|r")
   end
 end
 
+-- Filter my recipes (ready only unless "Short on"), by profession and text; group them.
+function UI.FilterMine(keepScroll)
+  if not mine.list then return end
+  local db = UIDB()
+  local showAll = db and db.showAll or false
+  mine.prof = ValidProf(mine.profs, db and db.findProf)
+  local text = strtrim(mine.search:GetText() or "")
+  local searching = #text >= 2
+  mine.searching = searching
+  local tokens = searching and Tokens(text) or nil
+  local results = {}
+  for _, e in ipairs(mine.all or {}) do
+    if (showAll or e.ready) and (mine.prof == nil or e.prof == mine.prof) and (not tokens or Matches(e, tokens)) then
+      results[#results + 1] = e
+    end
+  end
+  table.sort(results, ReadyThenName)
+
+  local visible = false
+  for i = 1, #results do
+    if results[i].recipeID == selectedID then visible = true break end
+  end
+  local items, nav = Grouped(results, mine.prof == nil, searching, mine.profNames)
+  mine.results = nav
+
+  local emptyText
+  if not (mine.all and #mine.all > 0) then
+    emptyText = EMPTY_RECIPES
+  elseif #results == 0 then
+    emptyText = searching and format(L["No recipe matches \"%s\"."], text) or L["Nothing craftable from your bags and bank right now."]
+  end
+  mine.list:SetItems(items, emptyText, keepScroll)
+  SyncFilterButton(mine.filter, mine.filterEntries)
+  if activeTab == 2 then UpdatePortrait(mine.prof) end
+  local pick = not visible and (nav[1] or results[1])
+  if pick then
+    selectedID, find.crafter = pick.recipeID, nil
+    mine.list:Render()
+  end
+  UI.RefreshShopping()
+end
+
+-- Rebuild my recipe entries (craftability, names, groups), then filter.
 function UI.RefreshMine(keepScroll)
   if not mine.list then return end
   local R, I = NS.Recipes, NS.Inventory
-  local db = UIDB()
-  local showAll = db and db.showAll or false
-  SetChipActive(mine.chip, showAll)
-
-  local entries = {}
+  local names = ProfNames()
+  local all, profCount = {}, {}
   for recipeID, rec in pairs(R and R.Mine and R.Mine() or {}) do
     local cc = I and I.CanCraft and I.CanCraft(rec) or { ready = false, missing = {}, times = 0 }
-    if showAll or cc.ready then
-      entries[#entries + 1] = {
-        recipeID = recipeID, outputItemID = rec.o, p = rec.p,
-        name = rec.n or (R.NameOf and R.NameOf(recipeID)) or format(L["Recipe %d"], recipeID),
-        ready = cc.ready, times = cc.times, missing = #cc.missing,
-      }
-    end
+    local name = rec.n or (R.NameOf and R.NameOf(recipeID)) or format(L["Recipe %d"], recipeID)
+    local itemName = rec.o and I and I.ItemName and I.ItemName(rec.o)
+    all[#all + 1] = {
+      recipeID = recipeID, outputItemID = rec.o, prof = rec.p, name = name,
+      lname = strlower(name), litem = itemName and strlower(itemName) or nil,
+      group = R.GroupOf and R.GroupOf(recipeID, rec.o) or L["Other"],
+      ready = cc.ready, times = cc.times, missing = #cc.missing,
+    }
+    if rec.p ~= nil then profCount[rec.p] = true end
   end
-
-  -- Group by profession (sorted by name), craftable first within a group, then name.
-  local names = ProfNames()
-  local groups, order = {}, {}
-  for _, e in ipairs(entries) do
-    local key = e.p ~= nil and e.p or "?"
-    if not groups[key] then
-      groups[key] = { name = ProfName(names, e.p), list = {} }
-      order[#order + 1] = key
-    end
-    local g = groups[key].list
-    g[#g + 1] = e
-  end
-  table.sort(order, function(a, b)
-    if groups[a].name ~= groups[b].name then return groups[a].name < groups[b].name end
-    return tostring(a) < tostring(b)
-  end)
-  local items = {}
-  for _, key in ipairs(order) do
-    local g = groups[key]
-    table.sort(g.list, function(a, b)
-      if a.ready ~= b.ready then return a.ready end
-      if a.name ~= b.name then return a.name < b.name end
-      return a.recipeID < b.recipeID
-    end)
-    items[#items + 1] = { header = g.name, count = #g.list }
-    for _, e in ipairs(g.list) do items[#items + 1] = e end
-  end
-
-  local hasRecipes = R and R.Mine and next(R.Mine()) ~= nil
-  local emptyText
-  if not hasRecipes then
-    emptyText = EMPTY_RECIPES
-  elseif #items == 0 then
-    emptyText = L["Nothing craftable from your bags and bank right now."]
-  end
-  mine.list:SetItems(items, emptyText, keepScroll)
-  UI.RefreshShopping()
+  mine.all, mine.profNames = all, names
+  mine.profs = SortedProfs(profCount, names)
+  UI.FilterMine(keepScroll)
 end
 
 -- Requests tab --------------------------------------------------------------
@@ -1646,11 +2154,14 @@ local function FillRequestRow(row, post)
   row.action:SetText(mineP and L["Retract"] or L["Offer"])
 end
 
+-- One inset over the whole column area (the bar row stays empty on this tab).
 local function BuildRequests(p)
-  reqs.list = NewList("CraftBoardRequestsScroll", p, 44, RequestRow, FillRequestRow)
-  -- Inside the inset under the (empty) band on the portrait frame; full height otherwise.
-  reqs.list.box:SetPoint("TOPLEFT", 0, MODERN and -TOPBAR_H or 0)
-  reqs.list.box:SetPoint("BOTTOMRIGHT")
+  local inset = NewInset(p)
+  inset:SetAllPoints()
+  reqs.inset = inset
+  reqs.list = NewList("CraftBoardRequestsScroll", inset, REQUEST_H, RequestRow, FillRequestRow)
+  reqs.list.box:SetPoint("TOPLEFT", 6, -6)
+  reqs.list.box:SetPoint("BOTTOMRIGHT", -6, 6)
 end
 
 function UI.RefreshRequests(keepScroll)
@@ -1668,7 +2179,6 @@ function UI.RefreshRequests(keepScroll)
   end
   reqs.list:SetItems(posts, emptyText, keepScroll)
 end
-
 -- Window --------------------------------------------------------------------
 
 local function SavePosition(f)
@@ -1686,9 +2196,12 @@ local function RestorePosition(f)
   else
     f:SetPoint("CENTER")
   end
+  -- A size saved by the older, smaller layout counts as unset: open at the new default.
   local w = db and tonumber(db.w) or WIDTH
   local h = db and tonumber(db.h) or HEIGHT
-  f:SetSize(min(MAX_W, max(WIDTH, w)), min(MAX_H, max(HEIGHT, h)))
+  if w < MIN_W then w = WIDTH end
+  if h < MIN_H then h = HEIGHT end
+  f:SetSize(min(MAX_W, w), min(MAX_H, h))
 end
 
 -- "61 recipes · 0 peers · channel ok"
@@ -1703,28 +2216,19 @@ function UI.RefreshFooter()
   footer:SetText(table.concat(parts, DOT))
 end
 
--- Re-anchor list, divider and detail of Find and Mine for a window `w` px wide.
+-- List column width for a window `w` px wide; the detail inset follows it (anchored to the
+-- column's right edge).
+local function SplitWidth(w)
+  return floor((max(MIN_W, w or WIDTH) - STY.colL - STY.colR) * LEFT_FRAC)
+end
+
 local splitDone = false
 local function LayoutSplit(w)
-  local left = floor((max(WIDTH, w or WIDTH) - PANEL_PAD) * LEFT_FRAC)
+  local left = SplitWidth(w)
   if splitDone and left == LEFT_W then return end
   splitDone, LEFT_W = true, left
   for _, t in ipairs({ find, mine }) do
-    if t.list then t.list.box:SetWidth(left) end
-    if t.divider then
-      t.divider:ClearAllPoints()
-      t.divider:SetPoint("TOPLEFT", left + 4, -TOPBAR_H)
-      t.divider:SetPoint("BOTTOMLEFT", left + 4, 0)
-    end
-    if t.detail then
-      t.detail:ClearAllPoints()
-      t.detail:SetPoint("TOPLEFT", left + 10, -TOPBAR_H)
-      t.detail:SetPoint("BOTTOMRIGHT")
-    end
-  end
-  if mine.chips then
-    mine.chips.anchor:SetWidth(left)
-    LayoutChips(mine.chips, 1, left, 4)
+    if t.left then t.left:SetWidth(left) end
   end
 end
 
@@ -1764,6 +2268,8 @@ local function SelectTab(i)
     end
   end
   if i ~= 1 and find.search then find.search:ClearFocus() end
+  if i ~= 2 and mine.search then mine.search:ClearFocus() end
+  if i == 3 then UpdatePortrait(nil) end
   REFRESH[i](false)
   UI.RefreshFooter()
 end
@@ -1811,9 +2317,9 @@ local function BuildResizeGrip(f, style)
   if not f.SetResizable then return end
   f:SetResizable(true)
   if f.SetResizeBounds then
-    f:SetResizeBounds(WIDTH, HEIGHT, MAX_W, MAX_H)
+    f:SetResizeBounds(MIN_W, MIN_H, MAX_W, MAX_H)
   else
-    if f.SetMinResize then f:SetMinResize(WIDTH, HEIGHT) end
+    if f.SetMinResize then f:SetMinResize(MIN_W, MIN_H) end
     if f.SetMaxResize then f:SetMaxResize(MAX_W, MAX_H) end
   end
   local grip = CreateFrame("Button", nil, f)
@@ -1846,16 +2352,16 @@ local function NewWindow()
   return CreateFrame("Frame", "CraftBoardFrame", UIParent, "BasicFrameTemplateWithInset"), false
 end
 
-local function SetPortrait(f)
-  if f.SetPortraitToAsset and pcall(f.SetPortraitToAsset, f, PORTRAIT_TEX) then return end
+SetPortrait = function(f, texture)
+  if f.SetPortraitToAsset and pcall(f.SetPortraitToAsset, f, texture) then return end
   local tex = (f.PortraitContainer and f.PortraitContainer.portrait) or f.portrait
   if not tex and f.GetPortrait then
     local ok, t = pcall(f.GetPortrait, f)
     if ok then tex = t end
   end
   if not tex then return end
-  if not (SetPortraitToTexture and pcall(SetPortraitToTexture, tex, PORTRAIT_TEX)) then
-    tex:SetTexture(PORTRAIT_TEX)
+  if not (SetPortraitToTexture and pcall(SetPortraitToTexture, tex, texture)) then
+    tex:SetTexture(texture)
   end
 end
 
@@ -1873,33 +2379,18 @@ local function SetWindowTitle(f, text)
   title:SetText(text)
 end
 
--- Dark inset under the search band, down to the bottom edge (the button bar is hidden).
-local function SetupInset(f, style)
-  if f.Inset and ButtonFrameTemplate_HideButtonBar then pcall(ButtonFrameTemplate_HideButtonBar, f) end
-  local inset = f.Inset
-  if not inset and HasTemplate("InsetFrameTemplate") then
-    local ok, i = pcall(CreateFrame, "Frame", nil, f, "InsetFrameTemplate")
-    if ok and i then inset = i end
-  end
-  if not inset then
-    inset = CreateFrame("Frame", nil, f)
-    local bg = inset:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0, 0, 0, 0.45)
-  end
-  inset:ClearAllPoints()
-  inset:SetPoint("TOPLEFT", 4, -style.insetTop)
-  inset:SetPoint("BOTTOMRIGHT", -6, 4)
-  return inset
+-- Portrait frame: the template's single inset is replaced by our two column insets; its
+-- bottom button bar stays (ButtonFrameTemplate_ShowButtonBar) for the action row.
+local function SetupChrome(f)
+  if f.Inset then f.Inset:Hide() end
+  if ButtonFrameTemplate_ShowButtonBar then pcall(ButtonFrameTemplate_ShowButtonBar, f) end
 end
 
 local function Create()
   local f, modern = NewWindow()
   frame, MODERN = f, modern
-  local style = modern and STYLE.modern or STYLE.legacy
-  TOPBAR_X, BAND_MID = style.bandX, style.bandMid
-  -- Lists start just inside the inset on the portrait frame.
-  TOPBAR_H = modern and (style.insetTop - style.contentTop + 4) or 26
+  STY = modern and STYLE.modern or STYLE.legacy
+  LEFT_W = SplitWidth(WIDTH)
   f:Hide()
   f:SetSize(WIDTH, HEIGHT)
   f:SetFrameStrata("HIGH")
@@ -1917,33 +2408,31 @@ local function Create()
   RestorePosition(f)
 
   SetWindowTitle(f, "CraftBoard")
-  local inset
   if modern then
-    SetPortrait(f)
-    inset = SetupInset(f, style)
+    SetPortrait(f, PORTRAIT_TEX)
+    portraitNow = PORTRAIT_TEX
+    SetupChrome(f)
   end
 
   local content = CreateFrame("Frame", nil, f)
-  -- Above the inset (a sibling), set before any child exists so they all stack on top.
-  if inset then content:SetFrameLevel((inset:GetFrameLevel() or 0) + 2) end
-  content:SetPoint("TOPLEFT", style.contentL, -style.contentTop)
-  content:SetPoint("BOTTOMRIGHT", -style.contentR, style.contentB)
+  content:SetPoint("TOPLEFT", STY.colL, -STY.colTop)
+  content:SetPoint("BOTTOMRIGHT", -STY.colR, STY.colB)
   for i = 1, #TAB_NAMES do
     local p = CreateFrame("Frame", nil, content)
-    p:SetPoint("TOPLEFT")
-    p:SetPoint("BOTTOMRIGHT", 0, FOOTER_H)
+    p:SetAllPoints()
     p:Hide()
     panels[i] = p
   end
+  -- Status line in the band beside the portrait (where Blizzard shows the rank bar).
   footer = Muted(Label(content, nil, "GameFontHighlightSmall"))
-  footer:SetPoint("BOTTOMLEFT", 2, 2)
-  footer:SetPoint("BOTTOMRIGHT", -20, 2)
+  footer:SetPoint("LEFT", f, "TOPLEFT", STY.bandX, -STY.bandMid)
+  footer:SetPoint("RIGHT", f, "TOPRIGHT", -30, -STY.bandMid)
 
   BuildFind(panels[1])
   BuildMine(panels[2])
   BuildRequests(panels[3])
-  BuildTabs(f, style)
-  BuildResizeGrip(f, style)
+  BuildTabs(f, STY)
+  BuildResizeGrip(f, STY)
   LayoutSplit(f:GetWidth())
   f:HookScript("OnSizeChanged", function(_, w) LayoutSplit(w) end)
 
@@ -1958,11 +2447,11 @@ local function Create()
   f:HookScript("OnHide", function()
     HideTooltip()
     if find.search then find.search:ClearFocus() end
+    if mine.search then mine.search:ClearFocus() end
   end)
 
   local db = UIDB()
   if db and type(db.tab) == "number" and TAB_NAMES[db.tab] then activeTab = db.tab end
-  find.prof = db and db.findProf
 end
 
 -- Refresh the visible tab (keeps scroll position); marks dirty while hidden.

@@ -14,6 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by default, ready for translations.
 
 ### Changed
+- The window now looks and works like Blizzard's Professions crafting page. Find and Mine
+  have a left column with the search box and a Filter dropdown (All professions, or one
+  profession; Mine also has "Short on") above a bordered list. Recipes are grouped under gold
+  collapsible headers: Blizzard's own categories ("Cloaks", "Reagents", ...) for recipes any
+  of your characters knows, otherwise a group from the crafted item's slot or type. With
+  All professions selected, each profession gets a header above its categories. Collapsed
+  groups are remembered, and searching opens every group that has a match. The right inset
+  shows the recipe page: a round icon, the quality-coloured name, the item's description,
+  reagent boxes ("2/5 Light Leather", red when short) and the crafters (online in green).
+  The page is never empty: the first visible recipe is selected. Quantity, note, Whisper and
+  Post request sit in the bottom button bar. The portrait shows the selected profession's
+  icon. The window is larger by default (760x520). Requests sit in the same inset layout,
+  and the status line moved beside the portrait.
+- Scans record each recipe's Blizzard category and the profession icon (local only; the
+  sync protocol is unchanged).
 - Window polish. Find: the search box has focus when the window opens, filters as you type
   (2+ characters, every word must match), Enter picks the first result, arrow keys move the
   selection, Escape clears the text and then closes the window. With no search it lists what

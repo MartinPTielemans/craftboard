@@ -41,6 +41,68 @@ function Recipes.LearnName(recipeID, name, outputItemID)
   if type(outputItemID) == "number" then e.o = outputItemID end
 end
 
+-- Blizzard recipe categories ("Cloaks", "Reagents", ...). CraftBoardDB.categories[categoryID] =
+-- display name; records and catalogue entries keep the categoryID (field c). Local only: the
+-- shared protocol never carries categories.
+local function Categories()
+  if not CraftBoardDB then return nil end
+  if type(CraftBoardDB.categories) ~= "table" then CraftBoardDB.categories = {} end
+  return CraftBoardDB.categories
+end
+
+local catResolved = {}   -- [categoryID] = true once looked up this session
+
+-- Leaf name of a category; walks parentCategoryID when a level has no name. Also stores the
+-- parents' names. Returns the name or nil.
+local function ResolveCategory(categoryID)
+  local cats = Categories()
+  if not cats or type(categoryID) ~= "number" then return nil end
+  if catResolved[categoryID] then return cats[categoryID] end
+  catResolved[categoryID] = true
+  if not (TSUI and TSUI.GetCategoryInfo) then return cats[categoryID] end
+  local id, leaf, depth = categoryID, nil, 0
+  while type(id) == "number" and id ~= 0 and depth < 6 do
+    local ok, info = pcall(TSUI.GetCategoryInfo, id)
+    if not ok or type(info) ~= "table" then break end
+    local n = info.name
+    if type(n) == "string" and n ~= "" then
+      cats[id] = n
+      if not leaf then leaf = n end
+    end
+    id, depth = info.parentCategoryID, depth + 1
+  end
+  if leaf then cats[categoryID] = leaf end
+  return cats[categoryID]
+end
+
+-- Remember a recipe's category on the catalogue entry (known or not, so peers' recipes in a
+-- profession I have also get Blizzard's grouping). Returns true when something changed.
+local function NoteCategory(recipeID, categoryID, name)
+  if type(recipeID) ~= "number" or type(categoryID) ~= "number" then return false end
+  ResolveCategory(categoryID)
+  local cat = Catalogue()
+  if not cat then return false end
+  local e = cat[recipeID]
+  if not e then
+    e = {}
+    cat[recipeID] = e
+    if type(name) == "string" and name ~= "" then e.n = name end
+  end
+  if e.c == categoryID then return false end
+  e.c = categoryID
+  return true
+end
+
+-- Profession icon (file ID / path) for a skill line, or nil.
+function Recipes.ProfessionIcon(profID)
+  if type(profID) ~= "number" then return nil end
+  if TSUI and TSUI.GetTradeSkillTexture then
+    local ok, tex = pcall(TSUI.GetTradeSkillTexture, profID)
+    if ok and tex and tex ~= 0 and tex ~= "" then return tex end
+  end
+  return nil
+end
+
 local function IsViewingOther()
   if not TSUI then return false end
   if TSUI.IsTradeSkillLinked and TSUI.IsTradeSkillLinked() then return true end
@@ -203,6 +265,7 @@ end
 
 local function ReadRecipe(recipeID, info, profID, prev)
   local rec = { p = profID, n = info.name, r = {} }
+  if type(info.categoryID) == "number" then rec.c = info.categoryID end
   local _, isEnchant = AcceptType(info.recipeType)
   if isEnchant then rec.e = true end
 
@@ -300,8 +363,17 @@ function Recipes.Scan(force)
   local ids = TSUI.GetAllRecipeIDs() or {}
   local learnedIDs, learnedInfo = {}, {}
   local s1, s2 = 0, 0
+  local catChanged = false
   for _, recipeID in ipairs(ids) do
     local info = type(recipeID) == "number" and TSUI.GetRecipeInfo(recipeID)
+    if type(info) == "table" and type(info.categoryID) == "number" then
+      if NoteCategory(recipeID, info.categoryID, info.name) then catChanged = true end
+      local old = c.recipes[recipeID]
+      if info.learned and type(old) == "table" and old.c ~= info.categoryID then
+        old.c = info.categoryID
+        catChanged = true
+      end
+    end
     if type(info) == "table" and info.learned then
       learnedIDs[#learnedIDs + 1] = recipeID
       learnedInfo[#learnedInfo + 1] = info
@@ -311,12 +383,15 @@ function Recipes.Scan(force)
   end
   local sig = #learnedIDs .. ":" .. s1 .. ":" .. s2
 
-  local changed = false
+  local changed = catChanged
   local prof = { profName, rank, maxRank }
   if not ProfsEqual(c.profs[profID], prof) then
     c.profs[profID] = prof
     changed = true
   end
+  -- Icon for the UI portrait; local only (Comm sends name/rank/max).
+  local icon = Recipes.ProfessionIcon(profID)
+  if icon then c.profs[profID].icon = icon end
 
   if not force and #learnedIDs > 0 and lastSig[profID] == sig then
     if changed then NS.Fire("RECIPES_UPDATED") end
@@ -439,6 +514,57 @@ function Recipes.Record(recipeID)
     end
   end
   return nil
+end
+
+-- Blizzard category name of a recipe (from a scan on any of my chars, or seen in one of my
+-- profession windows), or nil.
+function Recipes.CategoryOf(recipeID)
+  local cats = type(CraftBoardDB) == "table" and CraftBoardDB.categories
+  if type(cats) ~= "table" then return nil end
+  local rec = Recipes.Record(recipeID)
+  local id = type(rec) == "table" and rec.c or nil
+  if id == nil then
+    local cat = Catalogue()
+    local e = cat and cat[recipeID]
+    id = type(e) == "table" and e.c or nil
+  end
+  local n = id ~= nil and cats[id]
+  if type(n) == "string" and n ~= "" then return n end
+  return nil
+end
+
+-- Group names for items whose recipe has no Blizzard category (peers' recipes).
+local SLOT_GROUPS = {
+  INVTYPE_CLOAK = L["Cloaks"], INVTYPE_HEAD = L["Helmets"], INVTYPE_CHEST = L["Chest"],
+  INVTYPE_ROBE = L["Chest"], INVTYPE_LEGS = L["Pants"], INVTYPE_FEET = L["Boots"],
+  INVTYPE_HAND = L["Gloves"], INVTYPE_WRIST = L["Bracers"], INVTYPE_WAIST = L["Belts"],
+  INVTYPE_SHOULDER = L["Shoulders"], INVTYPE_BAG = L["Bags"], INVTYPE_QUIVER = L["Bags"],
+}
+
+-- itemType, itemSubType, equipLoc from the cache (multi-return or table-shaped GetItemInfo).
+local function ItemKind(itemID)
+  if type(itemID) ~= "number" then return nil end
+  local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+  if not getInfo then return nil end
+  local ok, first, _, _, _, _, itemType, subType, _, equipLoc = pcall(getInfo, itemID)
+  if not ok or first == nil then return nil end
+  if type(first) == "table" then
+    return first.itemType, first.itemSubType, first.itemEquipLoc or first.equipLoc
+  end
+  return itemType, subType, equipLoc
+end
+
+-- Group from the output item: equip slot, else item sub type, else nil.
+function Recipes.ItemGroup(itemID)
+  local _, subType, equipLoc = ItemKind(itemID)
+  if type(equipLoc) == "string" and SLOT_GROUPS[equipLoc] then return SLOT_GROUPS[equipLoc] end
+  if type(subType) == "string" and subType ~= "" then return subType end
+  return nil
+end
+
+-- List group of a recipe: Blizzard's category when known, else from the output item, else "Other".
+function Recipes.GroupOf(recipeID, itemID)
+  return Recipes.CategoryOf(recipeID) or Recipes.ItemGroup(itemID or OutputOf(recipeID)) or L["Other"]
 end
 
 local function crafterLess(a, b)
