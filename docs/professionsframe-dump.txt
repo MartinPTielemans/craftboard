@@ -1,0 +1,31 @@
+Frame ProfessionsFrame 673x594 alpha=1 @ TOPLEFT->UIParent.TOPLEFT 51,nil
+  Texture ProfessionsFrameBg 669x571 atlas=Profession-Background-Overview tex=8164399 tc=0.000,0.000,0.000,1.000 col=1.00,1.00,1.00,1.00 blend=BLEND layer=BACKGROUND alpha=1 @ TOPLEFT->ProfessionsFrame.TOPLEFT 2,nil | BOTTOMRIGHT->ProfessionsFrame.BOTTOMRIGHT -2,nil
+  Texture ProfessionsFrame.TopTileStreaks 665x43 HIDDEN atlas=_UI-Frame-TopTileStreaks tex=1723833 tc=0.000,0.000,0.000,1.000 col=1.00,1.00,1.00,1.00 blend=BLEND layer=BORDER alpha=1 @ TOPLEFT->ProfessionsFrame.TOPLEFT 6,nil | TOPRIGHT->ProfessionsFrame.TOPRIGHT -2,nil
+  Frame ProfessionsFrame.NineSlice 673x594 alpha=1 @ TOPLEFT->ProfessionsFrame.TOPLEFT 0,nil | BOTTOMRIGHT->ProfessionsFrame.BOTTOMRIGHT 0,nil
+    Texture ProfessionsFrame.NineSlice.TopLeftCorner 95x95 atlas=UI-Frame-PortraitMetal-CornerTopLeft tex=8069116 tc=0.000,0.000,0.000,1.000 col=1.00,1.00,1.00,1.00 blend=BLEND layer=OVERLAY alpha=1 @ TOPLEFT->Frame.TOPLEFT -13,nil
+    Texture ProfessionsFrame.NineSlice.TopRightCorner 95x95 atlas=UI-Frame-Metal-CornerTopRight tex=8069116 tc=0.000,0.000,0.000,1.000 col=1.00,1.00,1.00,1.00 blend=BLEND layer=OVERLAY alpha=1 @ TOPRIGHT->Frame.TOPRIGHT 2,nil
+    Texture ProfessionsFrame.NineSlice.BottomLeftCorner 95x100 atlas=UI-Frame-Metal-CornerBottomLeft tex=8069116 tc=0.000,0.000,0.000,1.000 col=1.00,1.00,1.00,1.00 blend=BLEND layer=OVERLAY alpha=1 @ BOTTOMLEFT->Frame.BOTTOMLEFT -13,nil
+    Texture ProfessionsFrame.NineSlice.BottomRightCorner 95x100 atlas=UI-Frame-Metal-CornerBottomRight tex=8069116 tc=0.000,0.000,0.000,1.000 col=1.00,1.00,1.00,1.00 blend=BLEND layer=OVERLAY alpha=1 @ BOTTOMRIGHT->Frame.BOTTOMRIGHT 2,nil
+  Frame ProfessionsFrame.PortraitContainer 1x1 alpha=1 @ TOPLEFT->ProfessionsFrame.TOPLEFT 0,nil
+    Texture ProfessionsFramePortrait 62x62 tex=8197101 tc=0.000,0.000,0.000,1.000 col=1.00,1.00,1.00,1.00 blend=BLEND layer=OVERLAY alpha=1 @ TOPLEFT->Frame.TOPLEFT -5,nil
+    MaskTexture ProfessionsFrame.PortraitContainer.CircleMask 58x58 tex=130924 tc=0.000,0.000,0.000,1.000 col=1.00,1.00,1.00,1.00 blend=BLEND layer=OVERLAY alpha=1 @ TOPLEFT->ProfessionsFramePortrait.TOPLEFT 2,nil | BOTTOMRIGHT->ProfessionsFramePortrait.BOTTOMRIGHT -2,nil
+  Frame ProfessionsFrame.FrameGlow 707x632 HIDDEN alpha=1 @ TOPLEFT->Frame.TOPLEFT -20,nil | BOTTOMRIGHT->Frame.BOTTOMRIGHT 14,nil
+    Texture ProfessionsFrame.FrameGlow.GlowTexture 1414x1264 atlas=gamepad-uiframemetal-largeportrait-focus tex=6227333 tc=0.000,0.000,0.000,1.000 col=1.00,1.00,1.00,1.00 blend=BLEND layer=BACKGROUND alpha=1 @ TOPLEFT->Frame.TOPLEFT 0,nil | BOTTOMRIGHT->Frame.BOTTOMRIGHT 0,nil
+  Frame ProfessionsFrame.TitleContainer 591x20 alpha=1 @ TOPLEFT->ProfessionsFrame.TOPLEFT 58,nil | TOPRIGHT->ProfessionsFrame.TOPRIGHT -24,nil
+    FontString ProfessionsFrameTitleText 591x12.2 col=1.00,0.82,0.00 font=GameFontNormal fontfile=Fonts\FRIZQT__.TTF 12  text=Professions just=CENTER @ TOP->Frame.TOP 0,nil | LEFT->Frame.LEFT 0,nil | RIGHT->Frame.RIGHT 0,nil
+
+FONTS
+GameFontDisable: Fonts\FRIZQT__.TTF 12 
+GameFontHighlight: Fonts\FRIZQT__.TTF 12 
+GameFontHighlightMedium: Fonts\FRIZQT__.TTF 14 
+GameFontHighlightSmall: Fonts\FRIZQT__.TTF 10 
+GameFontNormal: Fonts\FRIZQT__.TTF 12 
+GameFontNormalHuge: Fonts\FRIZQT__.TTF 20 
+GameFontNormalLarge: Fonts\FRIZQT__.TTF 16 
+GameFontNormalMed2: Fonts\FRIZQT__.TTF 14 
+GameFontNormalMed3: Fonts\FRIZQT__.TTF 14 
+GameFontNormalSmall: Fonts\FRIZQT__.TTF 10 
+NumberFont_Shadow_Small: Fonts\ARIALN.TTF 12 
+QuestFont: Fonts\FRIZQT__.TTF 13 
+QuestTitleFont: Fonts\MORPHEUS.ttf 18 
+SystemFont_Shadow_Med1: Fonts\FRIZQT__.TTF 12 

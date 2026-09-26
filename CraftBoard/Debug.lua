@@ -5,8 +5,8 @@ local ADDON, NS = ...
 local MAX_NODES = 4000
 
 local function safe(fn, ...)
-  local ok, a, b, c, d = pcall(fn, ...)
-  if ok then return a, b, c, d end
+  local res = { pcall(fn, ...) }
+  if res[1] then return unpack(res, 2, #res) end
 end
 
 local function round(v) return v and math.floor(v * 10 + 0.5) / 10 or nil end
