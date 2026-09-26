@@ -35,11 +35,15 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
    `{ [name-realm] = {recipes={[recipeID]=true}, profs={...}, seen=time, online=bool} }`,
    `NS.Comm.Request(itemID, qty, toName)` (sends a whisper), `NS.Comm.PostRequest(itemID, qty, note)`
    (open board post), `NS.Comm.Requests()` → open posts. Peers persisted in `CraftBoardDB.peers`.
-5. `UI.lua` — one movable window: search box, results list ("who can make X", online first,
-   my own chars marked), reagent panel with have/need, buttons "Whisper" (pre-filled template) and
-   "Post request". Second tab "Requests" listing open board posts. Minimal, Blizzard-styled
-   (`BasicFrameTemplateWithInset`), no external UI libs. Footer status comes from
+5. `UI.lua` — one window that reproduces the client's own Professions window exactly
+   (atlases, fonts, offsets captured in `docs/professionsframe-dump.txt`; `/cb dump` recaptures).
+   Two side tabs: **Find** (grouped recipe list under Blizzard category headers, search + Filter
+   dropdown, recipe card with reagent slots have/need, a "Missing: ..." line for my own short
+   recipes, crafters, Whisper and Post request) and **Requests** (open board posts). A one-line
+   board status ("N crafters online · M open requests") sits where Blizzard shows the skill bar;
+   nothing that WoW's own UI already shows is repeated. No external UI libs. Status data from
    `NS.Comm.Status()` → `{peers, online, posts, channel, channelOn, guild}`.
+   Design rules: Bind-on-Pickup outputs never appear in Find (they cannot be made for others).
 
 ## Protocol (Comm.lua) — prefix `CBRD`, version byte first
 Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonChannel.
