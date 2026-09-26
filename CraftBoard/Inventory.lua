@@ -15,6 +15,18 @@ function Inventory.Count(itemID)
   return 0
 end
 
+-- A reagent slot may accept several items (quality tiers): have = sum over all of them.
+-- alts is the optional list stored on a reagent entry ({ itemID, qty, alts = {...} }).
+function Inventory.SlotCount(itemID, alts)
+  local n = Inventory.Count(itemID)
+  if type(alts) == "table" then
+    for _, id in ipairs(alts) do
+      if id ~= itemID then n = n + Inventory.Count(id) end
+    end
+  end
+  return n
+end
+
 -- Accepts a recipe record ({r={ {itemID,qty},... }}) or a recipeID.
 local function ResolveRecord(recipe)
   if type(recipe) == "number" then
@@ -34,8 +46,8 @@ function Inventory.CanCraft(recipe, times)
   for _, reg in ipairs(rec.r) do
     local itemID, qty = reg[1], reg[2]
     if itemID and qty and qty > 0 then
-      local have = Inventory.Count(itemID)
-      local row = { itemID = itemID, need = qty * times, have = have }
+      local have = Inventory.SlotCount(itemID, reg.alts)
+      local row = { itemID = itemID, need = qty * times, have = have, alts = reg.alts }
       result.reagents[#result.reagents + 1] = row
       if have < row.need then result.missing[#result.missing + 1] = row end
       local t = math.floor(have / qty)
@@ -51,7 +63,7 @@ end
 -- list: { {recipeID, qty}, ... } (also accepts {recipeID=,qty=} or bare recipeIDs).
 -- Returns aggregated shortages: { {itemID=, need=, have=, short=}, ... }, plus unknown recipeIDs.
 function Inventory.ShoppingList(list)
-  local need, order, unknown = {}, {}, {}
+  local need, order, unknown, alts = {}, {}, {}, {}
   for _, e in ipairs(list or {}) do
     local recipeID, qty
     if type(e) == "number" then
@@ -67,6 +79,7 @@ function Inventory.ShoppingList(list)
         if itemID and n then
           if not need[itemID] then order[#order + 1] = itemID end
           need[itemID] = (need[itemID] or 0) + n * qty
+          if type(reg.alts) == "table" and not alts[itemID] then alts[itemID] = reg.alts end
         end
       end
     elseif recipeID then
@@ -75,7 +88,7 @@ function Inventory.ShoppingList(list)
   end
   local out = {}
   for _, itemID in ipairs(order) do
-    local have = Inventory.Count(itemID)
+    local have = Inventory.SlotCount(itemID, alts[itemID])
     if have < need[itemID] then
       out[#out + 1] = { itemID = itemID, need = need[itemID], have = have, short = need[itemID] - have }
     end

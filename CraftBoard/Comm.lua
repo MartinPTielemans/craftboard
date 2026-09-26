@@ -274,10 +274,13 @@ local function Broadcast(kind, payload, prio)
   return used
 end
 
+-- Only recipes whose output can be handed to someone else (no Bind on Pickup / quest items):
+-- this set drives hello n, the R list and (via Recipes.Hash) the hash.
 local function MyRecipes()
   local R = NS.Recipes
-  if R and R.Mine then
-    local ok, t = pcall(R.Mine)
+  local get = R and (R.Shareable or R.Mine)
+  if get then
+    local ok, t = pcall(get)
     if ok and type(t) == "table" then return t end
   end
   return {}
@@ -348,7 +351,9 @@ function SendHello(dist)
     return
   end
   local h = MyHash()
-  local payload = { v = VERSION, profs = MyProfs(), n = CountTable(MyRecipes()), h = h }
+  -- n must match the count part of h ("count:poly") so peers' empty-book shortcut is right.
+  local n = tonumber(h:match("^(%d+):")) or CountTable(MyRecipes())
+  local payload = { v = VERSION, profs = MyProfs(), n = n, h = h }
   local target = dist == "CHANNEL" and channelId or nil
   if Send("H", payload, dist, target, "BULK") then
     lastHello[dist] = now

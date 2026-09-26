@@ -153,7 +153,7 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
     end
   elseif cmd == "scan" then
     if NS.Recipes and NS.Recipes.Scan then
-      local n, why = NS.Recipes.Scan()
+      local n, why = NS.Recipes.Scan(true)
       NS.Print(n and ("scanned " .. n .. " recipe(s)") or ("scan skipped: " .. tostring(why)))
     end
   elseif cmd == "debug" then

@@ -16,6 +16,7 @@ local DOT = " \194\183 "       -- " · "
 local GREEN, RED, GREY, GOLD = "|cff40ff40", "|cffff4040", "|cff9d9d9d", "|cffffd100"
 
 local EMPTY_RECIPES = "Open a profession window to record your recipes."
+local BOP_NOTE = "Bind on Pickup, can't be crafted for others."
 local EMPTY_PEERS = "No one on the board yet \226\128\148 guildmates who install CraftBoard appear here."
 
 local frame                    -- main window, created on first show
@@ -319,6 +320,7 @@ local function CrafterSummary(entry)
   if mineText then parts[#parts + 1] = GOLD .. mineText .. "|r" end
   if online > 0 then parts[#parts + 1] = GREEN .. online .. " online|r" end
   parts[#parts + 1] = #(entry.crafters or {}) .. " known"
+  if entry.bop then parts[#parts + 1] = GREY .. "BoP|r" end
   return table.concat(parts, DOT)
 end
 
@@ -419,7 +421,7 @@ local function FillCrafterRow(row, c)
   end
   row.name:SetText(text)
   row.whisper:SetShown(not c.mine)
-  row.whisper:SetEnabled(find.itemID ~= nil)
+  row.whisper:SetEnabled(find.itemID ~= nil and not find.bop)
 end
 
 local function ReagentRow(parent, rowH)
@@ -552,6 +554,8 @@ local function BuildFind(p)
     if self:IsEnabled() then
       GameTooltip:SetText("Post an open request to the board")
       GameTooltip:AddLine("Guild and realm-channel CraftBoard users see it for 24h.", 1, 1, 1, true)
+    elseif find.bop then
+      GameTooltip:SetText(BOP_NOTE)
     else
       GameTooltip:SetText("This recipe makes no item to request")
     end
@@ -562,6 +566,7 @@ local function BuildFind(p)
   find.hint = Label(body, nil, "GameFontDisableSmall")
   find.hint:SetPoint("BOTTOMLEFT", 0, 8)
   find.hint:SetPoint("RIGHT", find.post, "LEFT", -6, 0)
+  if find.hint.SetWordWrap then find.hint:SetWordWrap(true) end
 end
 
 function UI.RefreshDetail()
@@ -578,6 +583,7 @@ function UI.RefreshDetail()
 
   local itemID = OutputOf(e.recipeID, e)
   find.itemID = itemID
+  find.bop = e.bop and true or false
   find.icon:SetTexture(RecipeIcon(e.recipeID, itemID))
   find.title:SetText(e.name)
   find.crafters:SetItems(e.crafters, "No known crafters.", true)
@@ -593,8 +599,12 @@ function UI.RefreshDetail()
     find.reagents:SetItems({}, "Reagents unknown (peer recipe).")
   end
 
-  find.post:SetEnabled(itemID ~= nil)
-  find.hint:SetText(itemID and "" or "No item output")
+  find.post:SetEnabled(itemID ~= nil and not find.bop)
+  if find.bop then
+    find.hint:SetText(GOLD .. BOP_NOTE .. "|r")
+  else
+    find.hint:SetText(itemID and "" or "No item output")
+  end
 end
 
 function UI.RefreshFind(keepScroll)
