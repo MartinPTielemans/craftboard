@@ -15,8 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Recipes whose crafted item is Bind on Pickup (or a quest item) are no longer shared with
-  other players. They still show in your own Find list, tagged "BoP", with whisper and post
-  disabled.
+  other players and are hidden from the Find tab. They still appear on the Mine tab.
 - Reopening a profession window skips the full recipe read when your learned recipes haven't
   changed; `/cb scan` still forces a full rescan.
 - Reagents with several quality tiers count every tier you own toward have/need, craftable

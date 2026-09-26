@@ -464,14 +464,15 @@ function Recipes.Search(text)
     end
   end
 
-  -- My own Bind-on-Pickup recipes stay listed (bop=true) so I can see them; they are
-  -- never shared with peers (see Recipes.Shareable).
-  local myNames, bop = {}, {}
+  -- Find is about what can be made for someone else, so Bind-on-Pickup outputs are
+  -- left out entirely (they still show on the Mine tab and are never shared with peers).
+  local myNames = {}
   for _, ch in ipairs(Recipes.AllMyChars()) do
     myNames[ch.name] = true
     for recipeID, rec in pairs(ch.recipes) do
-      add(recipeID, { name = ch.name, mine = true, online = ch.isMe, sameRealm = ch.sameRealm })
-      if not Recipes.IsTradeable(rec) then bop[recipeID] = true end
+      if Recipes.IsTradeable(rec) then
+        add(recipeID, { name = ch.name, mine = true, online = ch.isMe, sameRealm = ch.sameRealm })
+      end
     end
   end
 
@@ -510,7 +511,6 @@ function Recipes.Search(text)
         outputItemID = out,
         crafters = entry.crafters,
         online = anyOnline,
-        bop = bop[recipeID] or nil,
       }
     end
   end
