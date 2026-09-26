@@ -18,7 +18,7 @@ local function anchors(obj)
     local p, rel, rp, x, y = safe(obj.GetPoint, obj, i)
     if p then
       local relName = rel and (safe(rel.GetName, rel) or safe(rel.GetObjectType, rel)) or "nil"
-      out[#out + 1] = string.format("%s->%s.%s %s,%s", p, relName, tostring(rp), round(x), round(y))
+      out[#out + 1] = string.format("%s->%s.%s %s,%s", tostring(p), tostring(relName), tostring(rp), tostring(round(x)), tostring(round(y)))
     end
   end
   return table.concat(out, " | ")
@@ -29,7 +29,9 @@ local function describe(obj, depth, list)
   local t = safe(obj.GetObjectType, obj) or "?"
   local w, h = safe(obj.GetSize, obj)
   local rec = { d = depth, t = t, n = safe(obj.GetName, obj), w = round(w), h = round(h),
-                a = anchors(obj), shown = safe(obj.IsShown, obj) and 1 or 0 }
+                shown = safe(obj.IsShown, obj) and 1 or 0 }
+  local okA, a = pcall(anchors, obj)
+  rec.a = okA and a or ("anchors failed: " .. tostring(a))
   if safe(obj.GetDebugName, obj) then rec.dn = safe(obj.GetDebugName, obj) end
   if t == "Texture" or t == "MaskTexture" then
     rec.atlas = safe(obj.GetAtlas, obj)
@@ -144,8 +146,13 @@ function NS.DumpFrame(name)
   end
   NS.Print("hover the window to capture; dumping in 3 seconds")
   C_Timer.After(3, function()
-    local f = TopLevel(MouseFrame())
-    if not f or f == UIParent or f == WorldFrame then NS.Print("nothing under the mouse"); return end
-    DumpObject(f, f:GetName() or f:GetDebugName() or "unnamed")
+    local ok, err = pcall(function()
+      local m = MouseFrame()
+      NS.Print("under mouse: " .. tostring(m and (m:GetName() or m:GetDebugName()) or "nothing"))
+      local f = TopLevel(m)
+      if not f or f == UIParent or f == WorldFrame then NS.Print("nothing under the mouse"); return end
+      DumpObject(f, f:GetName() or f:GetDebugName() or "unnamed")
+    end)
+    if not ok then NS.Print("dump failed: " .. tostring(err)) end
   end)
 end
