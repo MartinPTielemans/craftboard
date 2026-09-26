@@ -6,6 +6,8 @@
 ## SavedVariables: CraftBoardDB
 ## IconTexture: Interface\Icons\INV_Misc_Note_01
 ## X-Category: Professions
+## X-License: MIT
+## X-Website: https://github.com/mpt/craftboard
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua

@@ -1,0 +1,23 @@
+# BigWigsMods packager config (https://github.com/BigWigsMods/packager)
+package-as: CraftBoard
+
+# The addon lives in the CraftBoard/ subfolder. The repo is copied to .release/CraftBoard/,
+# then the subfolder's contents are moved up so the zip root is CraftBoard/CraftBoard.toc.
+# The packager also scans this path for the TOC (Interface 16001 -> game type "forever").
+move-folders:
+  CraftBoard/CraftBoard: CraftBoard
+
+# Libraries are vendored in CraftBoard/Libs, so no externals.
+enable-nolib-creation: no
+
+# Read from the repo, not shipped (CHANGELOG.md is ignored below).
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - tools
+  - docs
+  - dist
+  - README.md
+  - CHANGELOG.md
