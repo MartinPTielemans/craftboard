@@ -60,7 +60,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 -- DB
-local DEFAULTS = { chars = {}, peers = {}, posts = {}, realmChannel = true, recipeNames = {} }
+local DEFAULTS = { chars = {}, peers = {}, posts = {}, realmChannel = true, guildShare = true, recipeNames = {} }
 
 local function InitDB()
   if type(CraftBoardDB) ~= "table" then CraftBoardDB = {} end
@@ -110,24 +110,27 @@ NS.Register("PLAYER_LOGIN", function()
   end
 end)
 
--- Slash commands
+-- Slash commands. NS.L comes from Locales.lua, which loads after this file: look it up at call time.
 local function PrintHelp()
-  NS.Print("/cb - toggle window")
-  NS.Print("/cb scan - rescan the open profession window")
-  NS.Print("/cb debug - list known peers")
-  NS.Print("/cb help - this help")
+  local L = NS.L
+  NS.Print(L["/cb - toggle window"])
+  NS.Print(L["/cb scan - rescan the open profession window"])
+  NS.Print(L["/cb options - open the settings panel"])
+  NS.Print(L["/cb debug - list known peers"])
+  NS.Print(L["/cb help - this help"])
 end
 
 local function PrintPeers()
+  local L = NS.L
   local peers = NS.Comm and NS.Comm.Peers and NS.Comm.Peers()
   if not peers then
-    NS.Print("comm module not loaded")
+    NS.Print(L["comm module not loaded"])
     return
   end
   local names = {}
   for name in pairs(peers) do names[#names + 1] = name end
   table.sort(names)
-  NS.Print(#names .. " peer(s)")
+  NS.Print(string.format(L["%d peer(s)"], #names))
   for i = 1, #names do
     local p = peers[names[i]]
     local n = 0
@@ -135,27 +138,30 @@ local function PrintPeers()
       for _ in pairs(p.recipes) do n = n + 1 end
     end
     local ago = p.seen and time and (time() - p.seen) or nil
-    NS.Print(string.format("  %s: %d recipes, %s%s", names[i], n,
-      p.online and "online" or "offline",
-      ago and string.format(", seen %dm ago", math.floor(ago / 60)) or ""))
+    NS.Print("  " .. string.format(L["%s: %d recipes, %s"], names[i], n,
+      p.online and L["online"] or L["offline"])
+      .. (ago and string.format(L[", seen %dm ago"], math.floor(ago / 60)) or ""))
   end
 end
 
 SLASH_CRAFTBOARD1 = "/cb"
 SLASH_CRAFTBOARD2 = "/craftboard"
 SlashCmdList["CRAFTBOARD"] = function(msg)
+  local L = NS.L
   local cmd = strlower(strtrim(msg or ""))
   if cmd == "" then
     if NS.UI and NS.UI.Toggle then
       NS.UI.Toggle()
     else
-      NS.Print("UI not loaded")
+      NS.Print(L["UI not loaded"])
     end
   elseif cmd == "scan" then
     if NS.Recipes and NS.Recipes.Scan then
       local n, why = NS.Recipes.Scan(true)
-      NS.Print(n and ("scanned " .. n .. " recipe(s)") or ("scan skipped: " .. tostring(why)))
+      NS.Print(n and string.format(L["scanned %d recipe(s)"], n) or string.format(L["scan skipped: %s"], tostring(why)))
     end
+  elseif cmd == "options" or cmd == "config" then
+    if NS.Options and NS.Options.Open then NS.Options.Open() end
   elseif cmd == "debug" then
     if NS.Comm and NS.Comm.Debug then NS.Comm.Debug() end
     PrintPeers()

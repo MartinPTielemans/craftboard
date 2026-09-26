@@ -7,6 +7,7 @@ NS.UI = UI
 
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local format = string.format
+local L = NS.L
 
 local WIDTH, HEIGHT = 560, 420
 local LEFT_W = 262             -- left column incl. scrollbar
@@ -15,9 +16,9 @@ local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local DOT = " \194\183 "       -- " · "
 local GREEN, RED, GREY, GOLD = "|cff40ff40", "|cffff4040", "|cff9d9d9d", "|cffffd100"
 
-local EMPTY_RECIPES = "Open a profession window to record your recipes."
-local BOP_NOTE = "Bind on Pickup, can't be crafted for others."
-local EMPTY_PEERS = "No one on the board yet \226\128\148 guildmates who install CraftBoard appear here."
+local EMPTY_RECIPES = L["Open a profession window to record your recipes."]
+local BOP_NOTE = L["Bind on Pickup, can't be crafted for others."]
+local EMPTY_PEERS = L["No one on the board yet \226\128\148 guildmates who install CraftBoard appear here."]
 
 local frame                    -- main window, created on first show
 local tabs, panels = {}, {}
@@ -68,7 +69,7 @@ end
 
 local function ItemName(itemID)
   local n = NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(itemID)
-  return n or ("Item " .. tostring(itemID))
+  return n or format(L["Item %s"], tostring(itemID))
 end
 
 local function ItemLink(itemID)
@@ -103,9 +104,9 @@ end
 
 local function Age(t)
   local d = max(0, (time() - (t or time())))
-  if d < 60 then return "now" end
-  if d < 3600 then return floor(d / 60) .. "m" end
-  return floor(d / 3600) .. "h"
+  if d < 60 then return L["now"] end
+  if d < 3600 then return format(L["%dm"], floor(d / 60)) end
+  return format(L["%dh"], floor(d / 3600))
 end
 
 -- Calls fn once, `delay` seconds after the last trigger.
@@ -312,15 +313,15 @@ local function CrafterSummary(entry)
   end
   local parts = {}
   local mineText
-  if you then mineText = "you" end
+  if you then mineText = L["you"] end
   if #alts > 0 then
     local a = table.concat(alts, ", ")
     mineText = mineText and (mineText .. " (" .. a .. ")") or a
   end
   if mineText then parts[#parts + 1] = GOLD .. mineText .. "|r" end
-  if online > 0 then parts[#parts + 1] = GREEN .. online .. " online|r" end
-  parts[#parts + 1] = #(entry.crafters or {}) .. " known"
-  if entry.bop then parts[#parts + 1] = GREY .. "BoP|r" end
+  if online > 0 then parts[#parts + 1] = GREEN .. format(L["%d online"], online) .. "|r" end
+  parts[#parts + 1] = format(L["%d known"], #(entry.crafters or {}))
+  if entry.bop then parts[#parts + 1] = GREY .. L["BoP"] .. "|r" end
   return table.concat(parts, DOT)
 end
 
@@ -332,7 +333,7 @@ local function ProfName(profID)
     if n then return n end
   end
   if type(profID) == "string" then return profID end
-  return "Other"
+  return L["Other"]
 end
 
 -- The selected recipe's Search entry: from the current results, else a full lookup.
@@ -386,7 +387,8 @@ local function FillFindRow(row, entry)
   row.entry = entry
   row.icon:SetTexture(RecipeIcon(entry.recipeID, entry.outputItemID))
   local name = entry.name
-  if entry.outputItemID and name:find("^Recipe %d+$") then name = ItemName(entry.outputItemID) end
+  -- Search fell back to the generic "Recipe <id>" label: the output item name reads better.
+  if entry.outputItemID and name == format(L["Recipe %d"], entry.recipeID) then name = ItemName(entry.outputItemID) end
   row.name:SetText(name)
   row.sub:SetText(CrafterSummary(entry))
   row.sel:SetShown(entry.recipeID == selectedID)
@@ -394,13 +396,13 @@ end
 
 local function CrafterRow(parent, rowH)
   local row = RowBase(parent, rowH)
-  row.whisper = PanelButton(row, "Whisper", 64, 18)
+  row.whisper = PanelButton(row, L["Whisper"], 64, 18)
   row.whisper:SetPoint("RIGHT", -2, 0)
   row.whisper:SetScript("OnClick", function(self)
     local c, itemID = row.crafter, find.itemID
     if not (c and itemID and NS.Comm and NS.Comm.Request) then return end
     if not NS.Comm.Request(itemID, ReadQty(find.qty), c.name) then
-      NS.Print("Could not whisper " .. Short(c.name) .. ".")
+      NS.Print(format(L["Could not whisper %s."], Short(c.name)))
     end
   end)
   row.name = Label(row, nil, "GameFontHighlightSmall")
@@ -413,11 +415,11 @@ local function FillCrafterRow(row, c)
   row.crafter = c
   local text
   if c.mine then
-    text = GOLD .. Short(c.name) .. (c.name == NS.Me and " (you)" or " (alt)") .. "|r"
+    text = GOLD .. format(c.name == NS.Me and L["%s (you)"] or L["%s (alt)"], Short(c.name)) .. "|r"
   elseif c.online then
-    text = GREEN .. Short(c.name) .. "|r  " .. GREY .. "online|r"
+    text = GREEN .. Short(c.name) .. "|r  " .. GREY .. L["online"] .. "|r"
   else
-    text = GREY .. Short(c.name) .. "  offline|r"
+    text = GREY .. Short(c.name) .. "  " .. L["offline"] .. "|r"
   end
   row.name:SetText(text)
   row.whisper:SetShown(not c.mine)
@@ -487,7 +489,7 @@ local function BuildFind(p)
   divider:SetPoint("TOPLEFT", LEFT_W + 4, 0)
   divider:SetPoint("BOTTOMLEFT", LEFT_W + 4, 0)
 
-  find.none = Label(d, "Select a recipe to see who can craft it.", "GameFontDisable")
+  find.none = Label(d, L["Select a recipe to see who can craft it."], "GameFontDisable")
   find.none:SetPoint("CENTER")
 
   local body = CreateFrame("Frame", nil, d)
@@ -509,34 +511,34 @@ local function BuildFind(p)
   find.title:SetPoint("TOPLEFT", find.icon, "TOPRIGHT", 6, -1)
   find.title:SetPoint("RIGHT")
 
-  local qtyLabel = Label(body, "Qty", "GameFontHighlightSmall")
+  local qtyLabel = Label(body, L["Qty"], "GameFontHighlightSmall")
   qtyLabel:SetPoint("BOTTOMLEFT", find.icon, "BOTTOMRIGHT", 6, 2)
   find.qty = EditBox("CraftBoardFindQty", body, 36, 4, true)
   find.qty:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
   find.qty:SetText("1")
   find.qty:HookScript("OnTextChanged", Debouncer(0.2, function() UI.RefreshDetail() end))
 
-  local ch = Label(body, "Crafters", "GameFontNormalSmall")
+  local ch = Label(body, L["Crafters"], "GameFontNormalSmall")
   ch:SetPoint("TOPLEFT", 0, -42)
   find.crafters = NewList("CraftBoardCraftersScroll", body, 20, CrafterRow, FillCrafterRow)
   find.crafters.box:SetPoint("TOPLEFT", 0, -56)
   find.crafters.box:SetPoint("RIGHT")
   find.crafters.box:SetHeight(104)
 
-  local rh = Label(body, "Reagents", "GameFontNormalSmall")
+  local rh = Label(body, L["Reagents"], "GameFontNormalSmall")
   rh:SetPoint("TOPLEFT", 0, -166)
   find.reagents = NewList("CraftBoardReagentsScroll", body, 20, ReagentRow, FillReagentRow)
   find.reagents.box:SetPoint("TOPLEFT", 0, -180)
   find.reagents.box:SetPoint("RIGHT")
   find.reagents.box:SetHeight(100)
 
-  local noteLabel = Label(body, "Note", "GameFontHighlightSmall")
+  local noteLabel = Label(body, L["Note"], "GameFontHighlightSmall")
   noteLabel:SetPoint("BOTTOMLEFT", 0, 34)
   find.note = EditBox("CraftBoardFindNote", body, 200, 60)
   find.note:SetPoint("LEFT", noteLabel, "RIGHT", 10, 0)
   find.note:SetPoint("RIGHT", -4, 0)
 
-  find.post = PanelButton(body, "Post request", 110, 22)
+  find.post = PanelButton(body, L["Post request"], 110, 22)
   find.post:SetPoint("BOTTOMRIGHT", 0, 2)
   if find.post.SetMotionScriptsWhileDisabled then find.post:SetMotionScriptsWhileDisabled(true) end
   find.post:SetScript("OnClick", function()
@@ -546,18 +548,18 @@ local function BuildFind(p)
     if NS.Comm.PostRequest(itemID, qty, find.note:GetText()) then
       find.note:SetText("")
       find.note:ClearFocus()
-      NS.Print("Posted request: " .. qty .. "x " .. ItemName(itemID))
+      NS.Print(format(L["Posted request: %dx %s"], qty, ItemName(itemID)))
     end
   end)
   find.post:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
     if self:IsEnabled() then
-      GameTooltip:SetText("Post an open request to the board")
-      GameTooltip:AddLine("Guild and realm-channel CraftBoard users see it for 24h.", 1, 1, 1, true)
+      GameTooltip:SetText(L["Post an open request to the board"])
+      GameTooltip:AddLine(L["Guild and realm-channel CraftBoard users see it for 24h."], 1, 1, 1, true)
     elseif find.bop then
       GameTooltip:SetText(BOP_NOTE)
     else
-      GameTooltip:SetText("This recipe makes no item to request")
+      GameTooltip:SetText(L["This recipe makes no item to request"])
     end
     GameTooltip:Show()
   end)
@@ -586,7 +588,7 @@ function UI.RefreshDetail()
   find.bop = e.bop and true or false
   find.icon:SetTexture(RecipeIcon(e.recipeID, itemID))
   find.title:SetText(e.name)
-  find.crafters:SetItems(e.crafters, "No known crafters.", true)
+  find.crafters:SetItems(e.crafters, L["No known crafters."], true)
 
   local qty = ReadQty(find.qty)
   local rec = NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(e.recipeID)
@@ -594,16 +596,16 @@ function UI.RefreshDetail()
     local cc = NS.Inventory.CanCraft(rec, qty)
     find.reagents:SetItems(cc.reagents, nil, true)
   elseif rec then
-    find.reagents:SetItems({}, "No reagents recorded.")
+    find.reagents:SetItems({}, L["No reagents recorded."])
   else
-    find.reagents:SetItems({}, "Reagents unknown (peer recipe).")
+    find.reagents:SetItems({}, L["Reagents unknown (peer recipe)."])
   end
 
   find.post:SetEnabled(itemID ~= nil and not find.bop)
   if find.bop then
     find.hint:SetText(GOLD .. BOP_NOTE .. "|r")
   else
-    find.hint:SetText(itemID and "" or "No item output")
+    find.hint:SetText(itemID and "" or L["No item output"])
   end
 end
 
@@ -617,7 +619,7 @@ function UI.RefreshFind(keepScroll)
   if #results == 0 then
     local needle = strtrim(text)
     if needle ~= "" and (HaveAnyRecipes() or PeerCounts() > 0) then
-      emptyText = "No known crafter for \"" .. needle .. "\"."
+      emptyText = format(L["No known crafter for \"%s\"."], needle)
     else
       emptyText = EMPTY_RECIPES
     end
@@ -628,7 +630,8 @@ function UI.RefreshFind(keepScroll)
   if total == 0 then
     find.status:SetText(EMPTY_PEERS)
   else
-    find.status:SetText(format("%d recipes%s%d peers%s%d online", #results, DOT, total, DOT, online))
+    find.status:SetText(format(L["%d recipes"], #results) .. DOT .. format(L["%d peers"], total) .. DOT
+      .. format(L["%d online"], online))
   end
   UI.RefreshDetail()
 end
@@ -674,9 +677,9 @@ local function FillMineRow(row, it)
   row.icon:SetTexture(RecipeIcon(it.recipeID, it.outputItemID))
   row.name:SetText(it.name)
   if it.ready then
-    row.count:SetText(GREEN .. "x" .. (it.times or 1) .. "|r")
+    row.count:SetText(GREEN .. format(L["x%d"], it.times or 1) .. "|r")
   else
-    row.count:SetText(RED .. it.missing .. " short|r")
+    row.count:SetText(RED .. format(L["%d short"], it.missing) .. "|r")
   end
   row.sel:SetShown(it.recipeID == selectedID)
 end
@@ -688,7 +691,7 @@ local function BuildMine(p)
   local cbText = cb.Text or cb.text or _G["CraftBoardShowAllText"]
   if cbText then
     cbText:SetFontObject("GameFontHighlightSmall")
-    cbText:SetText("Show recipes I'm short on")
+    cbText:SetText(L["Show recipes I'm short on"])
   end
   cb:SetScript("OnClick", function(self)
     local db = UIDB()
@@ -724,14 +727,14 @@ local function BuildMine(p)
   mine.title:SetPoint("TOPLEFT", mine.icon, "TOPRIGHT", 6, -1)
   mine.title:SetPoint("RIGHT")
 
-  local qtyLabel = Label(d, "Qty", "GameFontHighlightSmall")
+  local qtyLabel = Label(d, L["Qty"], "GameFontHighlightSmall")
   qtyLabel:SetPoint("BOTTOMLEFT", mine.icon, "BOTTOMRIGHT", 6, 2)
   mine.qty = EditBox("CraftBoardMineQty", d, 36, 4, true)
   mine.qty:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
   mine.qty:SetText("1")
   mine.qty:HookScript("OnTextChanged", Debouncer(0.2, function() UI.RefreshShopping() end))
 
-  local sh = Label(d, "Shopping list", "GameFontNormalSmall")
+  local sh = Label(d, L["Shopping list"], "GameFontNormalSmall")
   sh:SetPoint("TOPLEFT", 0, -42)
   mine.shop = NewList("CraftBoardShopScroll", d, 20, ReagentRow, FillReagentRow)
   mine.shop.box:SetPoint("TOPLEFT", 0, -56)
@@ -749,16 +752,16 @@ function UI.RefreshShopping()
   if not selectedID then
     mine.icon:SetTexture(nil)
     mine.title:SetText("")
-    mine.shop:SetItems({}, "Select a recipe to see what you're short on.")
+    mine.shop:SetItems({}, L["Select a recipe to see what you're short on."])
     mine.shopStatus:SetText("")
     return
   end
-  local name = (R and R.NameOf and R.NameOf(selectedID)) or ("Recipe " .. selectedID)
+  local name = (R and R.NameOf and R.NameOf(selectedID)) or format(L["Recipe %d"], selectedID)
   local itemID = OutputOf(selectedID)
   mine.icon:SetTexture(RecipeIcon(selectedID, itemID))
   mine.title:SetText(name)
   if not rec then
-    mine.shop:SetItems({}, "Not one of your recipes \226\128\148 reagents unknown.")
+    mine.shop:SetItems({}, L["Not one of your recipes \226\128\148 reagents unknown."])
     mine.shopStatus:SetText("")
     return
   end
@@ -768,11 +771,11 @@ function UI.RefreshShopping()
     list, unknown = NS.Inventory.ShoppingList({ { selectedID, qty } })
   end
   if #list == 0 then
-    mine.shop:SetItems({}, "You have everything for " .. qty .. "x.")
+    mine.shop:SetItems({}, format(L["You have everything for %dx."], qty))
     mine.shopStatus:SetText("")
   else
     mine.shop:SetItems(list, nil, true)
-    mine.shopStatus:SetText(RED .. #list .. " reagent(s) short|r for " .. qty .. "x")
+    mine.shopStatus:SetText(format(L["%s for %dx"], RED .. format(L["%d reagent(s) short"], #list) .. "|r", qty))
   end
 end
 
@@ -789,7 +792,7 @@ function UI.RefreshMine(keepScroll)
       local cc = I.CanCraft(rec)
       entries[#entries + 1] = {
         recipeID = recipeID, outputItemID = rec.o, p = rec.p,
-        name = rec.n or R.NameOf(recipeID) or ("Recipe " .. recipeID),
+        name = rec.n or R.NameOf(recipeID) or format(L["Recipe %d"], recipeID),
         ready = cc.ready, times = cc.times, missing = #cc.missing,
       }
     end
@@ -830,10 +833,10 @@ function UI.RefreshMine(keepScroll)
   if not hasRecipes then
     emptyText = EMPTY_RECIPES
   elseif #items == 0 then
-    emptyText = "Nothing craftable from your bags and bank right now."
+    emptyText = L["Nothing craftable from your bags and bank right now."]
   end
   mine.list:SetItems(items, emptyText, keepScroll)
-  mine.status:SetText(#entries > 0 and (#entries .. (showAll and " recipes" or " craftable now")) or "")
+  mine.status:SetText(#entries > 0 and format(showAll and L["%d recipes"] or L["%d craftable now"], #entries) or "")
   UI.RefreshShopping()
 end
 
@@ -845,7 +848,7 @@ end
 
 local function RequestRow(parent, rowH)
   local row = IconRow(parent, rowH, 28)
-  row.action = PanelButton(row, "Whisper", 72, 20)
+  row.action = PanelButton(row, L["Whisper"], 72, 20)
   row.action:SetPoint("RIGHT", -2, 0)
   row.action:SetScript("OnClick", function()
     local post = row.post
@@ -854,9 +857,9 @@ local function RequestRow(parent, rowH)
       if NS.Comm and NS.Comm.Retract then NS.Comm.Retract(post.id) end
       UI.Refresh()
     else
-      local msg = "[CraftBoard] I can craft " .. ItemLink(post.item) .. " for you."
+      local msg = format(L["[CraftBoard] I can craft %s for you."], ItemLink(post.item))
       if not (NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(post.from, msg)) then
-        NS.Print("Could not whisper " .. Short(post.from) .. ".")
+        NS.Print(format(L["Could not whisper %s."], Short(post.from)))
       end
     end
   end)
@@ -878,11 +881,11 @@ end
 local function FillRequestRow(row, post)
   row.post = post
   row.icon:SetTexture(ItemIcon(post.item) or QUESTION)
-  row.name:SetText(ItemName(post.item) .. "  " .. GREY .. "x" .. (post.qty or 1) .. "|r")
+  row.name:SetText(ItemName(post.item) .. "  " .. GREY .. format(L["x%d"], post.qty or 1) .. "|r")
   row.note:SetText(post.note ~= "" and post.note or "")
   local mineP = IsMyPost(post)
-  row.who:SetText((mineP and (GOLD .. "you|r") or Short(post.from)) .. DOT .. Age(post.t))
-  row.action:SetText(mineP and "Retract" or "Whisper")
+  row.who:SetText((mineP and (GOLD .. L["you"] .. "|r") or Short(post.from)) .. DOT .. Age(post.t))
+  row.action:SetText(mineP and L["Retract"] or L["Whisper"])
 end
 
 local function BuildRequests(p)
@@ -900,10 +903,10 @@ function UI.RefreshRequests(keepScroll)
   local total = PeerCounts()
   local emptyText
   if #posts == 0 then
-    emptyText = total == 0 and EMPTY_PEERS or "No open requests. Post one from the Find tab."
+    emptyText = total == 0 and EMPTY_PEERS or L["No open requests. Post one from the Find tab."]
   end
   reqs.list:SetItems(posts, emptyText, keepScroll)
-  reqs.status:SetText(#posts > 0 and (#posts .. " open request(s), newest first") or "")
+  reqs.status:SetText(#posts > 0 and format(L["%d open request(s), newest first"], #posts) or "")
 end
 
 -- Window --------------------------------------------------------------------
@@ -952,7 +955,7 @@ local function SelectTab(i)
   REFRESH[i](false)
 end
 
-local TAB_NAMES = { "Find", "Mine", "Requests" }
+local TAB_NAMES = { L["Find"], L["Mine"], L["Requests"] }
 
 local function BuildTabs(f)
   local usePanel = HasTemplate("PanelTabButtonTemplate")

@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Options panel in the game settings (`/cb options` or `/cb config`): share recipes on the realm
+  channel, share recipes with your guild (new, on by default; off stops all guild broadcasts),
+  and "Forget all peer data" to clear known crafters and board posts.
+- Localization: every user-visible string goes through a locale table (`Locales.lua`), English
+  by default, ready for translations.
+
+### Changed
+- Recipes whose crafted item is Bind on Pickup (or a quest item) are no longer shared with
+  other players. They still show in your own Find list, tagged "BoP", with whisper and post
+  disabled.
+- Reopening a profession window skips the full recipe read when your learned recipes haven't
+  changed; `/cb scan` still forces a full rescan.
+- Reagents with several quality tiers count every tier you own toward have/need, craftable
+  counts and the shopping list.
+
 ## [0.1.0] - 2026-09-26
 
 First working build for WoW: Forever (Interface 16001).

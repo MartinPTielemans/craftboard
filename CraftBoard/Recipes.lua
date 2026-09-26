@@ -4,6 +4,8 @@ local ADDON, NS = ...
 local Recipes = {}
 NS.Recipes = Recipes
 
+local L = NS.L
+
 local TSUI = C_TradeSkillUI
 
 local function MyChar()
@@ -281,17 +283,18 @@ local lastCount = {}
 
 -- Scan the open profession. Returns number of learned recipes stored, or nil, reason.
 -- Skips the per-recipe read when the learned set is unchanged, unless force is set.
+-- Reasons are localized for display, except "unchanged" (a status code, never printed).
 function Recipes.Scan(force)
   if not TSUI or not TSUI.GetAllRecipeIDs or not TSUI.GetRecipeInfo then
-    return nil, "profession API unavailable"
+    return nil, L["profession API unavailable"]
   end
-  if IsViewingOther() then return nil, "viewing someone else's profession" end
-  if TSUI.IsTradeSkillReady and not TSUI.IsTradeSkillReady() then return nil, "profession data not ready" end
-  if TSUI.IsDataSourceChanging and TSUI.IsDataSourceChanging() then return nil, "profession data loading" end
+  if IsViewingOther() then return nil, L["viewing someone else's profession"] end
+  if TSUI.IsTradeSkillReady and not TSUI.IsTradeSkillReady() then return nil, L["profession data not ready"] end
+  if TSUI.IsDataSourceChanging and TSUI.IsDataSourceChanging() then return nil, L["profession data loading"] end
   local c = MyChar()
-  if not c then return nil, "character not known yet" end
+  if not c then return nil, L["character not known yet"] end
   local profID, profName, rank, maxRank = OpenProfession()
-  if not profID then return nil, "no profession window open" end
+  if not profID then return nil, L["no profession window open"] end
 
   -- Cheap pass: learned IDs, count and an order-independent hash of them.
   local ids = TSUI.GetAllRecipeIDs() or {}
@@ -503,7 +506,7 @@ function Recipes.Search(text)
       end
       results[#results + 1] = {
         recipeID = recipeID,
-        name = name or ("Recipe " .. recipeID),
+        name = name or string.format(L["Recipe %d"], recipeID),
         outputItemID = out,
         crafters = entry.crafters,
         online = anyOnline,

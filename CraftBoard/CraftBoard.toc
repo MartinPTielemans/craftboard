@@ -16,6 +16,8 @@ Libs\LibDeflate\lib.xml
 Libs\LibSerialize\lib.xml
 
 Core.lua
+Locales.lua
+Options.lua
 Recipes.lua
 Inventory.lua
 Comm.lua

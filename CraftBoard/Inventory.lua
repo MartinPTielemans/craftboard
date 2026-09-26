@@ -4,6 +4,8 @@ local ADDON, NS = ...
 local Inventory = {}
 NS.Inventory = Inventory
 
+local L = NS.L
+
 -- Bags + bank + reagent bank.
 function Inventory.Count(itemID)
   if type(itemID) ~= "number" then return 0 end
@@ -106,7 +108,7 @@ function Inventory.Craftable()
     if cc.ready then
       out[#out + 1] = {
         recipeID = recipeID,
-        name = rec.n or (NS.Recipes and NS.Recipes.NameOf and NS.Recipes.NameOf(recipeID)) or ("Recipe " .. recipeID),
+        name = rec.n or (NS.Recipes and NS.Recipes.NameOf and NS.Recipes.NameOf(recipeID)) or string.format(L["Recipe %d"], recipeID),
         outputItemID = rec.o,
         times = cc.times,
         record = rec,

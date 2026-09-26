@@ -15,8 +15,8 @@ still works as a personal crafting tool: what you can craft right now, what is m
 
 ## Use
 `/cb` opens the window. Open each profession window once so your recipes are recorded.
-`/cb scan` forces a rescan, `/cb debug` shows sync status.
+`/cb scan` forces a rescan, `/cb options` opens the settings, `/cb debug` shows sync status.
 
 ## Layout
-- `CraftBoard/` the addon. Modules: Core, Recipes, Inventory, Comm, UI. Design in `docs/SPEC.md`.
+- `CraftBoard/` the addon. Modules: Core, Locales, Options, Recipes, Inventory, Comm, UI. Design in `docs/SPEC.md`.
 - `tools/check.sh` parses all Lua. `tools/link.sh` links into the game.

@@ -10,6 +10,9 @@ local ADDON, NS = ...
 local Comm = {}
 NS.Comm = Comm
 
+local L = NS.L
+local format = string.format
+
 local PREFIX = "CBRD"
 local CHANNEL_NAME = "CraftBoardF"
 local VERSION = 1
@@ -224,6 +227,12 @@ local function RealmChannelOn()
   return db and db.realmChannel and true or false
 end
 
+-- Options "Share recipes with my guild": only an explicit false turns GUILD sends off.
+local function GuildShareOn()
+  local db = DB()
+  return not (db and db.guildShare == false)
+end
+
 local SendHello -- forward
 
 local function JoinRealmChannel(attempt)
@@ -265,7 +274,7 @@ end
 local function Broadcast(kind, payload, prio)
   if not CanSend() then return {} end
   local used = {}
-  if InGuild() then
+  if InGuild() and GuildShareOn() then
     if Send(kind, payload, "GUILD", nil, prio) then used[#used + 1] = "GUILD" end
   end
   if RealmChannelOn() and ResolveChannel() then
@@ -312,7 +321,7 @@ local function MyProfs()
 end
 
 local function DistAvailable(dist)
-  if dist == "GUILD" then return InGuild() end
+  if dist == "GUILD" then return InGuild() and GuildShareOn() end
   if dist == "CHANNEL" then return RealmChannelOn() and ResolveChannel() ~= nil end
   return false
 end
@@ -549,7 +558,7 @@ function Comm.PostRequest(itemID, qty, note)
   if not (db and me and itemID and qty) then return nil end
   local now = time()
   if now - lastPost < POST_GAP then
-    Print("Please wait a few seconds before posting again.")
+    Print(L["Please wait a few seconds before posting again."])
     return nil
   end
   local open = 0
@@ -557,7 +566,7 @@ function Comm.PostRequest(itemID, qty, note)
     if type(p) == "table" and p.from == me then open = open + 1 end
   end
   if open >= MAX_POSTS_PER_SENDER then
-    Print("You already have " .. open .. " open requests. Retract one first.")
+    Print(format(L["You already have %d open requests. Retract one first."], open))
     return nil
   end
   lastPost = now
@@ -606,8 +615,8 @@ function Comm.Request(itemID, qty, toName)
     label = select(2, GetItemInfo(itemID))
   end
   if not label and C_Item and C_Item.GetItemNameByID then label = C_Item.GetItemNameByID(itemID) end
-  label = label or ("item " .. itemID)
-  local msg = "[CraftBoard] Could you craft " .. qty .. "x " .. label .. " for me? I have/can get the mats."
+  label = label or format(L["item %d"], itemID)
+  local msg = format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty, label)
   return Comm.Whisper(target, msg)
 end
 
@@ -830,7 +839,7 @@ local function Start()
   if commObj.RegisterComm then
     commObj:RegisterComm(PREFIX, "OnCommReceived")
   else
-    Print("AceComm-3.0 missing; sync disabled.")
+    Print(L["AceComm-3.0 missing; sync disabled."])
   end
   if NS.RegisterCallback then
     pcall(NS.RegisterCallback, Comm, "RECIPES_UPDATED", OnRecipesUpdated)
@@ -892,12 +901,12 @@ function Comm.Debug()
     total = total + 1
     if p.online then online = online + 1 end
   end
-  local function ago(t) return t and ((time() - t) .. "s ago") or "never" end
-  Print("channel " .. CHANNEL_NAME .. ": " .. (ResolveChannel() and ("id " .. channelId) or "not joined")
-    .. (RealmChannelOn() and "" or " (disabled)"))
-  Print("guild: " .. (InGuild() and "yes" or "no"))
-  Print("peers: " .. total .. " (" .. online .. " online), open posts: " .. #PostList())
-  Print("last hello: " .. ago(lastHelloAt) .. " (guild " .. ago(lastHello.GUILD)
-    .. ", channel " .. ago(lastHello.CHANNEL) .. "), my hash " .. tostring(MyHash()))
-  if not (LibSerialize and LibDeflate and AceComm) then Print("missing comm libraries; sync disabled") end
+  local function ago(t) return t and format(L["%ds ago"], time() - t) or L["never"] end
+  Print(format(L["channel %s: %s"], CHANNEL_NAME, ResolveChannel() and format(L["id %d"], channelId) or L["not joined"])
+    .. (RealmChannelOn() and "" or L[" (disabled)"]))
+  Print(format(L["guild: %s"], InGuild() and L["yes"] or L["no"]) .. (GuildShareOn() and "" or L[" (sharing off)"]))
+  Print(format(L["peers: %d (%d online), open posts: %d"], total, online, #PostList()))
+  Print(format(L["last hello: %s (guild %s, channel %s), my hash %s"], ago(lastHelloAt), ago(lastHello.GUILD),
+    ago(lastHello.CHANNEL), tostring(MyHash())))
+  if not (LibSerialize and LibDeflate and AceComm) then Print(L["missing comm libraries; sync disabled"]) end
 end
