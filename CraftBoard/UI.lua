@@ -2246,14 +2246,8 @@ local REFRESH = {
 }
 
 local function FocusSearch()
-  if activeTab ~= 1 or not find.search then return end
-  find.search:SetFocus()
-  -- The chat box that ran /cb may still take focus back this frame: try again next frame.
-  if C_Timer and C_Timer.After then
-    C_Timer.After(0, function()
-      if frame and frame:IsShown() and activeTab == 1 then find.search:SetFocus() end
-    end)
-  end
+  -- Intentionally no auto-focus: like Blizzard's profession search, the box only takes
+  -- keyboard input when clicked, so chat commands typed with the window open still work.
 end
 
 local function SelectTab(i)
