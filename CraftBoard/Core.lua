@@ -168,6 +168,8 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
     PrintPeers()
   elseif cmd == "dump" then
     if NS.DumpFrame then NS.DumpFrame(rest) end
+  elseif cmd == "frames" then
+    if NS.ListFrames then NS.ListFrames() end
   else
     PrintHelp()
   end

@@ -76,10 +76,44 @@ local function describe(obj, depth, list)
   end
 end
 
-function NS.DumpFrame(name)
-  name = (name and name ~= "") and name or "ProfessionsFrame"
-  local f = _G[name]
-  if not f then NS.Print("no frame named " .. name .. " (open it first)"); return end
+local function TopLevel(f)
+  while f and f.GetParent do
+    local p = f:GetParent()
+    if not p or p == UIParent or p == WorldFrame then break end
+    f = p
+  end
+  return f
+end
+
+local function MouseFrame()
+  if GetMouseFoci then
+    local t = GetMouseFoci()
+    return t and t[1]
+  elseif GetMouseFocus then
+    return GetMouseFocus()
+  end
+end
+
+-- `/cb frames`: list visible top-level windows so their real names are known.
+function NS.ListFrames()
+  if not EnumerateFrames then NS.Print("EnumerateFrames unavailable"); return end
+  local f = EnumerateFrames()
+  local n = 0
+  while f do
+    local ok, shown = pcall(f.IsVisible, f)
+    if ok and shown and f:GetParent() == UIParent then
+      local w, h = f:GetSize()
+      if w >= 200 and h >= 200 then
+        n = n + 1
+        NS.Print(string.format("%s  %dx%d", tostring(f:GetName() or f:GetDebugName()), w, h))
+      end
+    end
+    f = EnumerateFrames(f)
+  end
+  NS.Print(string.format("%d visible windows", n))
+end
+
+local function DumpObject(f, name)
   local list = {}
   describe(f, 0, list)
   CraftBoardDB.dumps = CraftBoardDB.dumps or {}
@@ -97,4 +131,21 @@ function NS.DumpFrame(name)
   end
   CraftBoardDB.dumps.fonts = fonts
   NS.Print(string.format("dumped %d nodes of %s; /reload to write it to disk", #list, name))
+end
+
+-- `/cb dump [FrameName]`: with a name, dump that global frame. Without one, wait 3 s and
+-- dump the window under the mouse (so the frame's real name need not be known).
+function NS.DumpFrame(name)
+  if name and name ~= "" then
+    local f = _G[name]
+    if not f then NS.Print("no frame named " .. name .. "; try /cb frames or hover it and use /cb dump"); return end
+    DumpObject(f, name)
+    return
+  end
+  NS.Print("hover the window to capture; dumping in 3 seconds")
+  C_Timer.After(3, function()
+    local f = TopLevel(MouseFrame())
+    if not f or f == UIParent or f == WorldFrame then NS.Print("nothing under the mouse"); return end
+    DumpObject(f, f:GetName() or f:GetDebugName() or "unnamed")
+  end)
 end
