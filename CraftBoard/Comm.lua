@@ -609,8 +609,10 @@ function Comm.Request(itemID, qty, toName)
   if not target or IsMe(target) then return false end
   local label
   if C_Item and C_Item.GetItemInfo then
-    label = select(2, C_Item.GetItemInfo(itemID))
-    if not label then label = C_Item.GetItemInfo(itemID) end
+    local a, b = C_Item.GetItemInfo(itemID)
+    if type(a) == "table" then label = a.itemLink or a.hyperlink or a.itemName or a.name
+    elseif type(b) == "string" then label = b
+    elseif type(a) == "string" then label = a end
   elseif GetItemInfo then
     label = select(2, GetItemInfo(itemID))
   end
