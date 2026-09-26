@@ -14,19 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by default, ready for translations.
 
 ### Changed
-- The window now looks and works like Blizzard's Professions crafting page. Find and Mine
-  have a left column with the search box and a Filter dropdown (All professions, or one
-  profession; Mine also has "Short on") above a bordered list. Recipes are grouped under gold
-  collapsible headers: Blizzard's own categories ("Cloaks", "Reagents", ...) for recipes any
-  of your characters knows, otherwise a group from the crafted item's slot or type. With
-  All professions selected, each profession gets a header above its categories. Collapsed
-  groups are remembered, and searching opens every group that has a match. The right inset
-  shows the recipe page: a round icon, the quality-coloured name, the item's description,
-  reagent boxes ("2/5 Light Leather", red when short) and the crafters (online in green).
-  The page is never empty: the first visible recipe is selected. Quantity, note, Whisper and
-  Post request sit in the bottom button bar. The portrait shows the selected profession's
-  icon. The window is larger by default (760x520). Requests sit in the same inset layout,
-  and the status line moved beside the portrait.
+- The window now looks and works like Blizzard's Professions crafting page, rebuilt from the
+  client's own frame (captured in `docs/professionsframe-dump.txt`): the same 673x594 metal
+  portrait frame and backgrounds, the profession skill bar under the title (your stored
+  rank/max for the selected recipe's profession, e.g. "Leatherworking 110/150"; hover it, or
+  open Requests, for the "61 recipes · 0 peers · channel ok" status line), and Find / Mine /
+  Requests as side tabs on the window's right edge. Find and Mine have the 304 px recipe
+  list on the left: search box and Filter dropdown (All professions, or one profession; Mine
+  also has "Short on") above gold collapsible category bars, Blizzard's own categories
+  ("Cloaks", "Reagents", ...) for recipes any of your characters knows, otherwise a group
+  from the crafted item's slot or type. With All professions selected, each profession gets
+  a bar above its categories. Collapsed groups are remembered, and searching opens every
+  group that has a match. Recipe rows show how many you can craft right now as " [n]" after
+  the name. The recipe card on the right shows the round output icon in its quality ring,
+  the name, the item's description, reagent slots ("2/5 Light Leather", grey when short) and
+  the crafters (online in green); it is never empty (the first visible recipe is selected).
+  Note, quantity, a Whisper button and a red Post request button sit in the Create row
+  under the card. The portrait shows the selected profession's icon. The window can be made
+  larger, never smaller than Blizzard's.
 - Scans record each recipe's Blizzard category and the profession icon (local only; the
   sync protocol is unchanged).
 - Window polish. Find: the search box has focus when the window opens, filters as you type
