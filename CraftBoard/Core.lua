@@ -183,6 +183,12 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
     PrintPeers()
   elseif cmd == "dump" then
     if NS.DumpFrame then NS.DumpFrame(rest) end
+  elseif cmd == "chatdebug" then
+    local st = NS.ChatWatch and NS.ChatWatch.Stats and NS.ChatWatch.Stats()
+    if st then
+      NS.Print(string.format("chat events %d, channel %d, accepted %d, secret %d, last channel '%s'",
+        st.seen, st.channel, st.accepted, st.secret or 0, st.last))
+    end
   elseif cmd == "frames" then
     if NS.ListFrames then NS.ListFrames() end
   else

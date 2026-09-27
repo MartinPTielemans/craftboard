@@ -327,13 +327,15 @@ local function PublicChannel(baseName, channelName)
   if not base then return nil end
   base = base:match("^(.-)%s+%-%s+.*$") or base
   if base:find("Defense", 1, true) or base:find("Recruitment", 1, true) then return nil end
+  -- Forever splits channels by language and purpose: "Trade - English", "Trade (Services) -
+  -- English". Match on the leading word so those all count; the server list is only used to
+  -- also accept localized names it reports.
   local server = ServerChannels()
-  if next(server) ~= nil then
-    if server[base] then return base end
-    return nil
-  end
-  if base:find("Trade", 1, true) or base:find("General", 1, true) or base:find("LookingForGroup", 1, true) then
-    return base
+  if server[base] then return base end
+  local head = base:match("^(%a+)")
+  if head == "Trade" or head == "General" or head == "LookingForGroup" then return base end
+  for name in pairs(server) do
+    if base:sub(1, #name) == name then return base end
   end
   return nil
 end
@@ -346,14 +348,21 @@ local function Secret(...)
   return false
 end
 
+local stats = { seen = 0, channel = 0, accepted = 0, matched = 0, last = "" }
+ChatWatch.Stats = function() return stats end
+
 local function OnChat(event, text, sender, _, channelName, _, _, _, _, baseName)
+  stats.seen = stats.seen + 1
   if not ChatWatch.Enabled() then return end
-  if Secret(text, sender) then return end
+  if Secret(text, sender) then stats.secret = (stats.secret or 0) + 1; return end
   if type(text) ~= "string" or type(sender) ~= "string" then return end
   local label, guild
   if event == "CHAT_MSG_CHANNEL" then
-    if Secret(channelName, baseName) then return end
+    stats.channel = stats.channel + 1
+    if Secret(channelName, baseName) then stats.secret = (stats.secret or 0) + 1; return end
     label = PublicChannel(baseName, channelName)
+    stats.last = tostring(baseName or channelName)
+    if label then stats.accepted = stats.accepted + 1 end
   elseif event == "CHAT_MSG_SAY" then
     label = L["Say"]
   elseif event == "CHAT_MSG_YELL" then
