@@ -23,9 +23,14 @@ off in the options, they open CraftBoard in its own window instead. The minimap 
 the options; it is also in the addon compartment. Open each profession window once so your
 recipes are recorded (first-run tips on the window point the way). The window looks like the game's own
 Professions window: Find lists every tradeable recipe on the board grouped by category, Requests
-lists open posts. Escape closes the Professions window as usual. `/cb scan` forces a rescan, `/cb options` opens the settings, `/cb debug`
+lists open posts and, under "Seen in chat", players asking for a crafter in Trade, General,
+LookingForGroup, say or yell (guild chat too if turned on), so the tab is useful even when no one
+else runs CraftBoard. A green check marks lines for a profession or recipe you have; Whisper opens
+the chat box to that player with an offer typed in, Hide drops the line. Lines expire after 30
+minutes and are never saved; "Watch chat for crafting requests" in the options turns it off.
+Escape closes the Professions window as usual. `/cb scan` forces a rescan, `/cb options` opens the settings, `/cb debug`
 shows sync status.
 
 ## Layout
-- `CraftBoard/` the addon. Modules: Core, Locales, Options, Launcher, Recipes, Inventory, Comm, UI, Onboarding, Welcome, Hooks, Embed. Design in `docs/SPEC.md`.
+- `CraftBoard/` the addon. Modules: Core, Locales, Options, Launcher, Recipes, Inventory, Comm, ChatWatch, UI, Onboarding, Welcome, Hooks, Embed. Design in `docs/SPEC.md`.
 - `tools/check.sh` parses all Lua. `tools/link.sh` links into the game.

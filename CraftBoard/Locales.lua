@@ -141,6 +141,17 @@ local enUS = {
   "Reagents unknown",
   "Requested quantity: %d",
   "Takes the request off the board for everyone.",
+  -- Requests tab: "Seen in chat" (ChatWatch)
+  "Seen in chat",
+  "No crafting requests seen in chat yet.",
+  "Crafting request",
+  "%s in %s",
+  "[CraftBoard] I can craft that for you.",
+  "Hide",
+  "Removes this line from the list.",
+  "Say",
+  "Yell",
+  "Guild",
   -- Advertise (Find) and its channel names
   "Advertise",
   "Announce in chat",
@@ -182,6 +193,12 @@ local enUS = {
   -- Options / Embed: CraftBoard as a tab of the Professions window
   "Open CraftBoard inside the Professions window",
   "CraftBoard opens as a tab of the Professions window. Off: it always opens in its own window.",
+
+  -- Options: chat watcher
+  "Watch chat for crafting requests",
+  "Lists players asking for a crafter in Trade, General, LookingForGroup, say and yell under \"Seen in chat\" on the Requests tab. Nothing is sent or saved.",
+  "Include guild chat",
+  "Also watch guild chat for crafting requests.",
 
   -- Launcher: minimap button, key binding
   "CraftBoard",

@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- "Seen in chat" on the Requests tab (suggested on Reddit): CraftBoard reads Trade, General,
+  LookingForGroup, say and yell for players looking for a crafter ("LF LW for...",
+  "WTB [item]", "need an alch", "anyone can make [item]?") and lists them between Open requests
+  and My requests, one line per player, newest first, for 30 minutes. Offers ("WTS", "selling",
+  "LFW", "can craft", "tips welcome", "max ench") are skipped. A green check marks lines for one
+  of your professions or a recipe you know; the card shows the chat line and, for a known
+  recipe, your reagents. Whisper opens the chat box to the player with
+  "[CraftBoard] I can craft that for you." typed in; Hide drops the line. Nothing is sent
+  without a click and nothing is saved.
+- Options "Watch chat for crafting requests" (on) and "Include guild chat" (off).
+
 ## [0.9.1] - 2026-09-27
 
 ### Changed

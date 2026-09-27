@@ -35,6 +35,10 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
    `{ [name-realm] = {recipes={[recipeID]=true}, profs={...}, seen=time, online=bool} }`,
    `NS.Comm.Request(itemID, qty, toName)` (sends a whisper), `NS.Comm.PostRequest(itemID, qty, note)`
    (open board post), `NS.Comm.Requests()` → open posts. Peers persisted in `CraftBoardDB.peers`.
+4b. `ChatWatch.lua` — reads public chat (CHAT_MSG_CHANNEL for server channels Trade/General/
+   LookingForGroup, SAY, YELL, GUILD when opted in) for crafting requests; pure-Lua detector
+   `ChatWatch.Detect(text)`, in-memory store `ChatWatch.Seen()` (one per player, 30 min, cap 40),
+   fires `CHAT_SEEN_UPDATED`. Never sends anything. Shown as "Seen in chat" on Requests.
 5. `UI.lua` — one window that reproduces the client's own Professions window exactly
    (atlases, fonts, offsets captured in `docs/professionsframe-dump.txt`; `/cb dump` recaptures).
    Two side tabs: **Find** (grouped recipe list under Blizzard category headers, search + Filter

@@ -390,17 +390,19 @@ end
 
 -- Opens the chat box in whisper mode to `name` with the request template typed in, so it is
 -- one Enter away (like clicking a player name in chat). Falls back to sending directly.
-local function OpenWhisper(name, itemID, qty)
+-- text: typed in instead of the request template (itemID/qty then unused).
+local function OpenWhisper(name, itemID, qty, text)
   local tell = ChatFrame_SendTell or (ChatFrameUtil and ChatFrameUtil.SendTell)
   local active = ChatEdit_GetActiveWindow or (ChatFrameUtil and ChatFrameUtil.GetActiveWindow)
-  if tell and active and itemID then
+  if tell and active and (itemID or text) then
     local ok = pcall(tell, Short(name))
     local box = ok and active()
     if box and box.Insert then
-      box:Insert(RequestText(itemID, qty))
+      box:Insert(text or RequestText(itemID, qty))
       return true
     end
   end
+  if text and NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(name, text) then return true end
   if itemID and NS.Comm and NS.Comm.Request and NS.Comm.Request(itemID, qty, name) then return true end
   NS.Print(format(L["Could not whisper %s."], Short(name)))
   return false
@@ -2570,9 +2572,19 @@ end
 
 -- Find's grouped row plus the ready check in the 21 px before the label.
 local function RequestRowFactory()
-  local base = GroupRowFactory(function(it) UI.SelectRequest(it.id) end, ToggleRequestGroup)
+  local base = GroupRowFactory(function(it) if it.id then UI.SelectRequest(it.id) end end, ToggleRequestGroup)
   return function(parent)
     local row = base(parent)
+    -- Chat rows show the line they were seen with; the empty-state line has no tooltip.
+    row:SetScript("OnEnter", function(self)
+      local it = self.item
+      if not it or it.kind or it.placeholder then return end
+      if it.chat then
+        TextTooltip(self, Short(it.seen.from), it.seen.text)
+      else
+        ShowTooltip(self, it.outputItemID, it.recipeID)
+      end
+    end)
     local check = row:CreateTexture(nil, "OVERLAY")
     check:SetSize(12, 12)
     check:SetTexture(TEX.ready)
@@ -2585,6 +2597,19 @@ local function RequestRowFactory()
 end
 
 local function FillRequestEntry(row, e)
+  if e.placeholder or e.chat then
+    -- "Seen in chat": player name, muted "Trade · 3m"; or the group's empty-state line.
+    row.name:SetText(e.placeholder and e.name or Short(e.seen.from))
+    if e.placeholder then
+      row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
+    else
+      row.name:SetTextColor(C.label[1], C.label[2], C.label[3])
+    end
+    row.status:SetText(e.placeholder and "" or (e.seen.channel or "") .. DOT .. Age(e.seen.t))
+    row.check:SetShown(e.ready)
+    row.sel:SetShown(e.id ~= nil and e.id == reqs.selected)
+    return
+  end
   local post = e.post
   row.name:SetText(e.name)
   row.name:SetTextColor(NameRGB(post.item))
@@ -2693,6 +2718,43 @@ function BuildRequests(p)
     if e and not e.mine then TextTooltip(self, format(L["Whisper %s"], Short(e.post.from))) end
   end)
   reqs.whisper:SetScript("OnLeave", HideTooltip)
+
+  -- "Seen in chat" entries: red Whisper (chat box opened with the offer typed in) and a Hide
+  -- text button left of it.
+  reqs.chatWhisper = RedButton(bar, L["Whisper"], 112, 28)
+  reqs.chatWhisper:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -9, 7)
+  reqs.chatWhisper:SetScript("OnClick", function()
+    local e = reqs.entry
+    if e and e.chat then OpenWhisper(e.seen.from, nil, nil, L["[CraftBoard] I can craft that for you."]) end
+  end)
+  reqs.chatWhisper:SetScript("OnEnter", function(self)
+    local e = reqs.entry
+    if e and e.chat then
+      TextTooltip(self, format(L["Whisper %s"], Short(e.seen.from)), L["[CraftBoard] I can craft that for you."])
+    end
+  end)
+  reqs.chatWhisper:SetScript("OnLeave", HideTooltip)
+  reqs.chatWhisper:Hide()
+
+  reqs.chatHide = CreateFrame("Button", nil, bar)
+  reqs.chatHide:SetNormalFontObject(Font("GameFontNormal"))
+  reqs.chatHide:SetHighlightFontObject(Font("GameFontHighlight"))
+  reqs.chatHide:SetText(L["Hide"])
+  reqs.chatHide.fs = reqs.chatHide:GetFontString()
+  reqs.chatHide:SetSize(max(40, (reqs.chatHide.fs and StringWidth(reqs.chatHide.fs) or 24) + 16), 28)
+  reqs.chatHide:SetPoint("RIGHT", reqs.chatWhisper, "LEFT", -6, 0)
+  reqs.chatHide:SetScript("OnClick", function()
+    local e = reqs.entry
+    if not (e and e.chat and NS.ChatWatch and NS.ChatWatch.Hide) then return end
+    NS.ChatWatch.Hide(e.seen.from)
+    reqs.selected = nil
+    UI.RefreshRequests(true)
+  end)
+  reqs.chatHide:SetScript("OnEnter", function(self)
+    TextTooltip(self, L["Hide"], L["Removes this line from the list."])
+  end)
+  reqs.chatHide:SetScript("OnLeave", HideTooltip)
+  reqs.chatHide:Hide()
 end
 
 -- Reagent slots shown without scrolling: what fits between the header and the quantity line.
@@ -2707,12 +2769,21 @@ function UI.RefreshRequestDetail()
   local e = reqs.selected and reqs.byID and reqs.byID[reqs.selected] or nil
   reqs.entry = e
   local mine = e and e.mine or false
+  local chat = e and e.chat or false
   reqs.retract:SetShown(mine)
   reqs.retract:SetEnabled(mine)
-  reqs.offer:SetShown(not mine)
+  reqs.offer:SetShown(not mine and not chat)
   reqs.offer:SetEnabled(e ~= nil and not mine)
-  reqs.whisper:SetShown(not mine)
+  reqs.whisper:SetShown(not mine and not chat)
   reqs.whisper:SetEnabled(e ~= nil and not mine)
+  reqs.chatWhisper:SetShown(chat)
+  reqs.chatHide:SetShown(chat)
+  reqs.reagLabel:Show()
+  reqs.reagents.box:Show()
+  if chat then
+    UI.RefreshChatDetail(e)
+    return
+  end
   if not e then
     reqs.body:Hide()
     reqs.none:SetText(reqs.noneText or "")
@@ -2744,6 +2815,27 @@ function UI.RefreshRequestDetail()
   reqs.reagents.box:SetHeight(#reagents > 0 and REAGENT_H * RequestReagentRows(reqs.body, #reagents) or SUBROW_H)
   reqs.reagents:SetItems(reagents, emptyText, true)
   reqs.qtyLine:SetText(format(L["Requested quantity: %d"], qty))
+end
+
+-- Card for a "Seen in chat" entry: item (else profession) as title, "Bob in Trade · 3m ago",
+-- the chat line quoted, and my reagents have/need when one of my chars knows the recipe.
+function UI.RefreshChatDetail(e)
+  reqs.none:Hide()
+  reqs.body:Show()
+  local s, rec = e.seen, e.rec
+  local itemID = rec and type(rec.o) == "number" and rec.o or nil
+  FillHeader(reqs.header, s.recipeID, itemID, s.itemName or s.prof or L["Crafting request"],
+    format(L["%s in %s"], Short(s.from), s.channel or "") .. DOT .. AgoText(s.t), "\"" .. (s.text or "") .. "\"")
+  if not (s.recipeID or itemID) and ProfIcon(s.profID) then reqs.header.icon:SetTexture(ProfIcon(s.profID)) end
+  AnchorBelowHeader(reqs.header, reqs.reagLabel)
+  SetDetailBackground(reqs, rec and rec.p or s.profID)
+  reqs.qtyLine:SetText("")
+  local has = rec and type(rec.r) == "table" and #rec.r > 0 and NS.Inventory and NS.Inventory.CanCraft
+  reqs.reagLabel:SetShown(has and true or false)
+  reqs.reagents.box:SetShown(has and true or false)
+  local reagents = has and NS.Inventory.CanCraft(rec, 1).reagents or {}
+  reqs.reagents.box:SetHeight(#reagents > 0 and REAGENT_H * RequestReagentRows(reqs.body, #reagents) or SUBROW_H)
+  reqs.reagents:SetItems(reagents, nil, true)
 end
 
 function UI.SelectRequest(id)
@@ -2782,18 +2874,24 @@ function UI.FilterRequests(keepScroll)
   end
   if not visible then reqs.selected = nil end
 
-  local groups = { { key = "open", name = L["Open requests"], list = {} }, { key = "mine", name = L["My requests"], list = {} } }
+  -- Open requests, Seen in chat (while the chat watcher is on; shown empty with a hint line
+  -- when nothing was seen, unless searching), My requests.
+  local groups = { { key = "open", name = L["Open requests"], list = {} },
+    { key = "chat", name = L["Seen in chat"], list = {}, always = reqs.chatOn and not searching },
+    { key = "mine", name = L["My requests"], list = {} } }
   for _, e in ipairs(results) do
-    local g = e.mine and groups[2] or groups[1]
+    local g = e.chat and groups[2] or e.mine and groups[3] or groups[1]
     g.list[#g.list + 1] = e
   end
   local collapsed = searching and {} or ReqCollapsed()
   local items, nav = {}, {}
   for _, g in ipairs(groups) do
-    if #g.list > 0 then
+    if #g.list > 0 or g.always then
       local open = not collapsed[g.key]
       items[#items + 1] = { kind = "cat", key = g.key, name = g.name, count = #g.list, depth = 0, collapsed = not open }
-      if open then
+      if open and #g.list == 0 then
+        items[#items + 1] = { placeholder = true, name = L["No crafting requests seen in chat yet."], depth = 1, gap = true }
+      elseif open then
         for i, e in ipairs(g.list) do
           e.depth, e.gap = 1, i == #g.list
           items[#items + 1] = e
@@ -2813,7 +2911,7 @@ function UI.FilterRequests(keepScroll)
     if #results == 0 then emptyText = format(L["No request matches \"%s\"."], text) end
     reqs.noneText = L["Select a request to see its details."]
   end
-  reqs.emptySub:SetShown(#all == 0)
+  reqs.emptySub:SetShown(#items == 0 and #all == 0)
   reqs.list:SetItems(items, emptyText, keepScroll)
   local pick = not reqs.selected and (nav[1] or results[1])
   if pick then
@@ -2845,6 +2943,19 @@ function UI.RefreshRequests(keepScroll)
       all[#all + 1] = e
       byID[e.id] = e
     end
+  end
+  -- Chat lines (ChatWatch.lua): id "chat:Name-Realm"; ready = I have the profession or recipe.
+  local CW = NS.ChatWatch
+  reqs.chatOn = CW and CW.Enabled and CW.Enabled() or false
+  for _, s in ipairs(reqs.chatOn and CW.Seen() or {}) do
+    local title = s.itemName or s.prof or L["Crafting request"]
+    local e = {
+      chat = true, seen = s, id = "chat:" .. s.from, ready = CW.CanHelp(s) and true or false,
+      rec = s.recipeID and NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(s.recipeID) or nil,
+      name = title, lname = strlower(title .. " " .. (s.text or "")), lfrom = strlower(Short(s.from)),
+    }
+    all[#all + 1] = e
+    byID[e.id] = e
   end
   reqs.all, reqs.byID = all, byID
   UI.FilterRequests(keepScroll)
@@ -3508,7 +3619,8 @@ end
 local scheduleRefresh = Debouncer(0.3, UI.Refresh)
 
 if NS.RegisterCallback then
-  for _, ev in ipairs({ "RECIPES_UPDATED", "PEERS_UPDATED", "ITEM_NAMES_UPDATED", "INVENTORY_UPDATED", "POSTS_UPDATED" }) do
+  for _, ev in ipairs({ "RECIPES_UPDATED", "PEERS_UPDATED", "ITEM_NAMES_UPDATED", "INVENTORY_UPDATED", "POSTS_UPDATED",
+    "CHAT_SEEN_UPDATED" }) do
     NS.RegisterCallback(owner, ev, scheduleRefresh)
   end
 end

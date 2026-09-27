@@ -81,6 +81,36 @@ end
 
 local EMBED_TIP = L["CraftBoard opens as a tab of the Professions window. Off: it always opens in its own window."]
 
+-- Chat watcher (ChatWatch.lua): CraftBoardDB.chatWatch (default on), .chatWatchGuild (default off).
+local function GetChatWatch()
+  return not (type(CraftBoardDB) == "table" and CraftBoardDB.chatWatch == false)
+end
+
+local function SetChatWatch(v)
+  v = v and true or false
+  if NS.ChatWatch and NS.ChatWatch.SetEnabled then
+    NS.ChatWatch.SetEnabled(v)
+  elseif type(CraftBoardDB) == "table" then
+    CraftBoardDB.chatWatch = v
+  end
+end
+
+local function GetChatGuild()
+  return type(CraftBoardDB) == "table" and CraftBoardDB.chatWatchGuild == true
+end
+
+local function SetChatGuild(v)
+  v = v and true or false
+  if NS.ChatWatch and NS.ChatWatch.SetGuildEnabled then
+    NS.ChatWatch.SetGuildEnabled(v)
+  elseif type(CraftBoardDB) == "table" then
+    CraftBoardDB.chatWatchGuild = v
+  end
+end
+
+local CHAT_TIP = L["Lists players asking for a crafter in Trade, General, LookingForGroup, say and yell under \"Seen in chat\" on the Requests tab. Nothing is sent or saved."]
+local CHAT_GUILD_TIP = L["Also watch guild chat for crafting requests."]
+
 local function ResetTips()
   if NS.Onboarding and NS.Onboarding.Reset then
     NS.Onboarding.Reset()
@@ -158,6 +188,14 @@ local function RegisterVertical()
   local embed = S.RegisterProxySetting(category, "CRAFTBOARD_EMBED", bool,
     L["Open CraftBoard inside the Professions window"], true, GetEmbed, SetEmbed)
   createCheckbox(category, embed, EMBED_TIP)
+
+  local chat = S.RegisterProxySetting(category, "CRAFTBOARD_CHAT_WATCH", bool,
+    L["Watch chat for crafting requests"], true, GetChatWatch, SetChatWatch)
+  createCheckbox(category, chat, CHAT_TIP)
+
+  local chatGuild = S.RegisterProxySetting(category, "CRAFTBOARD_CHAT_WATCH_GUILD", bool,
+    L["Include guild chat"], false, GetChatGuild, SetChatGuild)
+  createCheckbox(category, chatGuild, CHAT_GUILD_TIP)
 
   -- Advertise channel: a dropdown where the API has one, else a button that cycles.
   local dropdown = S.CreateDropdown and S.CreateControlTextContainer and pcall(function()
@@ -238,10 +276,12 @@ local function BuildPanel()
     -76, GetGuildShare, SetGuildShare)
   Check(L["Show minimap button"], MINIMAP_TIP, -104, GetMinimap, SetMinimap)
   Check(L["Open CraftBoard inside the Professions window"], EMBED_TIP, -132, GetEmbed, SetEmbed)
+  Check(L["Watch chat for crafting requests"], CHAT_TIP, -160, GetChatWatch, SetChatWatch)
+  Check(L["Include guild chat"], CHAT_GUILD_TIP, -188, GetChatGuild, SetChatGuild)
 
   local advertise = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   advertise:SetSize(220, 22)
-  advertise:SetPoint("TOPLEFT", 20, -170)
+  advertise:SetPoint("TOPLEFT", 20, -226)
   advertise.label = L["Advertise channel"]
   advertise.tip = ADVERTISE_TIP
   local function syncAdvertise()
@@ -257,7 +297,7 @@ local function BuildPanel()
 
   local forget = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   forget:SetSize(180, 22)
-  forget:SetPoint("TOPLEFT", 20, -202)
+  forget:SetPoint("TOPLEFT", 20, -258)
   forget:SetText(L["Forget all peer data"])
   forget.label = L["Forget all peer data"]
   forget.tip = L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."]
@@ -267,7 +307,7 @@ local function BuildPanel()
 
   local tips = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   tips:SetSize(180, 22)
-  tips:SetPoint("TOPLEFT", 20, -234)
+  tips:SetPoint("TOPLEFT", 20, -290)
   tips:SetText(L["Show tips again"])
   tips.label = L["Show tips again"]
   tips.tip = TIPS_TIP

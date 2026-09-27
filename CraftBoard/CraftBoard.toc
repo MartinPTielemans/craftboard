@@ -25,6 +25,7 @@ Launcher.lua
 Recipes.lua
 Inventory.lua
 Comm.lua
+ChatWatch.lua
 UI.lua
 Onboarding.lua
 Welcome.lua
