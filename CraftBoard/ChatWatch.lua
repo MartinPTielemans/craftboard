@@ -63,8 +63,11 @@ local function FirstLinkName(text)
   for kind, name in text:gmatch("|H(%a+):[^|]*|h%[([^%]]+)%]|h") do
     if LINK_TYPES[kind] then return name end
   end
+  -- A plain "[Name]" with no real link only counts when it names one of my recipes or
+  -- their outputs (otherwise "[PvP]" or "[Enchanting]" in adverts would read as an item).
   if not text:find("|H", 1, true) then
-    return text:match("%[([^%]|]+)%]")
+    local plain = text:match("%[([^%]|]+)%]")
+    if plain and ChatWatch.Resolve and ChatWatch.Resolve(plain) then return plain end
   end
   return nil
 end
@@ -275,10 +278,15 @@ local function FullName(name)
   return name
 end
 
+-- Forever names are two words but UnitName("player") returns only the first, so a sender is
+-- me when its first word and realm match mine.
 local function IsMe(full)
   if NS.Me and full == NS.Me then return true end
   local mine, realm = UnitName and UnitName("player"), MyRealm()
-  return mine ~= nil and realm ~= nil and full == mine .. "-" .. realm
+  if not (mine and realm) then return false end
+  local name, r = full:match("^(.-)%-([^%-]+)$")
+  if not name then return false end
+  return r == realm and (name == mine or name:match("^(%S+)") == mine)
 end
 
 -- Record a chat line (also the entry point for tests). Returns the stored entry or nil.

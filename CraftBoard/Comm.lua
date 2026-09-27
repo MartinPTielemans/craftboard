@@ -122,12 +122,18 @@ local function ShortName(full)
   return full
 end
 
+-- Forever names are two words but UnitName("player") returns only the first ("Raion" vs the
+-- sender "Raion Lyzl"), so compare the first word too, on my realm only.
 local function IsMe(full)
   if not full then return true end
   local me = MyKey()
   if me and full == me then return true end
-  local mine = UnitName and UnitName("player")
-  if mine and ShortName(full) == mine then return true end
+  local mine, realm = UnitName and UnitName("player"), MyRealm()
+  if not mine then return false end
+  local short = ShortName(full)
+  if short == mine then return true end
+  local name, r = full:match("^(.-)%-([^%-]+)$")
+  if name and r == realm and name:match("^(%S+)") == mine then return true end
   return false
 end
 
@@ -455,7 +461,8 @@ local function PrunePeers()
   if not db then return end
   local cutoff = time() - PEER_TTL
   for name, p in pairs(db.peers) do
-    if type(p) ~= "table" or type(p.seen) ~= "number" or p.seen < cutoff then
+    -- IsMe also drops entries an older build stored for my own character.
+    if type(p) ~= "table" or type(p.seen) ~= "number" or p.seen < cutoff or IsMe(name) then
       db.peers[name] = nil
     end
   end
