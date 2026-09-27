@@ -2,7 +2,7 @@
 ## Title: CraftBoard
 ## Notes: Realm-wide crafting order board. Who can craft what, and what you can craft yourself.
 ## Author: mpt
-## Version: 0.9.0
+## Version: 0.9.1
 ## SavedVariables: CraftBoardDB
 ## IconTexture: Interface\AddOns\CraftBoard\Media\icon
 ## X-Category: Professions

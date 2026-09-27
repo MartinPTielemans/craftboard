@@ -6,10 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-27
+
 ### Changed
 - CraftBoard now lives in Blizzard's Professions window as its own side tab (under the
-  profession tabs, note icon). Find and Requests are the same as in the standalone window, with
-  their tabs under CraftBoard's. Clicking a Blizzard tab goes back to Blizzard's page; Escape
+  profession tabs, CraftBoard icon). Find and Requests are top tabs inside the page. Clicking a Blizzard tab goes back to Blizzard's page; Escape
   closes the Professions window as usual. The minimap button, `/cb` and the key binding open the
   Professions window on the CraftBoard tab once it has been opened this session; before that, in
   combat, or without any profession they open the standalone window, which stays available.
