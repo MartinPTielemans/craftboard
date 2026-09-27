@@ -79,14 +79,19 @@ local function InitDB()
 end
 
 -- Identity. Safe to call repeatedly; returns NS.Me (may be nil very early in loading).
+-- NS.Me is "First Surname-Realm" on Forever (the way chat and addon messages name me), else
+-- "Name-Realm". NS.MeLegacy is the first-name-only key older versions stored me under.
 function NS.UpdateIdentity()
-  local name = UnitName and UnitName("player")
+  local ok, name, surname = false, nil, nil
+  if UnitName then ok, name, surname = pcall(UnitName, "player") end
   local realm = GetNormalizedRealmName and GetNormalizedRealmName()
   if (not realm or realm == "") and GetRealmName then
     realm = (GetRealmName() or ""):gsub("[%s%-]", "")
   end
-  if name and name ~= "" and realm and realm ~= "" then
+  if ok and type(name) == "string" and name ~= "" and realm and realm ~= "" then
     NS.Realm = realm
+    NS.MeLegacy = name .. "-" .. realm
+    if NS.IsSurname(surname) then name = name .. " " .. surname end
     NS.Me = name .. "-" .. realm
   end
   if UnitFactionGroup then
@@ -129,13 +134,34 @@ function NS.FullName(name, realm)
   return name .. "-" .. mine
 end
 
+-- UnitName's second return is a Forever surname (not a realm, as on retail).
+function NS.IsSurname(second)
+  if not NS.IsForever or type(second) ~= "string" or second == "" then return false end
+  if issecretvalue and issecretvalue(second) then return false end
+  -- Guard in case a client does hand back the realm there after all.
+  local realm = GetNormalizedRealmName and GetNormalizedRealmName()
+  return second ~= realm and second ~= (GetRealmName and GetRealmName())
+end
+
+-- Same character. Names are compared whole; only when one side has no surname (a source that
+-- gives first names only, like roll lines) does its first name match the other's first word.
 function NS.SamePlayer(a, b)
   if type(a) ~= "string" or type(b) ~= "string" then return false end
   if a == b then return true end
   local na, ra = SplitName(a)
   local nb, rb = SplitName(b)
-  if ra ~= rb then return false end
+  if (ra or NS.Realm) ~= (rb or NS.Realm) then return false end
+  if na == nb then return true end
+  if na:find(" ", 1, true) and nb:find(" ", 1, true) then return false end
   return na:match("^(%S+)") == nb:match("^(%S+)")
+end
+
+-- A name ("Name", "Name-Realm", "First Surname-Realm") is my current character.
+function NS.IsMe(full)
+  if type(full) ~= "string" or full == "" then return false end
+  if not NS.Me and NS.UpdateIdentity then NS.UpdateIdentity() end
+  if not NS.Me then return false end
+  return NS.SamePlayer(full, NS.Me)
 end
 
 -- On my ignore list. Never errors; unknown API = not ignored.
@@ -157,7 +183,7 @@ function NS.UnitFullName(unit)
   if not ok or type(name) ~= "string" or name == "" then return nil end
   if issecretvalue and (issecretvalue(name) or issecretvalue(second)) then return nil end
   if NS.IsForever then
-    if type(second) == "string" and second ~= "" then name = name .. " " .. second end
+    if NS.IsSurname(second) then name = name .. " " .. second end
     return NS.FullName(name)
   end
   return NS.FullName(name, second)
@@ -187,9 +213,25 @@ NS.Register("ADDON_LOADED", function(_, name)
   end
 end)
 
+-- Older versions keyed my character by first name only ("Raion-Realm"); move its data, and my
+-- own open posts, to the full key ("Raion Lyzl-Realm"). If both exist the full one wins.
+local function MigrateIdentity()
+  local old, new = NS.MeLegacy, NS.Me
+  if not (old and new) or old == new then return end
+  local chars = CraftBoardDB.chars
+  if type(chars[old]) == "table" then
+    if type(chars[new]) ~= "table" then chars[new] = chars[old] end
+    chars[old] = nil
+  end
+  for _, p in pairs(type(CraftBoardDB.posts) == "table" and CraftBoardDB.posts or {}) do
+    if type(p) == "table" and p.from == old then p.from = new end
+  end
+end
+
 NS.Register("PLAYER_LOGIN", function()
   if not NS.db then InitDB() end
   NS.UpdateIdentity()
+  MigrateIdentity()
   if NS.Me then
     local c = CraftBoardDB.chars[NS.Me]
     if type(c) ~= "table" then

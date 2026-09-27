@@ -110,9 +110,8 @@ local function MyRealm()
 end
 
 local function MyKey()
+  if not NS.Me and NS.UpdateIdentity then NS.UpdateIdentity() end
   if type(NS.Me) == "string" and NS.Me ~= "" then return NS.Me end
-  local name, realm = UnitName and UnitName("player"), MyRealm()
-  if name and realm then return name .. "-" .. realm end
   return nil
 end
 
@@ -137,19 +136,10 @@ local function ShortName(full)
   return full
 end
 
--- Forever names are two words but UnitName("player") returns only the first ("Raion" vs the
--- sender "Raion Lyzl"), so compare the first word too, on my realm only.
+-- Me, by full name (NS.IsMe; a first name only matches a source without surnames).
 local function IsMe(full)
   if not full then return true end
-  local me = MyKey()
-  if me and full == me then return true end
-  local mine, realm = UnitName and UnitName("player"), MyRealm()
-  if not mine then return false end
-  local short = ShortName(full)
-  if short == mine then return true end
-  local name, r = full:match("^(.-)%-([^%-]+)$")
-  if name and r == realm and name:match("^(%S+)") == mine then return true end
-  return false
+  return NS.IsMe(full)
 end
 
 -- Strip WoW escape sequences ("|c", "|H", "|T"...) from anything a peer sends us.

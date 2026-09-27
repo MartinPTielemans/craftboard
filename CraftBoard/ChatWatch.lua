@@ -324,15 +324,9 @@ local function FullName(name)
   return name
 end
 
--- Forever names are two words but UnitName("player") returns only the first, so a sender is
--- me when its first word and realm match mine.
+-- My own lines (NS.IsMe: full name, or a first name when the sender has no surname).
 local function IsMe(full)
-  if NS.Me and full == NS.Me then return true end
-  local mine, realm = UnitName and UnitName("player"), MyRealm()
-  if not (mine and realm) then return false end
-  local name, r = full:match("^(.-)%-([^%-]+)$")
-  if not name then return false end
-  return r == realm and (name == mine or name:match("^(%S+)") == mine)
+  return NS.IsMe(full)
 end
 
 -- Record a chat line (also the entry point for tests). Returns the stored entry or nil.

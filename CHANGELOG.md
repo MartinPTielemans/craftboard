@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Players on your ignore list no longer appear as crafters, board requests or chat asks.
 
 ### Fixed
+- Forever names: `UnitName` returns the surname there, not the realm. Your character is now
+  keyed "First Surname" (saved data and your open posts move over on first login), party
+  members and trade partners are read the same way, and a player who shares your first name is
+  no longer taken for you (#4).
 - "Seen in chat" quoted Forever's item links as "cnIQ1:[Light Leather]": its named quality colour
   codes are now stripped everywhere (chat lines, peer data, the tuning log).
 
