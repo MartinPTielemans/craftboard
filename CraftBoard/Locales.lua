@@ -145,6 +145,7 @@ local enUS = {
   "Seen in chat",
   "No crafting requests seen in chat yet.",
   "Crafting request",
+  "and %d more",
   "%s in %s",
   "[CraftBoard] I can craft that for you.",
   "Hide",

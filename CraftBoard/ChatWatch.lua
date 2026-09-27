@@ -59,10 +59,19 @@ local serverChannels     -- [localized server channel name] = true
 
 -- Detector -----------------------------------------------------------------------
 
-local function FirstLinkName(text)
+-- Every real link name in the line, in order (so a crafter listing four enchants is shown as
+-- a list, not as a request for the first one).
+local function LinkNames(text)
+  local out = {}
   for kind, name in text:gmatch("|H(%a+):[^|]*|h%[([^%]]+)%]|h") do
-    if LINK_TYPES[kind] then return name end
+    if LINK_TYPES[kind] then out[#out + 1] = name end
   end
+  return out
+end
+
+local function FirstLinkName(text)
+  local names = LinkNames(text)
+  if names[1] then return names[1] end
   -- A plain "[Name]" with no real link only counts when it names one of my recipes or
   -- their outputs (otherwise "[PvP]" or "[Enchanting]" in adverts would read as an item).
   if not text:find("|H", 1, true) then
@@ -116,7 +125,9 @@ function ChatWatch.Detect(text)
   end
   if not ask then return nil, "noask" end
   if not (prof or itemName) then return nil, "nothing" end
-  return { prof = prof and prof[1], profID = prof and prof[2], itemName = itemName }
+  local links = LinkNames(text)
+  return { prof = prof and prof[1], profID = prof and prof[2], itemName = itemName,
+           links = #links > 1 and links or nil }
 end
 
 -- My recipes by lower-cased recipe name and output item name ------------------------
@@ -304,6 +315,7 @@ function ChatWatch.Add(text, sender, channel, guild)
   end
   local e = {
     from = from, text = clean, prof = hit.prof, profID = hit.profID, itemName = hit.itemName,
+    links = hit.links,
     channel = channel, guild = guild or nil, t = time(),
   }
   if hit.itemName then e.recipeID, e.current = ChatWatch.Resolve(hit.itemName) end

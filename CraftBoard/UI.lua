@@ -1371,7 +1371,7 @@ local function NewHeader(parent)
   h.desc:SetPoint("TOPLEFT", holder, "BOTTOMLEFT", -1, -12)
   h.desc:SetPoint("RIGHT", parent, "RIGHT", -28, 0)
   if h.desc.SetWordWrap then h.desc:SetWordWrap(true) end
-  if h.desc.SetMaxLines then h.desc:SetMaxLines(3) end
+  if h.desc.SetMaxLines then h.desc:SetMaxLines(7) end
   parent:HookScript("OnSizeChanged", function() FitHeader(h) end)
   return h
 end
@@ -2824,8 +2824,22 @@ function UI.RefreshChatDetail(e)
   reqs.body:Show()
   local s, rec = e.seen, e.rec
   local itemID = rec and type(rec.o) == "number" and rec.o or nil
-  FillHeader(reqs.header, s.recipeID, itemID, s.itemName or s.prof or L["Crafting request"],
-    format(L["%s in %s"], Short(s.from), s.channel or "") .. DOT .. AgoText(s.t), "\"" .. (s.text or "") .. "\"")
+  -- Several linked items: title by profession and show the links as a list instead of one
+  -- long quoted line that truncates. One item: the line quoted, as before.
+  local title, desc
+  if s.links then
+    title = s.prof or L["Crafting request"]
+    local shown, n = {}, #s.links
+    for i = 1, math.min(n, 6) do shown[i] = "\194\183 " .. s.links[i] end
+    if n > 6 then shown[#shown + 1] = format(L["and %d more"], n - 6) end
+    desc = table.concat(shown, "\n")
+    itemID = nil
+  else
+    title = s.itemName or s.prof or L["Crafting request"]
+    desc = "\"" .. (s.text or "") .. "\""
+  end
+  FillHeader(reqs.header, not s.links and s.recipeID or nil, itemID, title,
+    format(L["%s in %s"], Short(s.from), s.channel or "") .. DOT .. AgoText(s.t), desc)
   if not (s.recipeID or itemID) and ProfIcon(s.profID) then reqs.header.icon:SetTexture(ProfIcon(s.profID)) end
   AnchorBelowHeader(reqs.header, reqs.reagLabel)
   SetDetailBackground(reqs, rec and rec.p or s.profID)
