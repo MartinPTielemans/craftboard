@@ -13,6 +13,7 @@ local enUS = {
   "/cb - toggle window",
   "/cb scan - rescan the open profession window",
   "/cb options - open the settings panel",
+  "/cb welcome - show the welcome window again",
   "/cb debug - list known peers",
   "/cb help - this help",
   "UI not loaded",
@@ -174,11 +175,23 @@ local enUS = {
   "Show tips again",
   "Reset",
   "Shows the first-run tips on the CraftBoard window again.",
+  "Show welcome",
+  "Show",
+  "Shows the CraftBoard welcome window again.",
 
-  -- Launcher: minimap button, key binding, welcome line
+  -- Launcher: minimap button, key binding
   "CraftBoard",
   "Toggle CraftBoard window",
   "Left-click: open \194\183 Right-click: settings",
+
+  -- Welcome: first-run splash (chat line if the window can't be built)
+  "Record your recipes",
+  "Open each profession window once. CraftBoard records what you can craft.",
+  "Find crafters",
+  "Guildmates and realm players who run CraftBoard appear in Find.",
+  "Ask and offer",
+  "Whisper a crafter, post a request, or announce in Trade.",
+  "Get started",
   "CraftBoard loaded. Minimap button, /cb, or set a key in Key Bindings.",
 
   -- Onboarding: first-run tips
@@ -187,7 +200,6 @@ local enUS = {
   "Post a request to the board, or whisper a crafter directly.",
   "Open Professions",
   "Later",
-  "Welcome to CraftBoard.\n\nOpen each of your profession windows once so your recipes are recorded and shared with other CraftBoard users.\n\nOpen the board any time from the minimap button, the Professions window, or /cb.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

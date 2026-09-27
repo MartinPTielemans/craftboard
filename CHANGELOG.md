@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- First login after install shows a welcome dialog with an "Open Professions" button instead of a chat line.
+- First login after install shows a welcome window instead of a chat line (see Added).
 - "Show tips again" now opens the window and plays the three tips straight away.
 - Advertise defaults to the Trade channel.
 
@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   list button by the minimap) on clients that have one.
 - "Show minimap button" option.
 - Key binding "Toggle CraftBoard window" under Key Bindings > AddOns > CraftBoard (no default key).
-- One chat line on the first login after install saying where to find the window.
+- Welcome window, 3 s after the first login after install (waits for combat to end): the board
+  art, three steps (record your recipes, find crafters, ask and offer) and an "Open Professions"
+  button that opens the profession book. `/cb welcome` and "Show welcome" in the options bring it
+  back.
 - First-run tips on the window (Blizzard help tips, each shown once): how recipes get recorded
   (with an "Open Professions" button), that your recipes are now shared, and where to post a
   request. "Show tips again" in the options brings them back.

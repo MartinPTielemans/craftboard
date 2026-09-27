@@ -27,5 +27,6 @@ Inventory.lua
 Comm.lua
 UI.lua
 Onboarding.lua
+Welcome.lua
 Hooks.lua
 Debug.lua

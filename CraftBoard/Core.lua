@@ -121,6 +121,7 @@ local function PrintHelp()
   NS.Print(L["/cb - toggle window"])
   NS.Print(L["/cb scan - rescan the open profession window"])
   NS.Print(L["/cb options - open the settings panel"])
+  NS.Print(L["/cb welcome - show the welcome window again"])
   NS.Print(L["/cb debug - list known peers"])
   NS.Print(L["/cb help - this help"])
 end
@@ -175,6 +176,8 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
     NS.ScanNow()
   elseif cmd == "options" or cmd == "config" then
     if NS.Options and NS.Options.Open then NS.Options.Open() end
+  elseif cmd == "welcome" then
+    if NS.Welcome and NS.Welcome.Show then NS.Welcome.Show() end
   elseif cmd == "debug" then
     if NS.Comm and NS.Comm.Debug then NS.Comm.Debug() end
     PrintPeers()

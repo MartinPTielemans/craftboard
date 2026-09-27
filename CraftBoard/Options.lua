@@ -75,6 +75,12 @@ end
 
 local TIPS_TIP = L["Shows the first-run tips on the CraftBoard window again."]
 
+local function ShowWelcome()
+  if NS.Welcome and NS.Welcome.Show then NS.Welcome.Show() end
+end
+
+local WELCOME_TIP = L["Shows the CraftBoard welcome window again."]
+
 -- Advertise channel: where Find's Advertise button posts its one line ("General" by default,
 -- "Trade" (cities only), or "Off").
 local ADVERTISE = { "Trade", "General", "Off" }
@@ -137,7 +143,7 @@ local function RegisterVertical()
   local dropdown = S.CreateDropdown and S.CreateControlTextContainer and pcall(function()
     local str = S.VarType and S.VarType.String or "string"
     local adv = S.RegisterProxySetting(category, "CRAFTBOARD_ADVERTISE_CHANNEL", str,
-      L["Advertise channel"], "General", Options.AdvertiseChannel, Options.SetAdvertiseChannel)
+      L["Advertise channel"], "Trade", Options.AdvertiseChannel, Options.SetAdvertiseChannel)
     local function choices()
       local c = S.CreateControlTextContainer()
       for _, v in ipairs(ADVERTISE) do c:Add(v, ADVERTISE_LABEL[v]) end
@@ -157,6 +163,7 @@ local function RegisterVertical()
   layout:AddInitializer(forget)
 
   layout:AddInitializer(CreateSettingsButtonInitializer(L["Show tips again"], L["Reset"], ResetTips, TIPS_TIP, true))
+  layout:AddInitializer(CreateSettingsButtonInitializer(L["Show welcome"], L["Show"], ShowWelcome, WELCOME_TIP, true))
 
   S.RegisterAddOnCategory(category)
   return category:GetID()
@@ -246,6 +253,16 @@ local function BuildPanel()
   tips:SetScript("OnClick", ResetTips)
   tips:SetScript("OnEnter", ShowTip)
   tips:SetScript("OnLeave", HideTip)
+
+  local welcome = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+  welcome:SetSize(180, 22)
+  welcome:SetPoint("LEFT", tips, "RIGHT", 8, 0)
+  welcome:SetText(L["Show welcome"])
+  welcome.label = L["Show welcome"]
+  welcome.tip = WELCOME_TIP
+  welcome:SetScript("OnClick", ShowWelcome)
+  welcome:SetScript("OnEnter", ShowTip)
+  welcome:SetScript("OnLeave", HideTip)
 
   p:SetScript("OnShow", function()
     for i = 1, #checks do checks[i]:SetChecked(checks[i].get()) end

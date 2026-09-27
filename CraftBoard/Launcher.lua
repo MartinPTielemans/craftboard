@@ -1,7 +1,7 @@
 -- CraftBoard Launcher: ways to reach the window besides /cb and the Professions button.
 -- A LibDataBroker launcher shown as a draggable minimap button by LibDBIcon (state saved in
 -- CraftBoardDB.minimap; also listed in the addon compartment when the client has one), the
--- "Toggle CraftBoard window" key binding (Bindings.xml), and a one-time welcome line in chat.
+-- "Toggle CraftBoard window" key binding (Bindings.xml). The first-run splash is Welcome.lua.
 local ADDON, NS = ...
 
 local L = NS.L
@@ -85,23 +85,4 @@ function Launcher.Register()
   if not DBIcon:IsRegistered(NAME) then DBIcon:Register(NAME, dataObject, db) end
 end
 
-NS.Register("PLAYER_LOGIN", function()
-  Launcher.Register()
-  if type(CraftBoardDB) == "table" and not CraftBoardDB.seenWelcome then
-    CraftBoardDB.seenWelcome = true
-    -- First login after install: one Blizzard-style dialog, like other addons' first-run popups.
-    if StaticPopupDialogs and StaticPopup_Show then
-      local opener = NS.Onboarding and NS.Onboarding.ProfessionsOpener and NS.Onboarding.ProfessionsOpener()
-      StaticPopupDialogs["CRAFTBOARD_WELCOME"] = {
-        text = L["Welcome to CraftBoard.\n\nOpen each of your profession windows once so your recipes are recorded and shared with other CraftBoard users.\n\nOpen the board any time from the minimap button, the Professions window, or /cb."],
-        button1 = opener and L["Open Professions"] or OKAY,
-        button2 = opener and L["Later"] or nil,
-        OnAccept = function() if opener then opener() end end,
-        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-      }
-      C_Timer.After(3, function() StaticPopup_Show("CRAFTBOARD_WELCOME") end)
-    else
-      NS.Print(L["CraftBoard loaded. Minimap button, /cb, or set a key in Key Bindings."])
-    end
-  end
-end)
+NS.Register("PLAYER_LOGIN", function() Launcher.Register() end)

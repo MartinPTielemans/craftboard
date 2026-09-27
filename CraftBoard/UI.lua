@@ -3130,14 +3130,15 @@ end
 -- The window: Blizzard's portrait frame like ProfessionsFrame (PortraitFrameTemplate, else
 -- ButtonFrameTemplate without its inset and button bar), else BasicFrameTemplateWithInset.
 -- Returns the frame and whether it is the portrait (modern) style.
-local function NewWindow()
+local function NewWindow(name)
+  name = name or "CraftBoardFrame"
   for _, tmpl in ipairs({ "PortraitFrameTemplate", "ButtonFrameTemplate" }) do
     if HasTemplate(tmpl) then
-      local ok, f = pcall(CreateFrame, "Frame", "CraftBoardFrame", UIParent, tmpl)
+      local ok, f = pcall(CreateFrame, "Frame", name, UIParent, tmpl)
       if ok and f then return f, true end
     end
   end
-  return CreateFrame("Frame", "CraftBoardFrame", UIParent, "BasicFrameTemplateWithInset"), false
+  return CreateFrame("Frame", name, UIParent, "BasicFrameTemplateWithInset"), false
 end
 
 SetPortrait = function(f, texture)
@@ -3172,8 +3173,8 @@ end
 -- when the template carries another layout), ProfessionsFrameBg as
 -- Profession-Background-Overview at 2,-21 / -2,2 with the CraftingPage's
 -- Profession-Background-Template2 over it at 3,-21 (665x570 at the default size), no
--- TopTileStreaks, no inset, no button bar.
-local function SetupChrome(f)
+-- TopTileStreaks, no inset, no button bar. noPage skips the CraftingPage layer (small windows).
+local function SetupChrome(f, noPage)
   if f.Inset then f.Inset:Hide() end
   if ButtonFrameTemplate_HideButtonBar and f.Inset then pcall(ButtonFrameTemplate_HideButtonBar, f) end
   if f.TopTileStreaks then f.TopTileStreaks:Hide() end
@@ -3195,7 +3196,7 @@ local function SetupChrome(f)
     bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
     f.cbBg = bg
   end
-  if HasAtlas(A.pageBg) then
+  if not noPage and HasAtlas(A.pageBg) then
     local page = f:CreateTexture(nil, "BACKGROUND", nil, 1)
     page:SetAtlas(A.pageBg, false)
     page:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -21)
@@ -3321,3 +3322,17 @@ end
 function UI.IsDirty()
   return dirty
 end
+
+-- The window's building blocks, for other CraftBoard windows (Welcome.lua): the same portrait
+-- frame, chrome, buttons and slot atlases, each with the fallbacks above.
+UI.Kit = {
+  NewWindow = NewWindow,            -- (globalName) -> frame, modern
+  SetPortrait = SetPortrait,        -- (frame, texture)
+  SetTitle = SetWindowTitle,        -- (frame, text)
+  SetupChrome = SetupChrome,        -- (frame, noPage)
+  RedButton = RedButton,            -- (parent, text, width, height)
+  PanelButton = PanelButton,        -- (parent, text, width, height)
+  HasAtlas = HasAtlas,
+  Font = Font,
+  slotBg = A.slotBg, slotFrame = A.slotFrame,
+}
