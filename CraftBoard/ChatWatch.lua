@@ -362,7 +362,16 @@ local function OnChat(event, text, sender, _, channelName, _, _, _, _, baseName)
     if Secret(channelName, baseName) then stats.secret = (stats.secret or 0) + 1; return end
     label = PublicChannel(baseName, channelName)
     stats.last = tostring(baseName or channelName)
-    if label then stats.accepted = stats.accepted + 1 end
+    if label then
+      stats.accepted = stats.accepted + 1
+      -- Keep the last 40 accepted lines (saved) so the detector can be tuned on real chat.
+      if type(CraftBoardDB) == "table" then
+        local log = CraftBoardDB.chatlog or {}
+        CraftBoardDB.chatlog = log
+        log[#log + 1] = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h(.-)|h", "%1")
+        if #log > 40 then table.remove(log, 1) end
+      end
+    end
   elseif event == "CHAT_MSG_SAY" then
     label = L["Say"]
   elseif event == "CHAT_MSG_YELL" then
