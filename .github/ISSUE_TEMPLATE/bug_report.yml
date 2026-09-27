@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in CraftBoard is broken or behaves wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A BugSack report and the output of `/cb debug` help the most.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Professions window
+        2. Click the CraftBoard tab
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: CraftBoard version
+      description: Shown in Options > AddOns > CraftBoard, or in the CurseForge/WowUp app.
+      placeholder: "0.9.4"
+    validations:
+      required: true
+  - type: textarea
+    id: lua-error
+    attributes:
+      label: Lua error
+      description: Paste the full error from BugSack/BugGrabber, if there was one.
+      render: text
+  - type: textarea
+    id: debug
+    attributes:
+      label: /cb debug output
+      description: Run `/cb debug` in game and paste what it prints.
+      render: text
+  - type: textarea
+    id: addons
+    attributes:
+      label: Other addons
+      description: Any addons that touch the Professions window, chat or the minimap (e.g. Skillet, TradeSkillMaster, Prat, ElvUI).
