@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Player names with a space (every Forever character) were rejected by the sync layer and the
+  chat watcher, so peers and chat requests never appeared.
+- Forever's language-split channels ("Trade - English", "Trade (Services) - English") are now
+  recognised by the chat watcher.
+
 ### Added
 - "Seen in chat" on the Requests tab (suggested on Reddit): CraftBoard reads Trade, General,
   LookingForGroup, say and yell for players looking for a crafter ("LF LW for...",

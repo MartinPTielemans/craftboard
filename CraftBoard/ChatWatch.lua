@@ -262,7 +262,11 @@ local function MyRealm()
 end
 
 local function FullName(name)
-  if type(name) ~= "string" or name == "" or #name > 64 or name:find("[|%s]") then return nil end
+  -- Forever character names are two words ("Raion Lyzl"), so a space is allowed; only
+  -- control characters and link markup are rejected.
+  if type(name) ~= "string" or name == "" or #name > 64 or name:find("[|%c]") then return nil end
+  name = name:gsub("^%s+", ""):gsub("%s+$", "")
+  if name == "" then return nil end
   if not name:find("-", 1, true) then
     local realm = MyRealm()
     if not realm then return nil end
@@ -330,12 +334,13 @@ local function PublicChannel(baseName, channelName)
   -- Forever splits channels by language and purpose: "Trade - English", "Trade (Services) -
   -- English". Match on the leading word so those all count; the server list is only used to
   -- also accept localized names it reports.
+  -- The label shown in the list is the leading word ("Trade"), never the full server name.
+  local head = base:match("^(%a+)") or base
   local server = ServerChannels()
-  if server[base] then return base end
-  local head = base:match("^(%a+)")
-  if head == "Trade" or head == "General" or head == "LookingForGroup" then return base end
+  if server[base] then return head end
+  if head == "Trade" or head == "General" or head == "LookingForGroup" then return head end
   for name in pairs(server) do
-    if base:sub(1, #name) == name then return base end
+    if base:sub(1, #name) == name then return head end
   end
   return nil
 end

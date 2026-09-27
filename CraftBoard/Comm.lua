@@ -105,7 +105,10 @@ end
 -- Peers are keyed "Name-Realm" so they line up with NS.Me and guild roster names.
 local function FullName(name)
   if type(name) ~= "string" or name == "" or #name > 64 then return nil end
-  if name:find("|", 1, true) or name:find(" ", 1, true) then return nil end
+  -- Forever names contain a space ("Raion Lyzl"); reject only markup and control characters.
+  if name:find("|", 1, true) or name:find("%c") then return nil end
+  name = name:gsub("^%s+", ""):gsub("%s+$", "")
+  if name == "" then return nil end
   if not name:find("-", 1, true) then
     local realm = MyRealm()
     if not realm then return nil end
