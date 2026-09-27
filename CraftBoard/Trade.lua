@@ -147,17 +147,25 @@ local button
 
 -- Enchant recipe of my current character that the partner asked for: queued for them first,
 -- then their "Seen in chat" ask. Returns recipeID, name.
+-- Only when exactly one enchant is wanted: with two (say, two weapon enchants queued) the
+-- button can't know which one this item is for, so it stays hidden rather than cast the wrong one.
 local function WantedEnchant(who)
   local mine = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine() or {}
+  local found, name, n = nil, nil, 0
+  local function take(id)
+    local rec = id and mine[id]
+    if rec and rec.e and id ~= found then
+      found, name, n = id, rec.n, n + 1
+    end
+  end
   for _, x in ipairs(NS.Queue and NS.Queue.Entries() or {}) do
-    local rec = mine[x.recipeID]
-    if rec and rec.e and x.who and NS.SamePlayer(x.who, who) then return x.recipeID, rec.n end
+    if x.who and NS.SamePlayer(x.who, who) then take(x.recipeID) end
   end
   for _, s in ipairs(NS.ChatWatch and NS.ChatWatch.Seen() or {}) do
-    local rec = s.recipeID and mine[s.recipeID]
-    if rec and rec.e and s.current and NS.SamePlayer(s.from, who) then return s.recipeID, rec.n end
+    if s.current and NS.SamePlayer(s.from, who) then take(s.recipeID) end
   end
-  return nil
+  if n ~= 1 then return nil end
+  return found, name
 end
 
 local function SpellName(recipeID, fallback)

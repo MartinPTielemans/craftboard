@@ -1,6 +1,7 @@
 -- CraftBoard Spanish (esES) translation. Keys are the enUS strings (Locales.lua).
 local ADDON, NS = ...
-if NS.locale ~= "esES" then return end
+-- Also used on Latin American Spanish clients (esMX).
+if NS.locale ~= "esES" and NS.locale ~= "esMX" then return end
 local L = NS.L
 
 -- Core: slash help and messages

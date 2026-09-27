@@ -2522,7 +2522,9 @@ function UI.RefreshDetail()
   else
     emptyText = L["Reagents unknown (peer recipe)."]
   end
-  find.linked = Chain.LinkedNeeds(missing)
+  -- Only the current character's own recipe: an alt's shortages aren't in these bags.
+  local own = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine()[e.recipeID]
+  find.linked = own and Chain.LinkedNeeds(missing) or {}
   find.reagents.box:SetHeight(#reagents > 0 and REAGENT_H * ReagentRows(find.body, #reagents) or SUBROW_H)
   find.reagents:SetItems(reagents, emptyText, true)
   -- Records only exist for my chars' recipes, so a peer-only recipe never shows the line.

@@ -77,7 +77,21 @@ local sentBusy = {}       -- [dist] = busy flag carried by the last hello sent t
 local busyPending = false -- a busy hello is scheduled
 local loginHello = {}     -- [dist] = true once the login hello (l=true) went out there
 local backAlerted = {}    -- [peer] = time of the last back-online notice
-local pendingX = {}       -- [post id] = { dists = {[dist]=true}, t= }: retractions not yet sent everywhere
+-- Retractions not yet sent everywhere: CraftBoardDB.pendingX[post id] = { dists = {[dist]=true},
+-- t= } (saved, so a reload or disconnect before the retry doesn't lose them). Retracted post ids:
+-- CraftBoardDB.retracted[id] = time, so a linked order for a retracted request is dropped even
+-- when its author was offline for the retraction and announces it later.
+local function PendingX()
+  if type(CraftBoardDB) ~= "table" then return {} end
+  if type(CraftBoardDB.pendingX) ~= "table" then CraftBoardDB.pendingX = {} end
+  return CraftBoardDB.pendingX
+end
+
+local function Retracted()
+  if type(CraftBoardDB) ~= "table" then return {} end
+  if type(CraftBoardDB.retracted) ~= "table" then CraftBoardDB.retracted = {} end
+  return CraftBoardDB.retracted
+end
 local pendingXTimer = false
 
 -- Helpers ---------------------------------------------------------------
@@ -569,6 +583,9 @@ local function PrunePosts()
       db.posts[id] = nil
     end
   end
+  for id, t in pairs(Retracted()) do
+    if type(t) ~= "number" or t < cutoff then Retracted()[id] = nil end
+  end
   if type(db.offered) == "table" then
     for id in pairs(db.offered) do
       if not db.posts[id] then db.offered[id] = nil end
@@ -644,9 +661,12 @@ local SendRetract
 local function RetryRetracts()
   pendingXTimer = false
   local now = time()
-  for pid, e in pairs(pendingX) do
-    pendingX[pid] = nil
-    if now - e.t < POST_TTL then SendRetract(pid, e.dists, e.t) end
+  local pending = PendingX()
+  for pid, e in pairs(pending) do
+    pending[pid] = nil
+    if type(e) == "table" and type(e.dists) == "table" and type(e.t) == "number" and now - e.t < POST_TTL then
+      SendRetract(pid, e.dists, e.t)
+    end
   end
 end
 
@@ -665,7 +685,7 @@ function SendRetract(id, dists, since)
     end
   end
   if not left then return end
-  pendingX[id] = { dists = left, t = since or time() }
+  PendingX()[id] = { dists = left, t = since or time() }
   if pendingXTimer or not (C_Timer and C_Timer.After) then return end
   pendingXTimer = true
   C_Timer.After(15, RetryRetracts)
@@ -679,6 +699,7 @@ function Comm.Retract(id)
   if not p then return false end
   db.posts[id] = nil
   if p.from == me then
+    Retracted()[id] = time()
     SendRetract(id)
     for cid, c in pairs(db.posts) do
       if type(c) == "table" and c.pa == id and c.from == me then
@@ -937,6 +958,9 @@ function handlers.P(full, data)
     if existing.from ~= full then return end
     return -- already known; keep original local timestamp so expiry stays anchored
   end
+  -- A linked order for a request that was retracted.
+  local pa = CleanString(data.pa, 96)
+  if pa and Retracted()[pa] then return end
   local count, total = 0, 0
   local oldestId, oldestT
   for pid, p in pairs(db.posts) do
@@ -955,7 +979,7 @@ function handlers.P(full, data)
     id = id, from = full, item = item, qty = qty,
     note = CleanString(data.note, MAX_NOTE) or "",
     t = (st <= now and now - st < POST_TTL) and st or now,
-    pa = CleanString(data.pa, 96),
+    pa = pa,
   }
   Fire("POSTS_UPDATED")
 end
@@ -969,10 +993,14 @@ function handlers.X(full, data)
   local p = db and db.posts[id]
   if type(p) == "table" and p.from == full then
     db.posts[id] = nil
-    -- My linked orders for that request go with it (theirs are retracted by their authors).
+    Retracted()[id] = time()
+    -- Its linked orders go with it: mine are retracted for everyone; other players' are dropped
+    -- here (their authors retract them too, or, if offline now, get them dropped on arrival).
     local me = MyKey()
     for cid, c in pairs(db.posts) do
-      if type(c) == "table" and c.pa == id and c.from == me then Comm.Retract(cid) end
+      if type(c) == "table" and c.pa == id then
+        if c.from == me then Comm.Retract(cid) else db.posts[cid] = nil end
+      end
     end
     Fire("POSTS_UPDATED")
   end
@@ -1041,6 +1069,11 @@ local function Start()
   InstallChatFilter()
   PrunePeers()
   PrunePosts()
+  -- Retractions a reload or disconnect interrupted go out once sending is possible.
+  if next(PendingX()) and C_Timer and C_Timer.After then
+    pendingXTimer = true
+    C_Timer.After(15, RetryRetracts)
+  end
   C_Timer.After(10, function() SendHello() end)
   ScheduleHello()
   if C_Timer.NewTicker then
