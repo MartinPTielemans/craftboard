@@ -567,10 +567,18 @@ function Recipes.GroupOf(recipeID, itemID)
   return Recipes.CategoryOf(recipeID) or Recipes.ItemGroup(itemID or OutputOf(recipeID)) or L["Other"]
 end
 
+-- Fairness rule: online crafters first, then my own characters; within a group the order is
+-- shuffled once per session so no name is always at the top. Nothing else ranks a crafter.
+local sessionSalt = math.random(1, 1e6)
+local function shuffleKey(name)
+  local h = sessionSalt
+  for i = 1, #name do h = (h * 31 + name:byte(i)) % 2147483647 end
+  return h
+end
 local function crafterLess(a, b)
   if a.online ~= b.online then return a.online end
   if a.mine ~= b.mine then return a.mine end
-  return a.name < b.name
+  return shuffleKey(a.name) < shuffleKey(b.name)
 end
 
 -- Case-insensitive substring search on recipe or output item name. Empty text matches all.
