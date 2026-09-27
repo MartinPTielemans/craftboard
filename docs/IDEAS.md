@@ -43,3 +43,12 @@ Detector must be tuned on real Trade lines (`CraftBoardDB.chatlog`), not synthet
   secure button; cooldown sharing (transmutes, Mooncloth); private "crafted for you N times";
   respect the ignore list; crafters-in-your-group tooltips; gamepad support; full UI translations
   (deDE, frFR, esES).
+
+## Scaling on a realmless game (2026-09-27)
+Forever has no realms, only region + ruleset. If the hidden channel spans that whole population,
+the current sync (hello every ~10 min from every client, then a whispered full recipe list per
+peer) will not scale past a few hundred users: every login queries every peer. Before that point:
+- Replace full recipe sync with on-demand queries: "who can craft item X?" goes out on search,
+  crafters who know it answer. Recipe lists stay local.
+- Hellos carry only professions and busy state; cap how many peers are tracked.
+- Verify first whether the channel really spans the region (peers from far-away zones, counts).
