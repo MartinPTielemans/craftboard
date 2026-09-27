@@ -1,39 +1,82 @@
 # CraftBoard
 
-A World of Warcraft: Forever addon. A realm-wide crafting order board that runs entirely over
-addon messages: crafters' recipe books are shared automatically, buyers search "who can make X",
-and requests go out as a pre-filled whisper or an open board post. With nobody else installed it
-still works as a personal crafting tool: what you can craft right now, what is missing, shopping list.
+Crafting orders for World of Warcraft: Forever.
 
-- Non-combat only. Unaffected by Forever's combat addon restrictions.
-- No gold in the protocol. Tips are negotiated in whispers, nothing resembles an auction house or GDKP.
-- Guild channel sync works with two people; the hidden realm channel lights up as more install it.
+Forever brought back the Classic world but not retail's crafting orders, so finding a crafter still
+means repeating "LF LW, have mats" in Trade and hoping. CraftBoard adds a crafting board to the
+game's own Professions window: see who can craft what, whisper them, or post a request that
+crafters on your realm can see.
 
-## Install (beta)
-`tools/link.sh` symlinks `CraftBoard/` into the Forever beta AddOns folder. Or copy the folder to
-`World of Warcraft/_classic_beta_/Interface/AddOns/CraftBoard`.
+![CraftBoard as a tab in the Professions window](docs/screenshots/1-professions-tab.png)
 
-## Use
-CraftBoard is a tab of the game's Professions window: the note icon under the profession tabs
-on its right edge. The minimap button (left-click; right-click for settings, shift-click to
-rescan, shift-right-click for busy), `/cb` and a key set under Key Bindings > AddOns > CraftBoard open the Professions window
-on that tab. Before the Professions window has been opened in a session, in combat, for
-characters without professions, or with "Open CraftBoard inside the Professions window" turned
-off in the options, they open CraftBoard in its own window instead. The minimap button can be dragged around the minimap edge or hidden in
-the options; it is also in the addon compartment. Open each profession window once so your
-recipes are recorded (first-run tips on the window point the way). The window looks like the game's own
-Professions window: Find lists every tradeable recipe on the board grouped by category, Requests
-lists open posts and, under "Seen in chat", players asking for a crafter in Trade, General,
-LookingForGroup, say or yell (guild chat too if turned on), so the tab is useful even when no one
-else runs CraftBoard. A green check marks lines for a profession or recipe you have (or an alt's
-recipe when you carry the mats; grey when only an alt knows it); Whisper opens
-the chat box to that player with an offer typed in, Hide drops the line. Lines expire after 30
-minutes and are never saved; "Watch chat for crafting requests" in the options turns it off.
-Escape closes the Professions window as usual. `/cb scan` forces a rescan, `/cb options` opens the settings, `/cb debug`
-shows sync status. `/cb busy` (or the "Available" switch on the board header) marks you busy:
-other CraftBoard users see you greyed out and can't whisper you from the board. You are also busy
-automatically in dungeons, raids and combat unless that option is off.
+**Download:** [CurseForge](https://www.curseforge.com/wow/addons/craftboard) or the
+[GitHub releases](https://github.com/MartinPTielemans/craftboard/releases). Works with the
+CurseForge app and WowUp under the Forever game version.
 
-## Layout
-- `CraftBoard/` the addon. Modules: Core, Locales, Options, Launcher, Recipes, Inventory, Comm, ChatWatch, UI, Onboarding, Welcome, Hooks, Embed. Design in `docs/SPEC.md`.
-- `tools/check.sh` parses all Lua. `tools/link.sh` links into the game.
+## Features
+
+- **Part of the Professions window.** CraftBoard is a tab under your profession tabs, built from
+  the same frame, fonts and textures as Blizzard's window. Characters without professions get the
+  same board as a standalone window.
+- **Recipes shared automatically.** Open each profession window once and every recipe you know is
+  shared with other CraftBoard users on your realm. Bind-on-Pickup crafts are never shared, since
+  nobody can hand those over.
+- **Find.** Search any item and see everyone who can craft it, grouped by category like
+  Blizzard's list. Reagents show what you have and what is missing.
+- **Requests.** Post an order with a quantity and a note. Crafters see it on the board and offer
+  with one click.
+- **Seen in chat.** Players asking for a crafter in Trade or General ("LF enchanter", "WTB [item]")
+  are listed on the Requests tab, with a green check when you can make it. This works even when
+  nobody else on your realm runs CraftBoard.
+- **Busy mode.** Mark yourself busy and other users see you greyed out and can't whisper you from
+  the board. It turns on by itself in dungeons, raids and combat.
+- **Advertise.** One button posts a single plain line to Trade for players without the addon, at
+  most once a minute.
+- **Easy to reach.** Minimap button, addon compartment, a key binding, and `/cb`.
+
+## Principles
+
+- **Nothing happens on its own.** CraftBoard never sends a whisper, invite, trade or chat line
+  without your click. No keyword auto-replies.
+- **No gold.** Prices and tips are agreed in whispers, like always. Nothing here works like an
+  auction house or GDKP.
+- **Fair ordering.** Online crafters are listed first, then shuffled each session. There are no
+  ratings, featured spots or anything you can pay for.
+- **Private by default.** Chat lines are kept in memory for 30 minutes and never saved or shared.
+- **Non-combat.** Unaffected by Forever's combat addon restrictions.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `/cb` | Open or close the board |
+| `/cb busy` | Toggle busy |
+| `/cb scan` | Rescan the open profession window |
+| `/cb options` | Open the settings |
+| `/cb welcome` | Show the welcome window again |
+| `/cb debug` | Show sync status and known crafters |
+| `/cb chatdebug` | Show what the chat watcher is picking up |
+
+The minimap button opens the board on left-click and the settings on right-click.
+Shift-right-click toggles busy. Settings live under Options > AddOns > CraftBoard.
+
+## Status
+
+Beta. Everything is tested in-game on Forever, but the board only gets useful as more players on
+a realm install it. Bug reports and ideas are welcome in
+[issues](https://github.com/MartinPTielemans/craftboard/issues). A BugSack report and the output
+of `/cb debug` help the most.
+
+## Development
+
+- `CraftBoard/` is the addon. Modules: Core, Locales, Options, Launcher, Recipes, Inventory, Comm,
+  ChatWatch, UI, Onboarding, Welcome, Hooks, Embed, Debug. The design is in `docs/SPEC.md`.
+- `tools/link.sh` symlinks the addon into the Forever AddOns folder for live testing.
+- `tools/check.sh` parses every Lua file and checks that all locale keys are used and defined.
+- `tools/package.sh` builds a release zip locally. Tagged releases are built and uploaded by the
+  GitHub workflow; see `docs/RELEASING.md`.
+- `docs/IDEAS.md` collects requested features and the decisions made on them.
+
+Built with AI assistance (Claude and Codex), designed and tested in-game by the author.
+
+MIT licensed.
