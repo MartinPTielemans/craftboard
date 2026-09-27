@@ -17,8 +17,12 @@
 --     HookScript OnShow on CraftingPage / BookPage, hooksecurefunc(ProfessionsFrame, "SetTab")
 --     when that method exists (plain Lua, a post-hook), TRADE_SKILL_SHOW. All post-hooks: the
 --     Blizzard code runs first and untouched;
---   * while our page is up, Blizzard's selected tab marker is faded with SetAlpha (a C call on a
---     texture, no Lua state) and restored when our page hides;
+--   * while our page is up, Blizzard's selected tab marker, ProfessionsFrameTitleText and
+--     CraftingPage.RankBar (and ConcentrationDisplay) are faded with SetAlpha (a C call, no Lua
+--     state) and restored to their own alpha when our page hides; Blizzard's title text is
+--     never set: our page draws its own "CraftBoard" title in the same spot;
+--   * Find / Requests are top tabs inside our page (UI.BuildContent's topTabs), not side tabs:
+--     Blizzard's tab column only gets our one CraftBoard tab;
 --   * ESC closes ProfessionsFrame as usual (it is Blizzard's UI panel); our page hides with it.
 -- Opening ProfessionsFrame for /cb, the minimap button and the key binding uses the same opener
 -- as the tips (ToggleProfessionsBook on this client), outside combat only, and only when
@@ -35,12 +39,11 @@ local PAGE_NAME, TAB_NAME = "CraftBoardEmbedPage", "CraftBoardEmbedTab"
 local WIDTH, HEIGHT = 673, 594   -- ProfessionsFrame / CraftingPage / BookPage
 local TAB_GAP = 2                -- Blizzard's side tabs: TOPLEFT->previous tab's BOTTOMLEFT 0,-2
 local FIRST_TAB_Y = -60          -- ProfessionsOverviewTab: TOPLEFT->ProfessionsFrame.TOPRIGHT 0,-60
-local SUB_GAP = 12               -- our Find / Requests tabs, set apart under our tab
 local TITLE_H = 24               -- title bar + close button: left to Blizzard's frame for the mouse
 local GUARD = 0.3                -- s after selecting in which Blizzard page changes don't deselect
 local SIDETAB = "common-sidetab"
 
-local pf, page, tab, ctl
+local pf, page, tab, ctl, titleFrame
 local built, failed = false, false
 local blizzTabs = {}             -- Blizzard's side tabs, top to bottom
 local hooked = {}                -- [frame] = true once its scripts are hooked
@@ -176,20 +179,42 @@ local function PlaceTab()
   end
 end
 
--- Fades (or restores) the selected marker of Blizzard's current tab.
+local function Fade(r)
+  if type(r) ~= "table" or not (r.SetAlpha and r.GetAlpha) then return end
+  local a = r:GetAlpha()
+  if a == 0 then return end
+  r:SetAlpha(0)
+  dimmed[#dimmed + 1] = { r, a }
+end
+
+-- Blizzard's crafting-page header parts that show through or above our page: the title text
+-- (our own title is drawn in its place), CraftingPage.RankBar (453x18 at 110,-40, where our
+-- status line and top tabs go) and ConcentrationDisplay (120,-35) when this client has it.
+local function HeaderParts()
+  local cp = pf.CraftingPage
+  local tc = pf.TitleContainer
+  return {
+    _G.ProfessionsFrameTitleText or (type(tc) == "table" and tc.TitleText) or nil,
+    type(cp) == "table" and cp.RankBar or nil,
+    type(cp) == "table" and cp.ConcentrationDisplay or nil,
+  }
+end
+
+-- Fades (or restores, to the alpha each had) the selected marker of Blizzard's current tab and
+-- the header parts above.
 local function Dim(on)
   for i = #dimmed, 1, -1 do
-    dimmed[i]:SetAlpha(1)
+    local r, a = dimmed[i][1], dimmed[i][2]
+    r:SetAlpha(a)
     dimmed[i] = nil
   end
   if not on then return end
   for _, f in ipairs(blizzTabs) do
     local s = f.SelectedTexture
-    if type(s) == "table" and s.SetAlpha and s.IsShown and s:IsShown() then
-      s:SetAlpha(0)
-      dimmed[#dimmed + 1] = s
-    end
+    if type(s) == "table" and s.IsShown and s:IsShown() then Fade(s) end
   end
+  local parts = HeaderParts()
+  for i = 1, 3 do Fade(parts[i]) end
 end
 
 local function SetSelected(on)
@@ -223,6 +248,12 @@ local function Raise()
     end
   end
   page:SetFrameLevel(min(top + 1, 9000))
+  -- Our title above Blizzard's title bar art.
+  local lvl = page:GetFrameLevel() + 1
+  for _, f in ipairs({ pf.TitleContainer, pf.NineSlice }) do
+    if type(f) == "table" and f.GetFrameLevel then lvl = max(lvl, (f:GetFrameLevel() or 0) + 1) end
+  end
+  titleFrame:SetFrameLevel(min(lvl, 9000))
 end
 
 -- Deselecting ---------------------------------------------------------------------
@@ -321,14 +352,24 @@ local function BuildPage(kit)
     bg:SetPoint("TOPLEFT", page, "TOPLEFT", 3, -21)
     bg:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -5, 3)
   end
+  -- Our title over ProfessionsFrameTitleText (faded while we show): TitleContainer's spot
+  -- (58,-1 / -24,-1, 20 high), GameFontNormal centred 5 px from its top. Its own child frame,
+  -- kept above TitleContainer and the nine-slice edge by Raise; no mouse, so the title bar
+  -- still drags the window.
+  titleFrame = CreateFrame("Frame", nil, page)
+  titleFrame:SetPoint("TOPLEFT", page, "TOPLEFT", 58, -1)
+  titleFrame:SetPoint("TOPRIGHT", page, "TOPRIGHT", -24, -1)
+  titleFrame:SetHeight(20)
+  local title = titleFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOP", titleFrame, "TOP", 0, -5)
+  title:SetPoint("LEFT", titleFrame, "LEFT", 0, 0)
+  title:SetPoint("RIGHT", titleFrame, "RIGHT", 0, 0)
+  title:SetJustifyH("CENTER")
+  title:SetText(L["CraftBoard"])
   page:HookScript("OnHide", function() SetSelected(false) end)
-  -- Find / Requests side tabs under our tab (Blizzard's column already fills the usual spot).
-  ctl = NS.UI.BuildContent(page, {
-    placeTabs = function(t1, side)
-      if not side then return false end
-      t1:SetPoint("TOPLEFT", tab, "BOTTOMLEFT", 0, -SUB_GAP)
-    end,
-  })
+  -- Find / Requests as top tabs inside the page: side tabs would sit in Blizzard's column under
+  -- our tab and read as more professions. The status line goes where the RankBar was.
+  ctl = NS.UI.BuildContent(page, { topTabs = true })
 end
 
 local function BuildTab(kit)
@@ -410,6 +451,16 @@ function Embed.Select()
   Raise()
   ctl.Show()
   SetSelected(true)
+  -- Blizzard's deferred refresh of the page it just opened may lift its frames; level up again
+  -- (and fade what it showed) once it has run.
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0, function()
+      if page:IsShown() then
+        Raise()
+        SetSelected(true)
+      end
+    end)
+  end
   return true
 end
 

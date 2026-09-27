@@ -4,7 +4,7 @@
 -- (search box + Filter dropdown over the summary-list background, gold collapsible category
 -- bars, 20 px recipe rows), the recipe card on the right (round output icon, reagent slots,
 -- crafters), the red Create-style button row under the card, and side tabs on the right edge
--- for Find / Requests.
+-- for Find / Requests (small top tabs instead when embedded in the Professions window).
 -- Plain frames only: no ScrollBox/DataProvider, no external UI libs, no shipped textures.
 -- Every row and button is created once (lists pool their visible rows); refreshes only
 -- re-fill them. Every Blizzard template and atlas is checked before use, with a plain fallback.
@@ -104,6 +104,7 @@ local host                     -- frame the content (pages, status line, side ta
                                -- the standalone window or Embed.lua's page in ProfessionsFrame
 local hostOpts = {}            -- [host frame] = options given to UI.BuildContent
 local tabs, panels = {}, {}
+local topTabs = {}             -- Find / Requests as small top tabs, for hosts with opts.topTabs
 local activeTab = 1
 local selectedID               -- recipeID selected in Find
 local dirty = true
@@ -221,12 +222,6 @@ local function NameRGB(itemID)
   return QualityRGB(q)
 end
 
-
-local function QualityHex(q)
-  if type(q) ~= "number" then return "|cffffffff" end
-  local r, g, b = QualityRGB(q)
-  return format("|cff%02x%02x%02x", floor(r * 255 + 0.5), floor(g * 255 + 0.5), floor(b * 255 + 0.5))
-end
 
 local function ShowTooltip(anchor, itemID, recipeID)
   if not GameTooltip then return end
@@ -3001,6 +2996,7 @@ local function SelectTab(i)
       tab:UnlockHighlight()
     end
   end
+  for j, tab in ipairs(topTabs) do tab.cbSetSelected(j == i) end
   if i ~= 1 and find.search then find.search:ClearFocus() end
   if i ~= 2 and reqs.search then reqs.search:ClearFocus() end
   if i == 2 then UpdatePortrait(nil) end
@@ -3095,6 +3091,78 @@ function BuildTabs(f)
     end)
     tabs[i] = tab
   end
+end
+
+end
+
+-- Top tabs, for a host inside another window (Embed.lua's page in ProfessionsFrame, where side
+-- tabs would sit in Blizzard's column and read as more professions): two flat text tabs at the
+-- left of the status line row, above the search box. Selected: gold label on a faint gold tint
+-- with a gold underline; otherwise a grey label. Template-free.
+local ArrangeTabs
+do
+local TOPTAB_X, TOPTAB_H, TOPTAB_GAP, TOPTAB_PAD = 10, 20, 2, 8
+local STATUS_GAP = 12                   -- status line starts this far right of the last top tab
+
+local function TopTab(parent, i, label)
+  local b = CreateFrame("Button", "CraftBoardTopTab" .. i, parent)
+  b:SetHeight(TOPTAB_H)
+  local tint = b:CreateTexture(nil, "BACKGROUND")
+  tint:SetAllPoints()
+  tint:SetColorTexture(GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3], 0.12)
+  local line = b:CreateTexture(nil, "ARTWORK")
+  line:SetHeight(1)
+  line:SetPoint("BOTTOMLEFT")
+  line:SetPoint("BOTTOMRIGHT")
+  line:SetColorTexture(GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3], 0.8)
+  local hl = b:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetAllPoints()
+  hl:SetColorTexture(1, 1, 1, 0.08)
+  local fs = Label(b, label, Font("GameFontNormal"))
+  fs:SetPoint("CENTER", 0, 0)
+  b:SetWidth(ceil(StringWidth(fs)) + 2 * TOPTAB_PAD)
+  function b.cbSetSelected(on)
+    tint:SetShown(on)
+    line:SetShown(on)
+    local c = on and GOLD_RGB or MUTED
+    fs:SetTextColor(c[1], c[2], c[3])
+  end
+  b.text, b.cbLabel = label, fs
+  b:SetID(i)
+  b:SetScript("OnClick", function(self)
+    SelectTab(self:GetID())
+    if self:GetID() == 1 then FocusSearch() end
+  end)
+  return b
+end
+
+-- Side tabs, or (opts.topTabs) the top tabs, for host h; the status line where the RankBar
+-- sits, or right of the top tabs when they reach into that spot.
+function ArrangeTabs(h)
+  local top = hostOpts[h] and hostOpts[h].topTabs and true or false
+  for _, t in ipairs(tabs) do t:SetShown(not top) end
+  if top and not topTabs[1] then
+    for i, label in ipairs(TAB_NAMES) do topTabs[i] = TopTab(h, i, label) end
+  end
+  local right = 0
+  for i, t in ipairs(topTabs) do
+    if t:GetParent() ~= h then t:SetParent(h) end
+    t:ClearAllPoints()
+    if i == 1 then
+      t:SetPoint("TOPLEFT", h, "TOPLEFT", TOPTAB_X, G.statusY + (TOPTAB_H - G.statusH) / 2)
+      right = TOPTAB_X
+    else
+      t:SetPoint("LEFT", topTabs[i - 1], "RIGHT", TOPTAB_GAP, 0)
+      right = right + TOPTAB_GAP
+    end
+    right = right + (t:GetWidth() or 0)
+    t.cbSetSelected(i == activeTab)
+    t:SetShown(top)
+  end
+  local x = top and max(G.statusX, right + STATUS_GAP) or G.statusX
+  statusLine:ClearAllPoints()
+  statusLine:SetPoint("TOPLEFT", h, "TOPLEFT", x, G.statusY)
+  statusLine:SetWidth(G.statusX + G.statusW - x)
 end
 
 end
@@ -3263,6 +3331,7 @@ local function BuildParts(h)
   BuildRequests(panels[2])
   BuildTabs(h)
   PlaceTabs(h)
+  ArrangeTabs(h)
   splitDone = false
   LayoutSplit(h:GetWidth())
 
@@ -3299,10 +3368,10 @@ local function Attach(h)
     p:SetAllPoints(h)
   end
   move(statusLine)
-  statusLine:ClearAllPoints()
-  statusLine:SetPoint("TOPLEFT", h, "TOPLEFT", G.statusX, G.statusY)
   for _, tab in ipairs(tabs) do move(tab) end
+  for _, tab in ipairs(topTabs) do move(tab) end
   PlaceTabs(h)
+  ArrangeTabs(h)
   splitDone = false
   LayoutSplit(h:GetWidth())
   if old and old ~= h and old:IsShown() then old:Hide() end
@@ -3316,7 +3385,9 @@ end
 --   ctl:SelectTab(i)     1 = Find, 2 = Requests (moves the content into h first)
 --   ctl:TipAnchors()     Onboarding's anchors while the content is in h, else nil
 -- opts.placeTabs(tab1, isSideTab): anchors the first Find / Requests tab for this host (the
--- default hangs side tabs off the host's TOPRIGHT at 0,-60). h's OnShow moves the content in.
+-- default hangs side tabs off the host's TOPRIGHT at 0,-60). opts.topTabs: no side tabs in this
+-- host; Find / Requests are small top tabs left of the status line instead (see TopTab).
+-- h's OnShow moves the content in.
 function UI.BuildContent(h, opts)
   if not h then return nil end
   if not hostOpts[h] then
