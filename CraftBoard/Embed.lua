@@ -193,10 +193,12 @@ end
 local function HeaderParts()
   local cp = pf.CraftingPage
   local tc = pf.TitleContainer
+  local pc = pf.PortraitContainer
   return {
     _G.ProfessionsFrameTitleText or (type(tc) == "table" and tc.TitleText) or nil,
     type(cp) == "table" and cp.RankBar or nil,
     type(cp) == "table" and cp.ConcentrationDisplay or nil,
+    _G.ProfessionsFramePortrait or (type(pc) == "table" and pc.portrait) or nil,
   }
 end
 
@@ -214,7 +216,7 @@ local function Dim(on)
     if type(s) == "table" and s.IsShown and s:IsShown() then Fade(s) end
   end
   local parts = HeaderParts()
-  for i = 1, 3 do Fade(parts[i]) end
+  for i = 1, 4 do Fade(parts[i]) end
 end
 
 local function SetSelected(on)
@@ -366,6 +368,20 @@ local function BuildPage(kit)
   title:SetPoint("RIGHT", titleFrame, "RIGHT", 0, 0)
   title:SetJustifyH("CENTER")
   title:SetText(L["CraftBoard"])
+  -- Our portrait over Blizzard's (faded while we show): ProfessionsFramePortrait is 62x62 at
+  -- TOPLEFT -5,7 with a 58x58 circle mask inset 2 px. A child of titleFrame so Raise keeps it
+  -- above the nine-slice's portrait ring art order-wise identical to Blizzard's own.
+  local por = titleFrame:CreateTexture(nil, "OVERLAY")
+  por:SetSize(62, 62)
+  por:SetPoint("TOPLEFT", page, "TOPLEFT", -5, 7)
+  por:SetTexture(kit.portrait)
+  if titleFrame.CreateMaskTexture then
+    local m = titleFrame:CreateMaskTexture()
+    m:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    m:SetPoint("TOPLEFT", por, "TOPLEFT", 2, 0)
+    m:SetPoint("BOTTOMRIGHT", por, "BOTTOMRIGHT", -2, 4)
+    por:AddMaskTexture(m)
+  end
   page:HookScript("OnHide", function() SetSelected(false) end)
   -- Find / Requests as top tabs inside the page: side tabs would sit in Blizzard's column under
   -- our tab and read as more professions. The status line goes where the RankBar was.

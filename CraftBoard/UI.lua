@@ -3163,6 +3163,9 @@ function ArrangeTabs(h)
   statusLine:ClearAllPoints()
   statusLine:SetPoint("TOPLEFT", h, "TOPLEFT", x, G.statusY)
   statusLine:SetWidth(G.statusX + G.statusW - x)
+  -- With top tabs the status reads as a separate, right-aligned note rather than a run-on
+  -- of the tab row; standalone keeps Blizzard's left-aligned rank-bar spot.
+  statusLine.text:SetJustifyH(top and "RIGHT" or "LEFT")
 end
 
 end
