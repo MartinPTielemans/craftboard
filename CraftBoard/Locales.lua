@@ -119,7 +119,7 @@ local enUS = {
   "%d crafters online",
   "%d open request",
   "%d open requests",
-  "No other crafters yet \194\183 invite your guild to install CraftBoard",
+  "No other crafters yet \194\183 invite your guild",
   "realm channel off",
   "Apprentice",
   "Journeyman",

@@ -2896,7 +2896,7 @@ local function BoardLine()
   local total, online = PeerCounts()
   local line
   if total == 0 then
-    line = L["No other crafters yet \194\183 invite your guild to install CraftBoard"]
+    line = L["No other crafters yet \194\183 invite your guild"]
   else
     local open = #(NS.Comm and NS.Comm.Requests and NS.Comm.Requests() or {})
     line = format(online == 1 and L["%d crafter online"] or L["%d crafters online"], online)
