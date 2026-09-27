@@ -147,6 +147,22 @@ function NS.IsIgnored(full)
   return ok and yes and true or false
 end
 
+-- A unit's "Name-Realm", the way chat and addon messages name the player. On Forever
+-- UnitName's second return is the character's surname, not a realm (retail: the realm), and
+-- senders arrive as "First Surname" on my realm, so the two are joined with a space. Forever has
+-- no realms, so the key always takes mine there.
+function NS.UnitFullName(unit)
+  if not UnitName then return nil end
+  local ok, name, second = pcall(UnitName, unit)
+  if not ok or type(name) ~= "string" or name == "" then return nil end
+  if issecretvalue and (issecretvalue(name) or issecretvalue(second)) then return nil end
+  if NS.IsForever then
+    if type(second) == "string" and second ~= "" then name = name .. " " .. second end
+    return NS.FullName(name)
+  end
+  return NS.FullName(name, second)
+end
+
 -- Party / raid members other than me: list of "Name-Realm".
 function NS.GroupMembers()
   local out = {}
@@ -156,8 +172,7 @@ function NS.GroupMembers()
   for i = 1, raid and n or n - 1 do
     local unit = (raid and "raid" or "party") .. i
     if not (UnitIsUnit and UnitIsUnit(unit, "player")) then
-      local name, realm = UnitName(unit)
-      local full = NS.FullName(name, realm)
+      local full = NS.UnitFullName(unit)
       if full then out[#out + 1] = full end
     end
   end

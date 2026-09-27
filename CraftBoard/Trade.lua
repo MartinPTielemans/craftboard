@@ -216,9 +216,7 @@ end
 -- Events --------------------------------------------------------------------------
 
 local function PartnerName()
-  if not UnitName then return nil end
-  local name, realm = UnitName("NPC")
-  return NS.FullName(name, realm)
+  return NS.UnitFullName("NPC")
 end
 
 NS.Register("TRADE_SHOW", function()

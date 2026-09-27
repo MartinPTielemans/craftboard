@@ -58,8 +58,7 @@ local function AddUnitLine(tt, unit)
   if not (On() and tt and tt.AddLine and unit and UnitName and UnitIsPlayer and UnitIsPlayer(unit)) then return end
   if not ((UnitInParty and UnitInParty(unit)) or (UnitInRaid and UnitInRaid(unit))) then return end
   if not byPeer then Rebuild() end
-  local name, realm = UnitName(unit)
-  local full = NS.FullName(name, realm)
+  local full = NS.UnitFullName(unit)
   local p
   for key, peer in pairs(byPeer) do
     if NS.SamePlayer(key, full) then p = peer break end
