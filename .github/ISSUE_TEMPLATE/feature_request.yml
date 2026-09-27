@@ -1,0 +1,24 @@
+name: Feature request
+description: An idea or improvement for CraftBoard.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check [docs/IDEAS.md](https://github.com/MartinPTielemans/craftboard/blob/main/docs/IDEAS.md) first; it lists requested features and the decisions made on them.
+
+        CraftBoard never acts without a click, never handles gold, and has no rankings or paid placement. Ideas that go against those [principles](https://github.com/MartinPTielemans/craftboard#principles) will likely be declined.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation or problem, in game terms.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: How you picture CraftBoard handling it.
+    validations:
+      required: true
