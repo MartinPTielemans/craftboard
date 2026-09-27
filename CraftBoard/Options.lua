@@ -47,6 +47,34 @@ local function SetGuildShare(v)
   if type(CraftBoardDB) == "table" then CraftBoardDB.guildShare = v and true or false end
 end
 
+-- Minimap button (Launcher.lua via LibDBIcon): stored inverted in CraftBoardDB.minimap.hide.
+local function GetMinimap()
+  local db = type(CraftBoardDB) == "table" and CraftBoardDB.minimap
+  return not (type(db) == "table" and db.hide)
+end
+
+local function SetMinimap(v)
+  v = v and true or false
+  if NS.Launcher and NS.Launcher.SetShown then
+    NS.Launcher.SetShown(v)
+  elseif type(CraftBoardDB) == "table" then
+    if type(CraftBoardDB.minimap) ~= "table" then CraftBoardDB.minimap = {} end
+    CraftBoardDB.minimap.hide = not v
+  end
+end
+
+local MINIMAP_TIP = L["Show the CraftBoard button on the minimap. Drag it around the minimap edge to move it."]
+
+local function ResetTips()
+  if NS.Onboarding and NS.Onboarding.Reset then
+    NS.Onboarding.Reset()
+  elseif type(CraftBoardDB) == "table" then
+    CraftBoardDB.tips = {}
+  end
+end
+
+local TIPS_TIP = L["Shows the first-run tips on the CraftBoard window again."]
+
 -- Advertise channel: where Find's Advertise button posts its one line ("General" by default,
 -- "Trade" (cities only), or "Off").
 local ADVERTISE = { "General", "Trade", "Off" }
@@ -101,6 +129,10 @@ local function RegisterVertical()
     L["Share recipes with my guild"], true)
   createCheckbox(category, guild, L["Announce your recipes and board posts to guildmates who use CraftBoard."])
 
+  local minimap = S.RegisterProxySetting(category, "CRAFTBOARD_MINIMAP_BUTTON", bool,
+    L["Show minimap button"], true, GetMinimap, SetMinimap)
+  createCheckbox(category, minimap, MINIMAP_TIP)
+
   -- Advertise channel: a dropdown where the API has one, else a button that cycles.
   local dropdown = S.CreateDropdown and S.CreateControlTextContainer and pcall(function()
     local str = S.VarType and S.VarType.String or "string"
@@ -123,6 +155,8 @@ local function RegisterVertical()
     L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."],
     true)
   layout:AddInitializer(forget)
+
+  layout:AddInitializer(CreateSettingsButtonInitializer(L["Show tips again"], L["Reset"], ResetTips, TIPS_TIP, true))
 
   S.RegisterAddOnCategory(category)
   return category:GetID()
@@ -175,10 +209,11 @@ local function BuildPanel()
   Check(L["Share recipes with my guild"],
     L["Announce your recipes and board posts to guildmates who use CraftBoard."],
     -76, GetGuildShare, SetGuildShare)
+  Check(L["Show minimap button"], MINIMAP_TIP, -104, GetMinimap, SetMinimap)
 
   local advertise = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   advertise:SetSize(220, 22)
-  advertise:SetPoint("TOPLEFT", 20, -114)
+  advertise:SetPoint("TOPLEFT", 20, -142)
   advertise.label = L["Advertise channel"]
   advertise.tip = ADVERTISE_TIP
   local function syncAdvertise()
@@ -194,13 +229,23 @@ local function BuildPanel()
 
   local forget = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   forget:SetSize(180, 22)
-  forget:SetPoint("TOPLEFT", 20, -146)
+  forget:SetPoint("TOPLEFT", 20, -174)
   forget:SetText(L["Forget all peer data"])
   forget.label = L["Forget all peer data"]
   forget.tip = L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."]
   forget:SetScript("OnClick", function() Options.ForgetPeers() end)
   forget:SetScript("OnEnter", ShowTip)
   forget:SetScript("OnLeave", HideTip)
+
+  local tips = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+  tips:SetSize(180, 22)
+  tips:SetPoint("TOPLEFT", 20, -206)
+  tips:SetText(L["Show tips again"])
+  tips.label = L["Show tips again"]
+  tips.tip = TIPS_TIP
+  tips:SetScript("OnClick", ResetTips)
+  tips:SetScript("OnEnter", ShowTip)
+  tips:SetScript("OnLeave", HideTip)
 
   p:SetScript("OnShow", function()
     for i = 1, #checks do checks[i]:SetChecked(checks[i].get()) end

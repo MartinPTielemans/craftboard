@@ -14,12 +14,15 @@ still works as a personal crafting tool: what you can craft right now, what is m
 `World of Warcraft/_classic_beta_/Interface/AddOns/CraftBoard`.
 
 ## Use
-`/cb` opens the window, or use the CraftBoard button in the Professions window. Open each
-profession window once so your recipes are recorded. The window looks like the game's own
+Open the window with the minimap button (left-click; right-click for settings, shift-click to
+rescan), `/cb`, a key set under Key Bindings > AddOns > CraftBoard, or the CraftBoard button in
+the Professions window. The minimap button can be dragged around the minimap edge or hidden in
+the options; it is also in the addon compartment. Open each profession window once so your
+recipes are recorded (first-run tips on the window point the way). The window looks like the game's own
 Professions window: Find lists every tradeable recipe on the board grouped by category, Requests
 lists open posts. `/cb scan` forces a rescan, `/cb options` opens the settings, `/cb debug`
 shows sync status.
 
 ## Layout
-- `CraftBoard/` the addon. Modules: Core, Locales, Options, Recipes, Inventory, Comm, UI. Design in `docs/SPEC.md`.
+- `CraftBoard/` the addon. Modules: Core, Locales, Options, Launcher, Recipes, Inventory, Comm, UI, Onboarding, Hooks. Design in `docs/SPEC.md`.
 - `tools/check.sh` parses all Lua. `tools/link.sh` links into the game.

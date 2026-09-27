@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Minimap button (LibDataBroker launcher shown by LibDBIcon): left-click opens the window,
+  right-click opens the settings, shift-left-click rescans the open profession window. The
+  tooltip shows the board status ("2 crafters online · 1 open request"). Drag it around the
+  minimap edge; the position is remembered. Also listed in the addon compartment (the addon
+  list button by the minimap) on clients that have one.
+- "Show minimap button" option.
+- Key binding "Toggle CraftBoard window" under Key Bindings > AddOns > CraftBoard (no default key).
+- One chat line on the first login after install saying where to find the window.
+- First-run tips on the window (Blizzard help tips, each shown once): how recipes get recorded
+  (with an "Open Professions" button), that your recipes are now shared, and where to post a
+  request. "Show tips again" in the options brings them back.
+
 ## [0.9.0] - 2026-09-26
 
 First public beta. The sync layer has not yet been exercised between two players; please report

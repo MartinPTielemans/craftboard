@@ -15,13 +15,17 @@ Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 Libs\AceComm-3.0\AceComm-3.0.xml
 Libs\LibDeflate\lib.xml
 Libs\LibSerialize\lib.xml
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\lib.xml
 
 Core.lua
 Locales.lua
 Options.lua
+Launcher.lua
 Recipes.lua
 Inventory.lua
 Comm.lua
 UI.lua
+Onboarding.lua
 Hooks.lua
 Debug.lua

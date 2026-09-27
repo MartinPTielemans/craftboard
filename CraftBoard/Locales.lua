@@ -169,6 +169,24 @@ local enUS = {
   "Advertise channel: %s",
   "Change",
   "Where the Advertise button in Find posts one line for players without CraftBoard. Trade chat exists in cities only. Nothing is ever sent without a click.",
+  "Show minimap button",
+  "Show the CraftBoard button on the minimap. Drag it around the minimap edge to move it.",
+  "Show tips again",
+  "Reset",
+  "Shows the first-run tips on the CraftBoard window again.",
+
+  -- Launcher: minimap button, key binding, welcome line
+  "CraftBoard",
+  "Toggle CraftBoard window",
+  "Left-click: open \194\183 Right-click: settings",
+  "CraftBoard loaded. Minimap button, /cb, or set a key in Key Bindings.",
+
+  -- Onboarding: first-run tips
+  "Open each of your profession windows once. CraftBoard records your recipes as you do.",
+  "Your recipes are now shared with guildmates and realm players who run CraftBoard. Everyone on the board appears in Find.",
+  "Post a request to the board, or whisper a crafter directly.",
+  "Open Professions",
+  "Tips will show again.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

@@ -1853,7 +1853,7 @@ end
 local function NewSearchBox(name, parent, t)
   local keyOf = t.keyOf or function(u) return u.recipeID end
   local current = t.selectedKey or function() return selectedID end
-  local selectKey = t.selectKey or function(key) UI.SelectRecipe(key) end
+  local selectKey = t.selectKey or function(key) UI.PickRecipe(key) end
   local box
   if HasTemplate("SearchBoxTemplate") then
     local ok, e = pcall(CreateFrame, "EditBox", name, parent, "SearchBoxTemplate")
@@ -2028,7 +2028,7 @@ local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset
   t.search:SetPoint("RIGHT", t.filter, "LEFT", -4, 0)
 
   GroupList(t, left, listName,
-    GroupRowFactory(function(it) UI.SelectRecipe(it.recipeID) end, function(it) ToggleGroup(t, it) end),
+    GroupRowFactory(function(it) UI.PickRecipe(it.recipeID) end, function(it) ToggleGroup(t, it) end),
     GroupFill(fillEntry))
   return CardForm(p, t, left)
 end
@@ -2421,6 +2421,12 @@ function UI.SelectRecipe(recipeID)
   selectedID = recipeID
   if find.list then find.list:Render() end
   UI.RefreshDetail()
+end
+
+-- The player picked a recipe (click or keyboard), as opposed to the automatic first pick.
+function UI.PickRecipe(recipeID)
+  UI.SelectRecipe(recipeID)
+  if NS.Onboarding then NS.Onboarding.Check("selected") end
 end
 
 -- Filter the cached universe by text and profession and group it. Called on every
@@ -2913,6 +2919,11 @@ local function SummaryLine()
   return table.concat(parts, DOT)
 end
 
+-- The window's board status line, for the minimap button tooltip.
+function UI.StatusText()
+  return BoardLine()
+end
+
 function UI.RefreshStatus()
   if statusLine then statusLine.text:SetText(BoardLine()) end
 end
@@ -3245,6 +3256,7 @@ local function Create()
     dirty = false
     SelectTab(activeTab)
     FocusSearch()
+    if NS.Onboarding then NS.Onboarding.Check("shown") end
   end)
   f:HookScript("OnHide", function()
     HideTooltip()
@@ -3295,6 +3307,15 @@ end
 
 function UI.Toggle()
   if frame and frame:IsShown() then UI.Hide() else UI.Show() end
+end
+
+-- Anchors for the first-run tips (Onboarding.lua); nil until the window exists.
+function UI.TipAnchors()
+  if not frame then return nil end
+  return {
+    frame = frame, shown = frame:IsShown() and true or false, findTab = activeTab == 1,
+    findPanel = panels[1], list = find.list and find.list.box, status = statusLine, post = find.post,
+  }
 end
 
 function UI.IsDirty()

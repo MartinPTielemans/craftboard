@@ -60,7 +60,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 -- DB
-local DEFAULTS = { chars = {}, peers = {}, posts = {}, realmChannel = true, guildShare = true, recipeNames = {} }
+local DEFAULTS = { chars = {}, peers = {}, posts = {}, realmChannel = true, guildShare = true, recipeNames = {}, tips = {} }
 
 local function InitDB()
   if type(CraftBoardDB) ~= "table" then CraftBoardDB = {} end
@@ -68,6 +68,11 @@ local function InitDB()
     if CraftBoardDB[k] == nil then
       if type(v) == "table" then CraftBoardDB[k] = {} else CraftBoardDB[k] = v end
     end
+  end
+  -- LibDBIcon's saved state (hide, minimapPos, lock, showInCompartment). The vendored
+  -- LibDBIcon only adds the addon compartment entry when showInCompartment is set.
+  if type(CraftBoardDB.minimap) ~= "table" then
+    CraftBoardDB.minimap = { hide = false, showInCompartment = true }
   end
   NS.db = CraftBoardDB
 end
@@ -144,6 +149,16 @@ local function PrintPeers()
   end
 end
 
+-- Forced rescan of the open profession window, reported in chat (/cb scan, shift-click on the
+-- minimap button).
+function NS.ScanNow()
+  local L = NS.L
+  if NS.Recipes and NS.Recipes.Scan then
+    local n, why = NS.Recipes.Scan(true)
+    NS.Print(n and string.format(L["scanned %d recipe(s)"], n) or string.format(L["scan skipped: %s"], tostring(why)))
+  end
+end
+
 SLASH_CRAFTBOARD1 = "/cb"
 SLASH_CRAFTBOARD2 = "/craftboard"
 SlashCmdList["CRAFTBOARD"] = function(msg)
@@ -157,10 +172,7 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
       NS.Print(L["UI not loaded"])
     end
   elseif cmd == "scan" then
-    if NS.Recipes and NS.Recipes.Scan then
-      local n, why = NS.Recipes.Scan(true)
-      NS.Print(n and string.format(L["scanned %d recipe(s)"], n) or string.format(L["scan skipped: %s"], tostring(why)))
-    end
+    NS.ScanNow()
   elseif cmd == "options" or cmd == "config" then
     if NS.Options and NS.Options.Open then NS.Options.Open() end
   elseif cmd == "debug" then
