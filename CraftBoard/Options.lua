@@ -127,6 +127,21 @@ end
 
 local AUTO_BUSY_TIP = L["While you are in a dungeon or raid, or in combat, other CraftBoard users see you as busy and the board won't whisper you. /cb busy marks you busy by hand."]
 
+-- Plain on/off options stored on CraftBoardDB, default on (only an explicit false is off).
+local function Flag(key)
+  return function() return not (type(CraftBoardDB) == "table" and CraftBoardDB[key] == false) end,
+    function(v)
+      if type(CraftBoardDB) == "table" then CraftBoardDB[key] = v and true or false end
+      NS.Fire("OPTIONS_UPDATED")
+    end
+end
+local GetBackOnline, SetBackOnline = Flag("backOnline")
+local GetGroupTips, SetGroupTips = Flag("groupTooltips")
+local GetGamepad, SetGamepad = Flag("gamepad")
+local BACK_ONLINE_TIP = L["One quiet chat line when a player whose request you can craft, or offered on, logs back in. Nothing is sent."]
+local GROUP_TIPS_TIP = L["In a party or raid, item tooltips name the group members who can craft the item, and their tooltips list their professions."]
+local GAMEPAD_TIP = L["With gamepad mode on: D-pad up/down moves through the list, A whispers or offers, B closes, the shoulder buttons switch tabs."]
+
 local function ResetTips()
   if NS.Onboarding and NS.Onboarding.Reset then
     NS.Onboarding.Reset()
@@ -217,6 +232,15 @@ local function RegisterVertical()
     L["Automatically mark me busy in dungeons and combat"], true, GetAutoBusy, SetAutoBusy)
   createCheckbox(category, autoBusy, AUTO_BUSY_TIP)
 
+  for _, o in ipairs({
+    { "CRAFTBOARD_BACK_ONLINE", L["Tell me when a player I can help comes back online"], GetBackOnline, SetBackOnline, BACK_ONLINE_TIP },
+    { "CRAFTBOARD_GROUP_TOOLTIPS", L["Show group crafters in tooltips"], GetGroupTips, SetGroupTips, GROUP_TIPS_TIP },
+    { "CRAFTBOARD_GAMEPAD", L["Gamepad controls in the CraftBoard window"], GetGamepad, SetGamepad, GAMEPAD_TIP },
+  }) do
+    local setting = S.RegisterProxySetting(category, o[1], bool, o[2], true, o[3], o[4])
+    createCheckbox(category, setting, o[5])
+  end
+
   -- Advertise channel: a dropdown where the API has one, else a button that cycles.
   local dropdown = S.CreateDropdown and S.CreateControlTextContainer and pcall(function()
     local str = S.VarType and S.VarType.String or "string"
@@ -299,10 +323,13 @@ local function BuildPanel()
   Check(L["Watch chat for crafting requests"], CHAT_TIP, -160, GetChatWatch, SetChatWatch)
   Check(L["Include guild chat"], CHAT_GUILD_TIP, -188, GetChatGuild, SetChatGuild)
   Check(L["Automatically mark me busy in dungeons and combat"], AUTO_BUSY_TIP, -216, GetAutoBusy, SetAutoBusy)
+  Check(L["Tell me when a player I can help comes back online"], BACK_ONLINE_TIP, -244, GetBackOnline, SetBackOnline)
+  Check(L["Show group crafters in tooltips"], GROUP_TIPS_TIP, -272, GetGroupTips, SetGroupTips)
+  Check(L["Gamepad controls in the CraftBoard window"], GAMEPAD_TIP, -300, GetGamepad, SetGamepad)
 
   local advertise = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   advertise:SetSize(220, 22)
-  advertise:SetPoint("TOPLEFT", 20, -254)
+  advertise:SetPoint("TOPLEFT", 20, -338)
   advertise.label = L["Advertise channel"]
   advertise.tip = ADVERTISE_TIP
   local function syncAdvertise()
@@ -318,7 +345,7 @@ local function BuildPanel()
 
   local forget = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   forget:SetSize(180, 22)
-  forget:SetPoint("TOPLEFT", 20, -286)
+  forget:SetPoint("TOPLEFT", 20, -370)
   forget:SetText(L["Forget all peer data"])
   forget.label = L["Forget all peer data"]
   forget.tip = L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."]
@@ -328,7 +355,7 @@ local function BuildPanel()
 
   local tips = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   tips:SetSize(180, 22)
-  tips:SetPoint("TOPLEFT", 20, -318)
+  tips:SetPoint("TOPLEFT", 20, -402)
   tips:SetText(L["Show tips again"])
   tips.label = L["Show tips again"]
   tips.tip = TIPS_TIP

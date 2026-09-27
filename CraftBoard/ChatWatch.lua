@@ -46,6 +46,9 @@ local PROF_WORDS = {
 local ASK = { " lf ", " looking for ", " need a ", " need an ", " wtb ", " anyone can ", " anyone who can ",
   " anyone that can " }
 local OFFER = { " wts ", " selling ", " lfw ", " can craft ", " crafting for tips ", " tips welcome ", " max ench " }
+-- The asker brings the reagents.
+local MATS = { " have mats ", " have the mats ", " have all mats ", " my mats ", " with mats ", " own mats ",
+  " got mats ", " mats ready ", " i have mats " }
 
 -- Links players can paste for something craftable (not quests, achievements, players...).
 local LINK_TYPES = { item = true, enchant = true, spell = true, trade = true }
@@ -81,12 +84,11 @@ local function FirstLinkName(text)
   return nil
 end
 
--- Colour codes off, links reduced to "[Name]", textures and control characters dropped.
+-- Colour codes off (Forever's named "|cnIQ1:" ones too), links reduced to "[Name]", textures
+-- and control characters dropped.
 function ChatWatch.Clean(text)
   if type(text) ~= "string" then return "" end
-  local s = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h(.-)|h", "%1")
-  s = s:gsub("|T.-|t", ""):gsub("|A.-|a", ""):gsub("|", ""):gsub("%c", " ")
-  return s
+  return (NS.StripCodes(text):gsub("|", ""):gsub("%c", " "))
 end
 
 local function Has(s, list)
@@ -127,7 +129,25 @@ function ChatWatch.Detect(text)
   if not (prof or itemName) then return nil, "nothing" end
   local links = LinkNames(text)
   return { prof = prof and prof[1], profID = prof and prof[2], itemName = itemName,
-           links = #links > 1 and links or nil }
+           links = #links > 1 and links or nil, mats = Has(s, MATS) or nil }
+end
+
+-- Words that only restate "someone make this for me": the ask markers, fillers, counts and
+-- profession words. A chat line made only of these (and the linked item) says nothing the
+-- card's title doesn't already say.
+local FILLER = {}
+for w in ("lf lfm wtb need needs needed anyone any can craft crafter crafting make made pls plz please "
+  .. "pst w me a an the for x i im looking someone somebody who that to ty thanks thx is are there around "
+  .. "of on in with and or"):gmatch("%S+") do FILLER[w] = true end
+
+-- The chat line of entry e adds something to its title (a tip, "have mats", a deadline...).
+function ChatWatch.AddsDetail(e)
+  if type(e) ~= "table" or type(e.text) ~= "string" then return false end
+  local s = lower(e.text):gsub("%b[]", " ")
+  for w in s:gmatch("[%w']+") do
+    if not (FILLER[w] or PROF_WORDS[w] or w:match("^x?%d+x?$") or #w < 2) then return true end
+  end
+  return false
 end
 
 -- My recipes by lower-cased recipe name and output item name ------------------------
@@ -252,7 +272,8 @@ local function Prune(keep)
 end
 
 -- Newest first: { from="Name-Realm", text=, prof=, profID=, itemName=, recipeID=, current=,
--- knownOn="Alt-Realm", channel="Trade", t= }. Copies; entries older than 30 min are gone.
+-- knownOn="Alt-Realm", channel="Trade", t=, first= (first time this ask was seen), asks=
+-- (times seen), mats=true (brings the reagents) }. Copies; entries older than 30 min are gone.
 function ChatWatch.Seen()
   Prune()
   local list = {}
@@ -315,7 +336,7 @@ end
 function ChatWatch.Add(text, sender, channel, guild)
   if not ChatWatch.Enabled() then return nil end
   local from = FullName(sender)
-  if not from or IsMe(from) then return nil end
+  if not from or IsMe(from) or (NS.IsIgnored and NS.IsIgnored(from)) then return nil end
   local hit = ChatWatch.Detect(text)
   if not hit then return nil end
   local clean = ChatWatch.Clean(text)
@@ -324,11 +345,19 @@ function ChatWatch.Add(text, sender, channel, guild)
     if hidden[from] == lclean then return nil end
     hidden[from] = nil
   end
+  local now = time()
   local e = {
     from = from, text = clean, prof = hit.prof, profID = hit.profID, itemName = hit.itemName,
-    links = hit.links,
-    channel = channel, guild = guild or nil, t = time(),
+    links = hit.links, mats = hit.mats,
+    channel = channel, guild = guild or nil, t = now, first = now, asks = 1,
   }
+  -- One row per player: asking again for the same thing bumps the count and keeps when it was
+  -- first seen; a different ask replaces the row.
+  local prev = seen[from]
+  if prev and (prev.itemName or prev.prof) == (e.itemName or e.prof) then
+    e.first, e.asks = prev.first or prev.t, (prev.asks or 1) + 1
+    e.mats = e.mats or prev.mats
+  end
   if hit.itemName then ResolveEntry(e) end
   seen[from] = e
   Prune(from)
@@ -411,7 +440,7 @@ local function OnChat(event, text, sender, _, channelName, _, _, _, _, baseName)
       if type(CraftBoardDB) == "table" then
         local log = CraftBoardDB.chatlog or {}
         CraftBoardDB.chatlog = log
-        log[#log + 1] = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h(.-)|h", "%1")
+        log[#log + 1] = NS.StripCodes(text)
         if #log > 40 then table.remove(log, 1) end
       end
     end
@@ -429,8 +458,14 @@ for _, ev in ipairs({ "CHAT_MSG_CHANNEL", "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT
   NS.Register(ev, OnChat)
 end
 
--- My recipe names change with scans and as item names load.
+-- My recipe names change with scans and as item names load. Players I ignore drop out.
 if NS.RegisterCallback then
+  NS.RegisterCallback(ChatWatch, "IGNORE_UPDATED", function()
+    for k in pairs(seen) do
+      if NS.IsIgnored(k) then seen[k] = nil end
+    end
+    FireSoon()
+  end)
   local function dirty() indexDirty = true end
   NS.RegisterCallback(ChatWatch, "RECIPES_UPDATED", dirty)
   NS.RegisterCallback(ChatWatch, "ITEM_NAMES_UPDATED", dirty)

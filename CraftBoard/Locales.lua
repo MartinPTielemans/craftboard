@@ -15,6 +15,7 @@ local enUS = {
   "/cb options - open the settings panel",
   "/cb welcome - show the welcome window again",
   "/cb busy - toggle busy (the board won't whisper you)",
+  "/cb cd - crafting cooldowns on your characters",
   "/cb debug - list known peers",
   "/cb help - this help",
   "UI not loaded",
@@ -159,7 +160,7 @@ local enUS = {
   "%s ago",
   "Reagents unknown",
   "Requested quantity: %d",
-  "Takes the request off the board for everyone.",
+  "Takes the request off the board for everyone, with its linked orders.",
   -- Requests tab: "Seen in chat" (ChatWatch)
   "Seen in chat",
   "No crafting requests seen in chat yet.",
@@ -173,6 +174,66 @@ local enUS = {
   "Say",
   "Yell",
   "Guild",
+  -- Requests tab: groups, rows, card
+  "You can craft",
+  "My queue",
+  "Only what I can craft",
+  "Hides board requests and chat asks none of your characters can make.",
+  "Nothing you can craft right now.",
+  "Right-click for actions",
+  "%s (%d)",
+  "You know this recipe.",
+  "Known on %s.",
+  "You have %s.",
+  "None of your characters knows this recipe.",
+  "They have the mats.",
+  "You have the reagents.",
+  "Asked %d times, first %s.",
+  "for %s",
+  -- Queue
+  "Queue",
+  "Queued",
+  "Queued: %s for %s",
+  "queued %s",
+  "Quantity: %d",
+  "Done",
+  "All reagents",
+  "%d craft",
+  "%d crafts",
+  "This request is on your queue.",
+  "Adds the craft to your queue, where the reagents of everything queued are summed up.",
+  "Only crafts your current character knows can be queued.",
+  "Takes the craft off your queue. A trade that hands it over does this by itself.",
+  "What the whole queue needs, against your bags and bank.",
+  -- Linked orders (multi-crafter chains)
+  "Crafted by %s",
+  "Also posts linked orders for: %s",
+  "Posted linked order: %dx %s",
+  "Post linked orders",
+  "Asks the board for the intermediates other crafters make: %s. Each order is linked to this request.",
+  "Linked order for %s (%s).",
+  "Linked: %dx %s (%s)",
+  -- Back online (Comm)
+  "%s is back online (you can craft their %dx %s).",
+  "%s is back online (you offered on their %dx %s).",
+  -- Cooldowns
+  "ready",
+  "cooldown %s",
+  "%dd",
+  "%s: %s \226\128\148 %s",
+  "No crafting cooldowns recorded. Open the profession window once.",
+  -- Trade: crafted-for-you counts, one-click enchant
+  "You crafted for %s once",
+  "You crafted for %s %d times",
+  "%s crafted for you once",
+  "%s crafted for you %d times",
+  "Enchant",
+  "Enchant: %s",
+  "Casts the enchant on the item in their \"Will not be traded\" slot. Both of you still accept the trade.",
+  -- Tooltips: group crafters
+  "Group crafters: %s",
+  "CraftBoard: %s",
+
   -- Advertise (Find) and its channel names
   "Advertise",
   "Announce in chat",
@@ -225,6 +286,14 @@ local enUS = {
   "Automatically mark me busy in dungeons and combat",
   "While you are in a dungeon or raid, or in combat, other CraftBoard users see you as busy and the board won't whisper you. /cb busy marks you busy by hand.",
 
+  -- Options: notices, tooltips, gamepad
+  "Tell me when a player I can help comes back online",
+  "One quiet chat line when a player whose request you can craft, or offered on, logs back in. Nothing is sent.",
+  "Show group crafters in tooltips",
+  "In a party or raid, item tooltips name the group members who can craft the item, and their tooltips list their professions.",
+  "Gamepad controls in the CraftBoard window",
+  "With gamepad mode on: D-pad up/down moves through the list, A whispers or offers, B closes, the shoulder buttons switch tabs.",
+
   -- Launcher: minimap button, key binding
   "CraftBoard",
   "Toggle CraftBoard window",
@@ -251,10 +320,5 @@ for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 
 local locale = GetLocale and GetLocale() or "enUS"
 
---[[ deDE (stub: copy this block, uncomment, and translate the rest of the keys above)
-if locale == "deDE" then
-  L["Post request"] = "Anfrage posten"
-  L["Share recipes with my guild"] = "Rezepte mit meiner Gilde teilen"
-  L["%d online"] = "%d online"
-end
---]]
+-- Translations: Locales_deDE.lua, Locales_frFR.lua, Locales_esES.lua (each sets L[key] for its locale).
+NS.locale = locale

@@ -1,10 +1,12 @@
 -- CraftBoard Comm: sync layer over addon messages (GUILD + hidden realm CHANNEL).
 -- Wire format: one type char followed by LibSerialize -> CompressDeflate -> EncodeForWoWAddonChannel.
---   H hello   {v=1, profs={[profID]={n=,r=,m=}}, n=#recipes, h=hash, b=true when busy}  GUILD/CHANNEL
---             (b is optional: older clients read only the fields they know and ignore it)
+--   H hello   {v=1, profs={[profID]={n=,r=,m=}}, n=#recipes, h=hash, b=true when busy,
+--              l=true on the first hello after login, cd={[recipeID]=seconds until ready}}  GUILD/CHANNEL
+--             (b, l and cd are optional: older clients read only the fields they know)
 --   Q query   {v=1}                                                     WHISPER to hello sender
 --   R recipes {v=1, h=hash, profs=..., list={ {id, name, outputItemID, profID}, ... }}  WHISPER
---   P post    {v=1, id=, item=, qty=, note=, t=}                        GUILD/CHANNEL
+--   P post    {v=1, id=, item=, qty=, note=, t=, pa=parent post id}     GUILD/CHANNEL
+--             (pa is optional: a linked order for an intermediate of the parent request)
 --   X retract {v=1, id=}                                                GUILD/CHANNEL
 local ADDON, NS = ...
 
@@ -44,6 +46,8 @@ local INBOUND_WINDOW = 60
 local INBOUND_MAX = 40            -- messages per sender per window before we ignore them
 local BUSY_DEBOUNCE = 5           -- a busy change is announced this long after it happens
 local BUSY_MIN_GAP = 15           -- per distribution, for hellos sent only to announce busy
+local MAX_CD = 16                 -- cooldown entries carried by a hello
+local MAX_CD_SECONDS = 14 * 86400
 
 local LibSerialize = LibStub and LibStub("LibSerialize", true)
 local LibDeflate = LibStub and LibStub("LibDeflate", true)
@@ -71,6 +75,8 @@ local busyNow = false     -- effective busy (manual, or auto in a dungeon / in c
 local inCombat = false    -- PLAYER_REGEN_DISABLED .. PLAYER_REGEN_ENABLED
 local sentBusy = {}       -- [dist] = busy flag carried by the last hello sent there
 local busyPending = false -- a busy hello is scheduled
+local loginHello = {}     -- [dist] = true once the login hello (l=true) went out there
+local backAlerted = {}    -- [peer] = time of the last back-online notice
 
 -- Helpers ---------------------------------------------------------------
 
@@ -147,8 +153,7 @@ end
 -- Strip WoW escape sequences ("|c", "|H", "|T"...) from anything a peer sends us.
 local function CleanString(s, maxLen)
   if type(s) ~= "string" then return nil end
-  s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h(.-)|h", "%1")
-  s = s:gsub("|T.-|t", ""):gsub("|", ""):gsub("%c", "")
+  s = NS.StripCodes(s):gsub("|", ""):gsub("%c", "")
   if #s > maxLen then s = s:sub(1, maxLen) end
   return s
 end
@@ -404,13 +409,15 @@ function SendHello(dist, busy)
   local h = MyHash()
   -- n must match the count part of h ("count:poly") so peers' empty-book shortcut is right.
   local n = tonumber(h:match("^(%d+):")) or CountTable(MyRecipes())
-  local payload = { v = VERSION, profs = MyProfs(), n = n, h = h, b = busyNow or nil }
+  local payload = { v = VERSION, profs = MyProfs(), n = n, h = h, b = busyNow or nil,
+    l = not loginHello[dist] or nil, cd = NS.Cooldowns and NS.Cooldowns.ForHello and NS.Cooldowns.ForHello(MAX_CD) or nil }
   local target = dist == "CHANNEL" and channelId or nil
   if Send("H", payload, dist, target, "BULK") then
     lastHello[dist] = now
     lastHelloAt = now
     lastHelloHash = h
     sentBusy[dist] = busyNow
+    loginHello[dist] = true
     -- A busy-only hello doesn't repeat the posts, unless it is the first hello there.
     if not busy or not last then SendMyPosts(dist) end
   end
@@ -535,7 +542,7 @@ function Comm.Peers()
   local now = time()
   local roster = GuildRoster()
   for name, p in pairs(db.peers) do
-    if type(p) == "table" then
+    if type(p) == "table" and not (NS.IsIgnored and NS.IsIgnored(name)) then
       local online = type(p.seen) == "number" and now - p.seen < ONLINE_WINDOW
       local r = roster[name]
       if r ~= nil then
@@ -552,6 +559,7 @@ function Comm.Peers()
         online = online and true or false,
         -- Busy only means something while online (an offline peer's last flag is stale).
         busy = online and p.busy and true or false,
+        cd = p.cd,
       }
     end
   end
@@ -569,6 +577,11 @@ local function PrunePosts()
       db.posts[id] = nil
     end
   end
+  if type(db.offered) == "table" then
+    for id in pairs(db.offered) do
+      if not db.posts[id] then db.offered[id] = nil end
+    end
+  end
 end
 
 local function PostList()
@@ -576,7 +589,9 @@ local function PostList()
   local db = DB()
   local list = {}
   if not db then return list end
-  for _, p in pairs(db.posts) do list[#list + 1] = p end
+  for _, p in pairs(db.posts) do
+    if not (p.from and NS.IsIgnored and NS.IsIgnored(p.from)) then list[#list + 1] = p end
+  end
   sort(list, function(a, b) return (a.t or 0) > (b.t or 0) end)
   return list
 end
@@ -589,7 +604,7 @@ function SendMyPosts(dist)
   for id, p in pairs(db.posts) do
     if type(p) == "table" and p.from == me and type(p.t) == "number" and now - p.t < POST_TTL then
       local target = dist == "CHANNEL" and channelId or nil
-      Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t }, dist, target, "BULK")
+      Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa }, dist, target, "BULK")
     end
   end
 end
@@ -598,13 +613,16 @@ function Comm.Requests()
   return PostList()
 end
 
-function Comm.PostRequest(itemID, qty, note)
+-- parent: id of one of my posts this one is an intermediate for (a linked order). Linked
+-- orders posted with their parent in the same click skip the few-seconds gap.
+function Comm.PostRequest(itemID, qty, note, parent)
   local db, me = DB(), MyKey()
   itemID = PosInt(tonumber(itemID), 1e8)
   qty = PosInt(floor(tonumber(qty) or 1), 1000)
   if not (db and me and itemID and qty) then return nil end
+  if parent ~= nil and not (type(parent) == "string" and type(db.posts[parent]) == "table") then parent = nil end
   local now = time()
-  if now - lastPost < POST_GAP then
+  if not parent and now - lastPost < POST_GAP then
     Print(L["Please wait a few seconds before posting again."])
     return nil
   end
@@ -620,12 +638,13 @@ function Comm.PostRequest(itemID, qty, note)
   postCounter = postCounter + 1
   local id = me .. ":" .. now .. ":" .. postCounter
   note = CleanString(note, MAX_NOTE) or ""
-  db.posts[id] = { id = id, from = me, item = itemID, qty = qty, note = note, t = now, mine = true }
-  Broadcast("P", { v = VERSION, id = id, item = itemID, qty = qty, note = note, t = now })
+  db.posts[id] = { id = id, from = me, item = itemID, qty = qty, note = note, t = now, mine = true, pa = parent }
+  Broadcast("P", { v = VERSION, id = id, item = itemID, qty = qty, note = note, t = now, pa = parent })
   Fire("POSTS_UPDATED")
   return id
 end
 
+-- Retracting one of my posts also retracts the linked orders posted for it.
 function Comm.Retract(id)
   local db, me = DB(), MyKey()
   if not (db and type(id) == "string") then return false end
@@ -634,9 +653,44 @@ function Comm.Retract(id)
   db.posts[id] = nil
   if p.from == me then
     Broadcast("X", { v = VERSION, id = id })
+    for cid, c in pairs(db.posts) do
+      if type(c) == "table" and c.pa == id and c.from == me then
+        db.posts[cid] = nil
+        Broadcast("X", { v = VERSION, id = cid })
+      end
+    end
   end
   Fire("POSTS_UPDATED")
   return true
+end
+
+-- Posts linked to post id (its intermediates), and the post it is linked to.
+function Comm.Linked(id)
+  local db = DB()
+  local children, parent = {}, nil
+  if not (db and type(id) == "string") then return children, parent end
+  local me = db.posts[id]
+  if type(me) == "table" and me.pa then parent = db.posts[me.pa] end
+  for _, p in pairs(db.posts) do
+    if type(p) == "table" and p.pa == id and not (NS.IsIgnored and NS.IsIgnored(p.from)) then
+      children[#children + 1] = p
+    end
+  end
+  sort(children, function(a, b) return (a.t or 0) < (b.t or 0) end)
+  return children, parent
+end
+
+-- Remember that I offered on a post (for the back-online notice). Local only.
+function Comm.MarkOffered(id)
+  local db = DB()
+  if not (db and type(id) == "string") then return end
+  if type(db.offered) ~= "table" then db.offered = {} end
+  db.offered[id] = time()
+end
+
+function Comm.Offered(id)
+  local db = DB()
+  return db and type(db.offered) == "table" and db.offered[id] ~= nil or false
 end
 
 -- Plain chat whisper (never SAY/YELL/party). Newer clients moved it to C_ChatInfo.
@@ -667,6 +721,38 @@ function Comm.Request(itemID, qty, toName)
   label = label or format(L["item %d"], itemID)
   local msg = format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty, label)
   return Comm.Whisper(target, msg)
+end
+
+-- Back online ------------------------------------------------------------
+-- A peer's first hello after their login (l=true): if they have an open post I can craft or
+-- offered on, one quiet chat line (option "backOnline", default on). Never more than one per
+-- peer per 30 min; nothing is sent.
+local BACK_GAP = 30 * 60
+
+local function BackOnlineOn()
+  return not (type(CraftBoardDB) == "table" and CraftBoardDB.backOnline == false)
+end
+
+function Comm.NoteBackOnline(full)
+  if not BackOnlineOn() or (NS.IsIgnored and NS.IsIgnored(full)) then return end
+  local now = time()
+  if backAlerted[full] and now - backAlerted[full] < BACK_GAP then return end
+  local db = DB()
+  if not db then return end
+  local best, offered
+  for id, p in pairs(db.posts) do
+    if type(p) == "table" and p.from == full then
+      local mine = Comm.Offered(id)
+      local can = NS.CanCraftItem and NS.CanCraftItem(p.item)
+      if (mine or can) and (not best or (p.t or 0) > (best.t or 0)) then best, offered = p, mine end
+    end
+  end
+  if not best then return end
+  backAlerted[full] = now
+  local label = NS.ItemLabel and NS.ItemLabel(best.item) or format(L["item %d"], best.item)
+  Print(format(offered and L["%s is back online (you offered on their %dx %s)."]
+    or L["%s is back online (you can craft their %dx %s)."], ShortName(full), best.qty or 1, label))
+  Fire("PEERS_UPDATED")
 end
 
 -- Receiving -------------------------------------------------------------
@@ -716,6 +802,18 @@ function handlers.H(full, data)
   if Duplicate(full, "H", h .. (busy and ":b" or "")) then return end
   local p = Touch(full)
   if not p then return end
+  if type(data.cd) == "table" then
+    local cd, c, now = {}, 0, time()
+    for id, sec in pairs(data.cd) do
+      if c >= MAX_CD then break end
+      if PosInt(id, 1e8) and type(sec) == "number" and sec >= 0 and sec <= MAX_CD_SECONDS then
+        cd[id] = now + floor(sec)
+        c = c + 1
+      end
+    end
+    p.cd = cd
+  end
+  if data.l == true then Comm.NoteBackOnline(full) end
   local profs = CleanProfs(data.profs)
   if profs then p.profs = profs end
   if (p.busy and true or false) ~= busy then
@@ -821,6 +919,7 @@ function handlers.P(full, data)
     id = id, from = full, item = item, qty = qty,
     note = CleanString(data.note, MAX_NOTE) or "",
     t = (st <= now and now - st < POST_TTL) and st or now,
+    pa = CleanString(data.pa, 96),
   }
   Fire("POSTS_UPDATED")
 end

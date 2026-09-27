@@ -61,11 +61,14 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
 
 ## Protocol (Comm.lua) — prefix `CBRD`, version byte first
 Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonChannel.
-- `H` hello: `{v=1, profs={[profID]=rank}, n=#recipes, h=hash, b=true?}` on login/channel join and every
-  10 min (jittered); `b` (busy) is optional and also triggers an extra hello within ~5 s when it changes. Recipients whose stored hash differs reply `Q` (query) to that sender only.
+- `H` hello: `{v=1, profs={[profID]=rank}, n=#recipes, h=hash, b=true?, l=true?, cd={[recipeID]=secs}?}`
+  on login/channel join and every 10 min (jittered); `b` (busy) is optional and also triggers an
+  extra hello within ~5 s when it changes; `l` marks the first hello after login (back-online
+  notice); `cd` carries crafting cooldowns as seconds until ready. Recipients whose stored hash differs reply `Q` (query) to that sender only.
 - `Q` query → sender answers `R` recipes: `{v=1, list={recipeID,...}, h=hash}` (recipe IDs only,
   compact). Whisper-distribution replies are fine (AceComm whisper → "WHISPER" addon msg).
-- `P` post: `{v=1, id=<sender..time>, item=itemID, qty=n, note=<=60 chars, t=time}`; `X` retract.
+- `P` post: `{v=1, id=<sender..time>, item=itemID, qty=n, note=<=60 chars, t=time, pa=parent id?}`;
+  `X` retract. `pa` links an order for an intermediate to the request it is for.
   Posts expire after 24h locally.
 - Two distributions: GUILD always (if in guild), CHANNEL when `CraftBoardDB.realmChannel` is on
   (default on). Channel name `CraftBoardF` (hidden from chat: leave it out of chat frames).

@@ -193,3 +193,69 @@ NS.Register("BAG_UPDATE_DELAYED", function()
     NS.Fire("INVENTORY_UPDATED")
   end
 end)
+
+-- Item link when cached, else the name, else "item <id>" (chat lines and notices).
+function Inventory.ItemLabel(itemID)
+  if type(itemID) ~= "number" then return "?" end
+  local link
+  local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+  if getInfo then
+    local ok, a, b = pcall(getInfo, itemID)
+    if ok and type(a) == "table" then link = a.itemLink or a.hyperlink or a.link
+    elseif ok then link = b end
+  end
+  return link or Inventory.ItemName(itemID) or string.format(L["item %d"], itemID)
+end
+NS.ItemLabel = Inventory.ItemLabel
+
+-- My recipe (any character, the current one first) making itemID:
+-- recipeID, record, charKey, current. nil when none of my characters knows one.
+function Inventory.MyRecipeFor(itemID)
+  if type(itemID) ~= "number" or type(CraftBoardDB) ~= "table" or type(CraftBoardDB.chars) ~= "table" then return nil end
+  local function find(c)
+    if type(c) ~= "table" or type(c.recipes) ~= "table" then return nil end
+    for id, rec in pairs(c.recipes) do
+      if type(rec) == "table" and rec.o == itemID then return id, rec end
+    end
+  end
+  if NS.Me then
+    local id, rec = find(CraftBoardDB.chars[NS.Me])
+    if id then return id, rec, NS.Me, true end
+  end
+  for key, c in pairs(CraftBoardDB.chars) do
+    if key ~= NS.Me then
+      local id, rec = find(c)
+      if id then return id, rec, key, false end
+    end
+  end
+  return nil
+end
+
+function NS.CanCraftItem(itemID)
+  return Inventory.MyRecipeFor(itemID) ~= nil
+end
+
+-- Every reagent of a craft list with have/need, needs summed over the list:
+-- list { {record=, qty=}, ... } -> { {itemID=, need=, have=, alts=}, ... } in first-seen order.
+function Inventory.Totals(list)
+  local need, order, alts = {}, {}, {}
+  for _, e in ipairs(list or {}) do
+    local rec, qty = e.record, e.qty or 1
+    if type(rec) == "table" and type(rec.r) == "table" then
+      for _, reg in ipairs(rec.r) do
+        local itemID, n = reg[1], reg[2]
+        if itemID and n then
+          if not need[itemID] then order[#order + 1] = itemID end
+          need[itemID] = (need[itemID] or 0) + n * qty
+          if type(reg.alts) == "table" and not alts[itemID] then alts[itemID] = reg.alts end
+        end
+      end
+    end
+  end
+  local out = {}
+  for _, itemID in ipairs(order) do
+    out[#out + 1] = { itemID = itemID, need = need[itemID], have = Inventory.SlotCount(itemID, alts[itemID]),
+      alts = alts[itemID] }
+  end
+  return out
+end

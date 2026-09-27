@@ -2,7 +2,7 @@
 
 Community requests worth building, with the shape they should take. Ordered by value.
 
-## Busy / do-not-disturb (Reddit, u/rhaesdaenys, 2026-09-27) — shipped (Unreleased)
+## Busy / do-not-disturb (Reddit, u/rhaesdaenys, 2026-09-27) — shipped in 0.9.4
 A crafter can mark themselves unavailable so they are not whispered while in a dungeon.
 - One toggle: shift-right-click on the minimap button, `/cb busy`, and a small "Available" switch
   on the board header. State is per character, saved (`CraftBoardDB.chars[Me].busy`).
@@ -43,6 +43,30 @@ Detector must be tuned on real Trade lines (`CraftBoardDB.chatlog`), not synthet
   secure button; cooldown sharing (transmutes, Mooncloth); private "crafted for you N times";
   respect the ignore list; crafters-in-your-group tooltips; gamepad support; full UI translations
   (deDE, frFR, esES).
+
+## Built (Unreleased, 2026-09-28)
+Everything under "Wanted" above, plus the Requests tab rework:
+- Multi-crafter chains: P carries an optional `pa` (parent post id). Reagent tooltips name who
+  makes an intermediate; "Post linked orders" on a request card and Post request in Find post
+  them. Retracting a post retracts its linked orders. Chains only work where one of my characters
+  knows the craft's reagents (peers' recipe lists carry no reagents).
+- Back-online notice: the hello's first send after login carries `l=true`; a peer whose `l` hello
+  arrives and who has a post I can craft or offered on (`CraftBoardDB.offered`) gets one chat line,
+  at most once per 30 min. Option `backOnline`.
+- Crafter queue (`chars[Me].queue`) with summed reagents; trades complete entries.
+- One-click enchant: secure macro button under TradeFrame (`/cast` + `/click
+  TradeRecipientItem7ItemButton`), shown when the partner queued or asked in chat for an enchant
+  the current character knows.
+- Cooldown sharing: hello `cd = {[recipeID] = seconds until ready}` (at most 16). Cooldown crafts:
+  a known list, "Transmute" names, and any recipe seen with a running cooldown in the profession
+  window (`rec.cdr`). Localized clients rely on the last two.
+- Private crafted-for-you counts (`CraftBoardDB.crafted`), from the trade window on completion.
+- Ignore list respected in Peers, posts, chat asks and tooltips.
+- Group tooltips (items: group members who craft it; units: their professions). Option.
+- Gamepad: D-pad / A / B / shoulders while the window is up. Option.
+- deDE, frFR, esES translations (`Locales_<locale>.lua`, checked by `tools/check-locales.lua`).
+  Chat detection still matches English words only ("lf", "ench", "lw"...).
+Still "maybe": realm demand insights, crowd-sourced recipe sources.
 
 ## Scaling on a realmless game (2026-09-27)
 Forever has no realms, only region + ruleset. If the hidden channel spans that whole population,

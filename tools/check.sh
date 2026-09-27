@@ -28,4 +28,8 @@ if [ -n "$unused" ]; then
 fi
 [ -z "$missing$unused" ] && echo "locales ok ($(wc -l < "$used" | tr -d ' ') keys)"
 rm -f "$used" "$listed"
+
+# Translations: keys must be enUS keys with the same placeholders (reports untranslated ones).
+out=$(lua tools/check-locales.lua) || fail=1
+echo "$out" | grep -v "^    untranslated: "
 exit $fail

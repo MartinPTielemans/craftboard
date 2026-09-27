@@ -452,6 +452,8 @@ end
 -- Uses WowStyle1FilterDropdownTemplate + SetupMenu, else a plain button opening
 -- MenuUtil.CreateContextMenu, else a plain button: click cycles the radio entries and
 -- right-click toggles the first check entry.
+local NewFilterButton
+do
 local function MenuGenerator(entries)
   return function(_, root)
     for _, e in ipairs(entries()) do
@@ -473,7 +475,7 @@ local function MenuGenerator(entries)
   end
 end
 
-local function NewFilterButton(parent, entries, isDefault, reset)
+function NewFilterButton(parent, entries, isDefault, reset)
   if HasTemplate("WowStyle1FilterDropdownTemplate") then
     local ok, dd = pcall(CreateFrame, "DropdownButton", nil, parent, "WowStyle1FilterDropdownTemplate")
     if ok and dd and dd.SetupMenu and pcall(dd.SetupMenu, dd, MenuGenerator(entries)) then
@@ -525,6 +527,7 @@ local function NewFilterButton(parent, entries, isDefault, reset)
   b:SetScript("OnLeave", HideTooltip)
   return b
 end
+end
 
 -- After a filter change: the dropdown's reset "x", or the cycling button's label.
 local function SyncFilterButton(b, entries)
@@ -542,6 +545,8 @@ end
 
 -- Professions: portrait icon and recipe page background --------------------
 
+local SetDetailBackground
+do
 -- Enum.Profession keys by skill line, for Blizzard's "Professions-Recipe-Background-<Kit>".
 local PROF_KITS = {
   [129] = "FirstAid", [164] = "Blacksmithing", [165] = "Leatherworking", [171] = "Alchemy",
@@ -588,7 +593,7 @@ local function CardAtlas(profID)
   return nil
 end
 
-local function SetDetailBackground(t, profID)
+function SetDetailBackground(t, profID)
   if not t.bg then return end
   local atlas, alpha
   if t.cardStyle then
@@ -604,6 +609,7 @@ local function SetDetailBackground(t, profID)
   else
     t.bg:Hide()
   end
+end
 end
 
 -- Profession icon: stored by the scan on one of my chars, else asked from the client.
@@ -1282,6 +1288,8 @@ end
 -- (GameFontNormal) 5 px under it for "Profession · Rank"; Description (GameFontHighlightSmall2)
 -- at TOPLEFT->icon.BOTTOMLEFT -1,-12. Without mask support the icon is a square bordered one.
 
+local NewHeader, FillHeader
+do
 local TITLE_Y = -(28 + ICON_SIZE / 2 - 17)   -- OutputText's vertical centre from the form top
 
 local function FitHeader(h)
@@ -1311,7 +1319,7 @@ local function RoundMask(holder, target, inset)
   return mask
 end
 
-local function NewHeader(parent)
+function NewHeader(parent)
   local h = {}
   local holder = CreateFrame("Button", nil, parent)
   holder:SetSize(ICON_SIZE, ICON_SIZE)
@@ -1376,7 +1384,7 @@ local function NewHeader(parent)
   return h
 end
 
-local function FillHeader(h, recipeID, itemID, name, sub, desc)
+function FillHeader(h, recipeID, itemID, name, sub, desc)
   h.recipeID, h.itemID = recipeID, itemID
   h.icon:SetTexture(RecipeIcon(recipeID, itemID))
   local itemName = itemID and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(itemID)
@@ -1398,6 +1406,7 @@ local function FillHeader(h, recipeID, itemID, name, sub, desc)
     end
   end
   FitHeader(h)
+end
 end
 
 -- Anchor a section label ("Reagents:", 20 px tall) under the header: 20 px under the
@@ -1440,6 +1449,13 @@ local function CrafterRow(parent, rowH)
       TextTooltip(self, Short(c.name), L["Busy: not taking whispers from the board right now."])
     elseif c and not c.mine then
       TextTooltip(self, Short(c.name), find.itemID and L["Click to whisper a request."] or nil)
+    else
+      return
+    end
+    local crafted = NS.Trade and NS.Trade.CraftedText(c.name)
+    if crafted and GameTooltip then
+      GameTooltip:AddLine(crafted, MUTED[1], MUTED[2], MUTED[3], true)
+      GameTooltip:Show()
     end
   end)
   row:SetScript("OnClick", function(self)
@@ -1461,15 +1477,22 @@ local function FillCrafterRow(row, c)
   else
     row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
   end
+  local state
   if c.mine then
-    row.state:SetText("|cffffd100" .. (c.name == NS.Me and L["you"] or L["alt"]) .. "|r")
+    state = "|cffffd100" .. (c.name == NS.Me and L["you"] or L["alt"]) .. "|r"
   elseif c.online and not c.busy then
-    row.state:SetText(GREEN .. L["online"] .. "|r")
+    state = GREEN .. L["online"] .. "|r"
   elseif c.online then
-    row.state:SetText(L["online"])
+    state = L["online"]
   else
-    row.state:SetText(L["offline"])
+    state = L["offline"]
   end
+  -- Cooldown crafts (transmutes, Mooncloth): ready, or how long until it is.
+  local left = find.entry and NS.Cooldowns and NS.Cooldowns.Remaining(c.name, find.entry.recipeID)
+  if left then
+    state = state .. DOT .. (left <= 0 and (GREEN .. L["ready"] .. "|r") or format(L["cooldown %s"], NS.Cooldowns.Text(left)))
+  end
+  row.state:SetText(state)
   -- Busy rows keep the mouse for their tooltip; OnClick ignores them.
   row:EnableMouse(not c.mine)
   row.sel:SetShown(not c.mine and not c.busy and c.name == find.crafter)
@@ -1510,7 +1533,13 @@ local function ReagentRow(parent, rowH)
   row.name:SetSize(108, 36)
   if row.name.SetWordWrap then row.name:SetWordWrap(true) end
   if row.name.SetMaxLines then row.name:SetMaxLines(3) end
-  row:SetScript("OnEnter", function(self) ShowTooltip(self, self.itemID) end)
+  row:SetScript("OnEnter", function(self)
+    ShowTooltip(self, self.itemID)
+    if self.makers and GameTooltip and GameTooltip:IsShown() then
+      GameTooltip:AddLine(self.makers, GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3], true)
+      GameTooltip:Show()
+    end
+  end)
   row:SetScript("OnLeave", HideTooltip)
   -- Like a shift-click: drop the item link into an open chat box (handy for asking guild).
   row:SetScript("OnClick", function(self) InsertLink(ItemLink(self.itemID)) end)
@@ -1520,6 +1549,7 @@ end
 -- reagent: {itemID=, need=, have=}
 local function FillReagentRow(row, r)
   row.itemID = r.itemID
+  row.makers = r.makers
   row.icon:SetTexture(ItemIcon(r.itemID) or TEX.question)
   row.name:SetText(format(L["%d/%d %s"], r.have, r.need, ItemName(r.itemID)))
   if r.have >= r.need then
@@ -1571,6 +1601,8 @@ local function ProfName(names, profID)
   return L["Other"]
 end
 
+local ProfLine
+do
 -- Rank title for a skill cap, as the Professions window shows it under a profession.
 local RANKS = {
   { 75, L["Apprentice"] }, { 150, L["Journeyman"] }, { 225, L["Expert"] },
@@ -1605,11 +1637,12 @@ local function MyProfRank(profID)
 end
 
 -- "Leatherworking · Journeyman" (rank only when one of my chars has the profession).
-local function ProfLine(names, profID)
+function ProfLine(names, profID)
   local line = ProfName(names, profID)
   local rank = MyProfRank(profID)
   if rank then line = line .. DOT .. rank end
   return line
+end
 end
 
 -- Profession of a recipe: my stored record, else the shared catalogue (filled from peers).
@@ -1650,6 +1683,7 @@ end
 -- only filters: lower-cased names, profession, who knows it, whether I can craft it now.
 
 local universe, universeByID, universeProfs = {}, {}, {}
+local universeByItem = {}      -- [output itemID] = universe entry (who on the board makes it)
 
 local function BuildUniverse()
   local R, I = NS.Recipes, NS.Inventory
@@ -1657,7 +1691,7 @@ local function BuildUniverse()
   local names = ProfNames()
   local myRecipes = R and R.Mine and R.Mine() or {}
   local profCount = {}
-  universe, universeByID = {}, {}
+  universe, universeByID, universeByItem = {}, {}, {}
   for _, e in ipairs(all) do
     local out = OutputOf(e.recipeID, e)
     local itemName = out and I and I.ItemName and I.ItemName(out)
@@ -1690,6 +1724,7 @@ local function BuildUniverse()
     if u.prof ~= nil then profCount[u.prof] = (profCount[u.prof] or 0) + 1 end
     universe[#universe + 1] = u
     universeByID[u.recipeID] = u
+    if out and not universeByItem[out] then universeByItem[out] = u end
   end
   universeProfs = {}
   for id in pairs(profCount) do
@@ -1741,6 +1776,58 @@ local function StatusText(u)
   if u.peersN == 1 then return GREY .. u.peerName .. "|r" end
   if u.peersN > 1 then return GREY .. format(L["%d known"], u.peersN) .. "|r" end
   return ""
+end
+
+-- Intermediates (multi-crafter chains) -------------------------------------------
+-- A reagent that is itself crafted: who on the board makes it. "Made by Bob, Carl (+2)" for
+-- the reagent slot's tooltip; OthersMake: other players make it and none of my characters.
+
+local Chain = {}
+
+function Chain.MakersText(itemID)
+  local u = universeByItem[itemID]
+  if not u then return nil end
+  local names = {}
+  if u.me then names[#names + 1] = L["you"] end
+  if u.alt then names[#names + 1] = u.alt end
+  for _, c in ipairs(u.crafters) do
+    if #names >= 3 then break end
+    if not c.mine then names[#names + 1] = Short(c.name) end
+  end
+  if #names == 0 then return nil end
+  local more = #u.crafters - #names
+  local text = format(L["Crafted by %s"], table.concat(names, ", "))
+  if more > 0 then text = text .. format(" (+%d)", more) end
+  return text
+end
+
+function Chain.OthersMake(itemID)
+  local u = universeByItem[itemID]
+  return u ~= nil and u.peersN > 0 and not u.me and not u.alt
+end
+
+-- Short reagents of a craft that other players make and my characters don't:
+-- { {itemID=, qty=}, ... } (the linked orders a request for it splits into).
+function Chain.LinkedNeeds(missing)
+  local out = {}
+  for _, r in ipairs(missing or {}) do
+    if Chain.OthersMake(r.itemID) then out[#out + 1] = { itemID = r.itemID, qty = r.need - r.have } end
+  end
+  return out
+end
+
+function Chain.AnnotateMakers(reagents)
+  for _, r in ipairs(reagents or {}) do r.makers = Chain.MakersText(r.itemID) end
+  return reagents
+end
+
+-- "Elixir of Lesser Defense, 2x Coarse Thread"
+function Chain.NeedsText(needs)
+  local parts = {}
+  for i, n in ipairs(needs) do
+    parts[i] = (n.qty > 1 and format(L["%dx"], n.qty) .. " " or "") .. ItemName(n.itemID)
+  end
+  return table.concat(parts, ", ")
 end
 
 -- Grouping ------------------------------------------------------------------
@@ -2014,9 +2101,8 @@ local function GroupList(t, left, listName, makeRow, fill)
   return t.list
 end
 
-local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset)
-  local left = ListColumn(p, t)
-
+-- The Filter dropdown at the list column's top right (89x18 at TOPRIGHT -8,-9).
+local function AddFilter(t, left, entries, isDefault, reset)
   t.filterEntries = entries
   t.filter = NewFilterButton(left, entries, isDefault, reset)
   t.filter:SetPoint("TOPRIGHT", left, "TOPRIGHT", -8, -9)
@@ -2031,6 +2117,12 @@ local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset
     end
     if t.filter.Text then t.filter.Text:SetFontObject(Font("GameFontNormal")) end
   end
+  return t.filter
+end
+
+local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset)
+  local left = ListColumn(p, t)
+  AddFilter(t, left, entries, isDefault, reset)
   t.search = NewSearchBox("CraftBoardSearchBox", left, t)
   t.search:SetPoint("TOPLEFT", left, "TOPLEFT", 13, -8)
   t.search:SetPoint("RIGHT", t.filter, "LEFT", -4, 0)
@@ -2270,15 +2362,26 @@ local function BuildFind(p)
     local itemID = find.itemID
     if not (itemID and NS.Comm and NS.Comm.PostRequest) then return end
     local qty = ReadQty(find.qty)
-    if NS.Comm.PostRequest(itemID, qty, find.note:GetText()) then
+    local id = NS.Comm.PostRequest(itemID, qty, find.note:GetText())
+    if id then
       find.note:SetText("")
       find.note:ClearFocus()
       NS.Print(format(L["Posted request: %dx %s"], qty, ItemName(itemID)))
+      -- Intermediates other players make go up as linked orders, one per crafter's part.
+      for _, n in ipairs(find.linked or {}) do
+        if NS.Comm.PostRequest(n.itemID, n.qty, format(L["for %s"], ItemName(itemID)), id) then
+          NS.Print(format(L["Posted linked order: %dx %s"], n.qty, ItemName(n.itemID)))
+        end
+      end
     end
   end)
   find.post:SetScript("OnEnter", function(self)
     if self:IsEnabled() then
       TextTooltip(self, L["Post an open request to the board"], L["Guild and realm-channel CraftBoard users see it for 24h."])
+      if find.linked and #find.linked > 0 and GameTooltip then
+        GameTooltip:AddLine(format(L["Also posts linked orders for: %s"], Chain.NeedsText(find.linked)), GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3], true)
+        GameTooltip:Show()
+      end
     else
       TextTooltip(self, L["This recipe makes no item to request"])
     end
@@ -2413,12 +2516,13 @@ function UI.RefreshDetail()
   local reagents, missing, emptyText = {}, nil, nil
   if rec and type(rec.r) == "table" and #rec.r > 0 and NS.Inventory and NS.Inventory.CanCraft then
     local cc = NS.Inventory.CanCraft(rec, qty)
-    reagents, missing = cc.reagents, cc.missing
+    reagents, missing = Chain.AnnotateMakers(cc.reagents), cc.missing
   elseif rec then
     emptyText = L["No reagents recorded."]
   else
     emptyText = L["Reagents unknown (peer recipe)."]
   end
+  find.linked = Chain.LinkedNeeds(missing)
   find.reagents.box:SetHeight(#reagents > 0 and REAGENT_H * ReagentRows(find.body, #reagents) or SUBROW_H)
   find.reagents:SetItems(reagents, emptyText, true)
   -- Records only exist for my chars' recipes, so a peer-only recipe never shows the line.
@@ -2526,44 +2630,54 @@ function UI.RefreshFind(keepScroll)
 end
 
 -- Requests tab --------------------------------------------------------------
--- The same two panels as Find, so it reads as the same window: the request list on the left
--- (search box over the summary-list background, gold "Open requests" / "My requests" bars,
--- 20 px rows with the quality-coloured item name and a muted "3x · 8m", a ready check where
--- the recipe label's skill-up mark sits when I can craft it right now), the selected request
--- as a recipe card on the right (icon, "Requested by Bob · 8m ago", the note, reagent slots
--- with my bags' have/need when one of my chars knows the recipe, the requested quantity),
--- and in the Create row Offer + whisper for other players' posts, Retract for mine.
+-- The same two panels as Find, so it reads as the same window. The list on the left (search box
+-- and Filter over the summary-list background) has gold group bars:
+--   "You can craft"   board posts and chat asks one of my characters can make, ready ones first;
+--   "My queue"        crafts I said I'd make, with an "All reagents" row summing the queue;
+--   "Open requests"   other board posts;
+--   "Seen in chat"    other chat asks (hidden, with Open requests, by "Only what I can craft");
+--   "My requests"     my own posts.
+-- Rows lead with what is wanted (item icon, quality-coloured name, "3x" when more than one) and
+-- end with a muted "Bob · 8m"; a ready check sits where the recipe label's skill-up mark is
+-- (grey when only an alt knows it). Rows older than 10 minutes are dimmed. Right-click opens the
+-- row's actions. The card on the right says whether I can make it and what is missing, with
+-- reagent slots (have/need), linked orders and "crafted for you" counts; the Create row holds
+-- the actions (Offer / Whisper / Queue / Hide / Retract / Done).
 
 local BuildRequests
 do
-local function IsMyPost(post)
+local R = {}                   -- this section's helpers (kept off the file's local list)
+local OLD_AGE = 10 * 60
+local QUEUE_ICON = "Interface\\Icons\\INV_Misc_Bag_10"
+
+function R.IsMyPost(post)
   return post.mine or (NS.Me and post.from == NS.Me) or false
 end
 
 -- "just now" / "8m ago" / "2h ago"
-local function AgoText(t)
+function R.AgoText(t)
   if time() - (t or time()) < 60 then return L["just now"] end
   return format(L["%s ago"], Age(t))
 end
 
--- What I know about each craftable item: { rec=, recipeID=, prof=, current= } from my chars'
--- records (the current char first, current = true), else { recipeID=, prof= } from the shared
--- recipe catalogue (for the card background only).
-local function RecipesByOutput()
+-- What I know about each craftable item: { rec=, recipeID=, prof=, current=, char= } from my
+-- chars' records (the current char first, current = true), else { recipeID=, prof= } from the
+-- shared recipe catalogue (for the card background only).
+function R.RecipesByOutput()
   local out = {}
   local db = type(CraftBoardDB) == "table" and CraftBoardDB or {}
   local chars = type(db.chars) == "table" and db.chars or {}
-  local function take(c, current)
+  local function take(c, current, key)
     if type(c) ~= "table" or type(c.recipes) ~= "table" then return end
     for id, rec in pairs(c.recipes) do
       if type(rec) == "table" and type(rec.o) == "number" and not out[rec.o] then
-        out[rec.o] = { rec = rec, recipeID = id, prof = rec.p, current = current }
+        out[rec.o] = { rec = rec, recipeID = id, prof = rec.p, current = current, char = key }
       end
     end
   end
-  if NS.Me then take(chars[NS.Me], true) end
+  if NS.Me then take(chars[NS.Me], true, NS.Me) end
   for key, c in pairs(chars) do
-    if key ~= NS.Me then take(c, false) end
+    if key ~= NS.Me then take(c, false, key) end
   end
   if type(db.recipeNames) == "table" then
     for id, e in pairs(db.recipeNames) do
@@ -2575,40 +2689,194 @@ local function RecipesByOutput()
   return out
 end
 
-local function ReqCollapsed()
+function R.Collapsed()
   local db = UIDB()
   if not db then return {} end
   if type(db.reqCollapsed) ~= "table" then db.reqCollapsed = {} end
   return db.reqCollapsed
 end
 
--- Collapse / expand "Open requests" / "My requests" (not while searching).
-local function ToggleRequestGroup(it)
+function R.OnlyCan()
+  local db = UIDB()
+  return db and db.reqOnlyCan == true or false
+end
+
+-- Collapse / expand a group (not while searching).
+function R.ToggleGroup(it)
   if reqs.searching then return end
-  local c = ReqCollapsed()
+  local c = R.Collapsed()
   if c[it.key] then c[it.key] = nil else c[it.key] = true end
   UI.FilterRequests(true)
 end
 
--- Find's grouped row plus the ready check in the 21 px before the label (grey on "Seen in
--- chat" lines only an alt of mine can craft).
-local function RequestRowFactory()
-  local base = GroupRowFactory(function(it) if it.id then UI.SelectRequest(it.id) end end, ToggleRequestGroup)
+-- Actions ---------------------------------------------------------------------
+-- Each one is a click by the player (the Create row, the row menu or the gamepad's A button).
+
+-- Opens the chat box in whisper mode to `name` (like clicking a player name in chat).
+function R.OpenTell(name)
+  local tell = ChatFrame_SendTell or (ChatFrameUtil and ChatFrameUtil.SendTell)
+  if tell and type(name) == "string" and pcall(tell, Short(name)) then return true end
+  NS.Print(format(L["Could not whisper %s."], Short(name)))
+  return false
+end
+
+function R.OfferText(post)
+  return format(L["[CraftBoard] I can craft %s for you."], ItemLink(post.item) or ItemName(post.item))
+end
+
+function R.Offer(e)
+  if not (e and e.post and not e.mine) then return end
+  if NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, R.OfferText(e.post)) then
+    if NS.Comm.MarkOffered then NS.Comm.MarkOffered(e.post.id) end
+  else
+    NS.Print(format(L["Could not whisper %s."], Short(e.post.from)))
+  end
+end
+
+function R.WhisperPost(e)
+  if not (e and e.post and not e.mine) then return end
+  if R.OpenTell(e.post.from) and NS.Comm and NS.Comm.MarkOffered then NS.Comm.MarkOffered(e.post.id) end
+end
+
+function R.WhisperChat(e)
+  if e and e.chat then OpenWhisper(e.seen.from, nil, nil, L["[CraftBoard] I can craft that for you."]) end
+end
+
+function R.WhisperQueue(e)
+  if e and e.queue and e.queue.who then R.OpenTell(e.queue.who) end
+end
+
+-- The craft a request would queue on the current character: recipeID, item, qty, who, or nil.
+function R.QueueTarget(e)
+  if not e then return nil end
+  if e.post and not e.mine and e.know and e.know.current then
+    return e.know.recipeID, e.post.item, e.post.qty or 1, e.post.from
+  end
+  if e.chat and e.seen.recipeID and e.seen.current then
+    return e.seen.recipeID, e.rec and e.rec.o or nil, 1, e.seen.from
+  end
+  return nil
+end
+
+function R.CanQueue(e)
+  return R.QueueTarget(e) ~= nil and not (NS.Queue and NS.Queue.Has(e.id))
+end
+
+function R.AddToQueue(e)
+  local recipeID, item, qty, who = R.QueueTarget(e)
+  if not (recipeID and NS.Queue) then return end
+  if NS.Queue.Add({ recipeID = recipeID, item = item, qty = qty, who = who, src = e.id }) then
+    NS.Print(format(L["Queued: %s for %s"], e.name, Short(who)))
+  end
+end
+
+function R.HideChat(e)
+  if not (e and e.chat and NS.ChatWatch and NS.ChatWatch.Hide) then return end
+  NS.ChatWatch.Hide(e.seen.from)
+  if reqs.selected == e.id then reqs.selected = nil end
+  UI.RefreshRequests(true)
+end
+
+function R.Retract(e)
+  if not (e and e.mine and NS.Comm and NS.Comm.Retract) then return end
+  NS.Comm.Retract(e.id)
+  UI.Refresh()
+end
+
+function R.Done(e)
+  if not (e and e.queue and NS.Queue) then return end
+  NS.Queue.Remove(e.queue.id)
+end
+
+-- Post the linked orders for the missing intermediates of a request I can craft (reqs.linkNeeds),
+-- each tied to that request.
+function R.PostLinked(e)
+  if not (e and e.post and NS.Comm and NS.Comm.PostRequest) then return end
+  for _, n in ipairs(reqs.linkNeeds or {}) do
+    if NS.Comm.PostRequest(n.itemID, n.qty, format(L["for %s"], ItemName(e.post.item)), e.post.id) then
+      NS.Print(format(L["Posted linked order: %dx %s"], n.qty, ItemName(n.itemID)))
+    end
+  end
+  UI.Refresh()
+end
+
+-- { {text=, fn=}, ... } for a row's menu; the first is the primary action.
+function R.Actions(e)
+  local out = {}
+  local function add(text, fn) out[#out + 1] = { text = text, fn = function() fn(e) end } end
+  if not e or e.kind or e.placeholder then return out end
+  if e.chat then
+    add(format(L["Whisper %s"], Short(e.seen.from)), R.WhisperChat)
+    if R.CanQueue(e) then add(L["Queue"], R.AddToQueue) end
+    add(L["Hide"], R.HideChat)
+  elseif e.queue then
+    add(L["Done"], R.Done)
+    if e.queue.who then add(format(L["Whisper %s"], Short(e.queue.who)), R.WhisperQueue) end
+  elseif e.mine then
+    add(L["Retract"], R.Retract)
+  elseif e.post then
+    add(L["Offer"], R.Offer)
+    add(format(L["Whisper %s"], Short(e.post.from)), R.WhisperPost)
+    if R.CanQueue(e) then add(L["Queue"], R.AddToQueue) end
+  end
+  return out
+end
+
+function R.ShowMenu(owner, e)
+  local actions = R.Actions(e)
+  if #actions == 0 then return end
+  if MenuUtil and MenuUtil.CreateContextMenu then
+    pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
+      if root.CreateTitle then root:CreateTitle(e.name) end
+      for _, a in ipairs(actions) do root:CreateButton(a.text, a.fn) end
+    end)
+  elseif e.chat then
+    R.HideChat(e)
+  end
+end
+
+-- Rows --------------------------------------------------------------------------
+
+-- Find's grouped row plus the ready check in the 21 px before the label, a 14 px item icon, a
+-- right-click menu and a tooltip per kind.
+function R.RowFactory()
+  local base = GroupRowFactory(function(it) if it.id then UI.SelectRequest(it.id) end end, R.ToggleGroup)
   return function(parent)
     local row = base(parent)
-    -- Chat rows show the line they were seen with; the empty-state line has no tooltip.
     row:SetScript("OnEnter", function(self)
       local it = self.item
       if not it or it.kind or it.placeholder then return end
       if it.chat then
         TextTooltip(self, Short(it.seen.from), it.seen.text)
-        if it.knownOn and GameTooltip then
+        if GameTooltip and it.knownOn then
           GameTooltip:AddLine(format(L["Known on %s"], Short(it.knownOn)), MUTED[1], MUTED[2], MUTED[3])
-          GameTooltip:Show()
         end
+      elseif it.queueTotal then
+        TextTooltip(self, L["All reagents"], L["What the whole queue needs, against your bags and bank."])
       else
         ShowTooltip(self, it.outputItemID, it.recipeID)
+        local who = it.post and not it.mine and it.post.from or (it.queue and it.queue.who)
+        if who and GameTooltip and GameTooltip:IsShown() then
+          GameTooltip:AddLine(format(it.queue and L["for %s"] or L["Requested by %s"], Short(who)), MUTED[1], MUTED[2], MUTED[3])
+        end
       end
+      if GameTooltip and GameTooltip:IsShown() then
+        GameTooltip:AddLine(L["Right-click for actions"], MUTED[1], MUTED[2], MUTED[3])
+        GameTooltip:Show()
+      end
+    end)
+    if row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+    local click = row:GetScript("OnClick")
+    row:SetScript("OnClick", function(self, button)
+      local it = self.item
+      if button == "RightButton" then
+        if it and not it.kind and not it.placeholder then
+          if it.id then UI.SelectRequest(it.id) end
+          R.ShowMenu(self, it)
+        end
+        return
+      end
+      click(self, button)
     end)
     local check = row:CreateTexture(nil, "OVERLAY")
     check:SetSize(12, 12)
@@ -2616,61 +2884,323 @@ local function RequestRowFactory()
     check:SetPoint("CENTER", row, "TOPLEFT", floor(ROW.labelX / 2), -ROW.recipeBar / 2)
     check:Hide()
     row.check = check
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(14, 14)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    icon:SetPoint("LEFT", row, "TOPLEFT", ROW.labelX, -ROW.recipeBar / 2)
+    row.icon = icon
     row.recipeParts[#row.recipeParts + 1] = check
+    row.recipeParts[#row.recipeParts + 1] = icon
     return row
   end
 end
 
-local function FillRequestEntry(row, e)
-  if e.placeholder or e.chat then
-    -- "Seen in chat": player name, muted "Trade · 3m"; or the group's empty-state line.
-    row.name:SetText(e.placeholder and e.name or Short(e.seen.from))
-    if e.placeholder then
-      row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
-    else
-      row.name:SetTextColor(C.label[1], C.label[2], C.label[3])
-    end
-    row.status:SetText(e.placeholder and "" or (e.seen.channel or "") .. DOT .. Age(e.seen.t))
-    local alt = e.readyAlt and true or false
-    row.check:SetShown(e.ready or alt)
-    if row.check.SetDesaturated then row.check:SetDesaturated(alt) end
-    row.check:SetAlpha(alt and 0.6 or 1)
-    row.sel:SetShown(e.id ~= nil and e.id == reqs.selected)
+function R.FillEntry(row, e)
+  local withIcon = not e.placeholder and e.icon ~= nil
+  row.name:ClearAllPoints()
+  row.name:SetPoint("LEFT", row, "TOPLEFT", ROW.labelX + (withIcon and 18 or 0), -ROW.recipeBar / 2)
+  row.name:SetPoint("RIGHT", row.status, "LEFT", -6, 0)
+  row.icon:SetTexture(e.icon)
+  row.icon:SetShown(withIcon)
+  if e.placeholder then
+    row.name:SetText(e.name)
+    row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
+    row.status:SetText("")
+    row.check:Hide()
+    row.sel:Hide()
+    row.name:SetAlpha(1)
     return
   end
-  local post = e.post
-  row.name:SetText(e.name)
-  row.name:SetTextColor(NameRGB(post.item))
-  row.status:SetText(format(L["%dx"], post.qty or 1) .. DOT .. Age(post.t))
-  row.check:SetShown(e.ready)
-  if row.check.SetDesaturated then row.check:SetDesaturated(false) end
-  row.check:SetAlpha(1)
-  row.sel:SetShown(e.id == reqs.selected)
+  row.name:SetText(e.label)
+  if e.outputItemID then
+    row.name:SetTextColor(NameRGB(e.outputItemID))
+  elseif e.queueTotal then
+    row.name:SetTextColor(GOLD_RGB[1], GOLD_RGB[2], GOLD_RGB[3])
+  else
+    row.name:SetTextColor(C.label[1], C.label[2], C.label[3])
+  end
+  row.status:SetText(e.status or "")
+  local alpha = e.dim and 0.55 or 1
+  row.name:SetAlpha(alpha)
+  row.icon:SetAlpha(alpha)
+  local alt = e.readyAlt and not e.ready
+  row.check:SetShown(e.ready or alt)
+  if row.check.SetDesaturated then row.check:SetDesaturated(alt) end
+  row.check:SetAlpha(alt and 0.6 or 1)
+  row.sel:SetShown(e.id ~= nil and e.id == reqs.selected)
 end
 
--- Opens the chat box in whisper mode to `name` (like clicking a player name in chat).
-local function OpenTell(name)
-  local tell = ChatFrame_SendTell or (ChatFrameUtil and ChatFrameUtil.SendTell)
-  if tell and type(name) == "string" and pcall(tell, Short(name)) then return true end
-  NS.Print(format(L["Could not whisper %s."], Short(name)))
-  return false
+-- Card ----------------------------------------------------------------------------
+
+-- Reagent slots shown without scrolling: what fits under the header, info and missing lines.
+function R.ReagentRows(n)
+  local h = reqs.body:GetHeight() or 0
+  local used = 150 + (reqs.info:IsShown() and reqs.info:GetHeight() or 0)
+  local fit = h > 0 and floor((h - used - 40) / REAGENT_H) or 4
+  return min(max(1, n), max(1, fit))
 end
 
-local function OfferText(post)
-  return format(L["[CraftBoard] I can craft %s for you."], ItemLink(post.item) or ItemName(post.item))
+-- Stack the card's variable parts under the header: info lines, the missing line, the linked
+-- orders button, then the reagents label (the slots and the quantity line hang off it).
+function R.Stack()
+  local prev
+  for _, f in ipairs({ reqs.info, reqs.missing, reqs.linkBtn, reqs.reagLabel }) do
+    if f:IsShown() then
+      f:ClearAllPoints()
+      if prev then
+        f:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, f == reqs.reagLabel and -8 or -6)
+      else
+        AnchorBelowHeader(reqs.header, f)
+      end
+      if f ~= reqs.linkBtn and f ~= reqs.reagLabel then f:SetPoint("RIGHT", reqs.body, "RIGHT", -20, 0) end
+      prev = f
+    end
+  end
 end
+
+-- Info lines (one per string, nil skipped) in the description font.
+function R.SetInfo(lines)
+  local text = {}
+  for _, l in ipairs(lines) do
+    if l then text[#text + 1] = l end
+  end
+  reqs.info:SetText(table.concat(text, "\n"))
+  reqs.info:SetShown(#text > 0)
+  if #text > 0 then
+    local h = reqs.info.GetStringHeight and reqs.info:GetStringHeight()
+    reqs.info:SetHeight(max(12, type(h) == "number" and h or 12 * #text))
+  end
+end
+
+function R.SetReagents(reagents, emptyText, show)
+  reqs.reagLabel:SetShown(show)
+  reqs.reagents.box:SetShown(show)
+  reqs.reagents.box:SetHeight(#reagents > 0 and REAGENT_H * R.ReagentRows(#reagents) or SUBROW_H)
+  reqs.reagents:SetItems(reagents, emptyText, true)
+end
+
+-- The Create row for entry e: which buttons show, and where the Queue / Hide ones sit.
+function R.Buttons(e)
+  local mine, chat, post = e and e.mine, e and e.chat, e and e.post and not e.mine
+  local queue = e and (e.queue or e.queueTotal)
+  reqs.retract:SetShown(mine and true or false)
+  reqs.retract:SetEnabled(mine and true or false)
+  reqs.offer:SetShown(post and true or false)
+  reqs.offer:SetEnabled(post and true or false)
+  reqs.whisper:SetShown((post or (e and e.queue and e.queue.who)) and true or false)
+  reqs.whisper:SetEnabled(true)
+  reqs.chatWhisper:SetShown(chat and true or false)
+  reqs.chatHide:SetShown(chat and true or false)
+  reqs.done:SetShown(e and e.queue and true or false)
+  local canQueue = (post or chat) and not queue
+  reqs.queueBtn:SetShown(canQueue and true or false)
+  if canQueue then
+    local queued = NS.Queue and NS.Queue.Has(e.id)
+    reqs.queueBtn:SetText(queued and L["Queued"] or L["Queue"])
+    reqs.queueBtn:SetEnabled(R.CanQueue(e))
+  end
+  reqs.whisper:ClearAllPoints()
+  reqs.whisper:SetPoint("RIGHT", e and e.queue and reqs.done or reqs.offer, "LEFT", reqs.whisper.cbSquare and -6 or -4, 0)
+  reqs.queueBtn:ClearAllPoints()
+  reqs.queueBtn:SetPoint("RIGHT", chat and reqs.chatWhisper or reqs.whisper, "LEFT", -6, 0)
+end
+
+-- "You know this recipe" / "Known on Alt" / "You have Leatherworking" / grey "not known".
+function R.KnowLine(current, knownOn, profName)
+  if current then return GREEN .. L["You know this recipe."] .. "|r" end
+  if knownOn then return format(L["Known on %s."], Short(knownOn)) end
+  if profName then return GREEN .. format(L["You have %s."], profName) .. "|r" end
+  return GREY .. L["None of your characters knows this recipe."] .. "|r"
+end
+
+function R.PostDetail(e)
+  local post, know = e.post, e.know
+  local mine = e.mine
+  local who = mine and L["you"] or Short(post.from)
+  local note = type(post.note) == "string" and post.note ~= "" and ("\"" .. post.note .. "\"") or nil
+  FillHeader(reqs.header, know and know.recipeID, post.item, e.name,
+    format(L["Requested by %s"], who) .. DOT .. R.AgoText(post.t), note)
+  SetDetailBackground(reqs, know and know.prof)
+
+  local qty = post.qty or 1
+  local rec = know and know.rec
+  local reagents, missing, emptyText = {}, nil, nil
+  if rec and type(rec.r) == "table" and #rec.r > 0 and NS.Inventory and NS.Inventory.CanCraft then
+    local cc = NS.Inventory.CanCraft(rec, qty)
+    reagents, missing = Chain.AnnotateMakers(cc.reagents or {}), cc.missing
+  elseif rec then
+    emptyText = L["No reagents recorded."]
+  else
+    emptyText = L["Reagents unknown"]
+  end
+
+  -- Linked orders: the post this one is part of, and the ones posted for it.
+  local lines = {}
+  if not mine then lines[#lines + 1] = R.KnowLine(rec and know.current, rec and not know.current and know.char or nil) end
+  local children, parent = {}, nil
+  if NS.Comm and NS.Comm.Linked then children, parent = NS.Comm.Linked(post.id) end
+  if parent then
+    lines[#lines + 1] = format(L["Linked order for %s (%s)."], ItemName(parent.item), Short(parent.from))
+  end
+  local linked = {}
+  for _, c in ipairs(children) do
+    linked[c.item] = true
+    lines[#lines + 1] = format(L["Linked: %dx %s (%s)"], c.qty or 1, ItemName(c.item), Short(c.from))
+  end
+  lines[#lines + 1] = not mine and NS.Trade and NS.Trade.CraftedText(post.from) or nil
+  R.SetInfo(lines)
+
+  -- Intermediates other players make, not yet posted as linked orders.
+  local needs = {}
+  for _, n in ipairs(Chain.LinkedNeeds(missing)) do
+    if not linked[n.itemID] then needs[#needs + 1] = n end
+  end
+  reqs.linkNeeds = needs
+  reqs.linkBtn:SetShown(#needs > 0)
+  FillMissingLine(reqs.missing, missing)
+  R.SetReagents(reagents, emptyText, true)
+  reqs.qtyLine:SetText(format(L["Requested quantity: %d"], qty))
+  R.Stack()
+end
+
+-- Card for a "Seen in chat" entry: item (else profession) as title, "Bob in Trade · 3m ago",
+-- the chat line quoted when it says more than the title, what I know about it, whether they
+-- bring the mats, what I'm missing, how often they asked.
+function R.ChatDetail(e)
+  local s, rec = e.seen, e.rec
+  local itemID = rec and type(rec.o) == "number" and rec.o or nil
+  local title, desc
+  if s.links then
+    -- Several linked items: title by profession, the links as a list.
+    title = s.prof or L["Crafting request"]
+    local shown, n = {}, #s.links
+    for i = 1, min(n, 6) do shown[i] = "\194\183 " .. s.links[i] end
+    if n > 6 then shown[#shown + 1] = format(L["and %d more"], n - 6) end
+    desc = table.concat(shown, "\n")
+    itemID = nil
+  else
+    title = s.itemName or s.prof or L["Crafting request"]
+    if NS.ChatWatch and NS.ChatWatch.AddsDetail and NS.ChatWatch.AddsDetail(s) then
+      desc = "\"" .. (s.text or "") .. "\""
+    end
+  end
+  FillHeader(reqs.header, not s.links and s.recipeID or nil, itemID, title,
+    format(L["%s in %s"], Short(s.from), s.channel or "") .. DOT .. R.AgoText(s.t), desc)
+  if not (s.recipeID or itemID) and ProfIcon(s.profID) then reqs.header.icon:SetTexture(ProfIcon(s.profID)) end
+  SetDetailBackground(reqs, rec and rec.p or s.profID)
+
+  local has = rec and type(rec.r) == "table" and #rec.r > 0 and NS.Inventory and NS.Inventory.CanCraft
+  local cc = has and NS.Inventory.CanCraft(rec, 1) or nil
+  local profName = not s.recipeID and NS.ChatWatch.CanHelp(s) and s.prof or nil
+  local lines = { R.KnowLine(s.recipeID and s.current, s.knownOn, profName) }
+  if s.mats then
+    lines[#lines + 1] = GREEN .. L["They have the mats."] .. "|r"
+  elseif cc and cc.ready then
+    lines[#lines + 1] = GREEN .. L["You have the reagents."] .. "|r"
+  end
+  if (s.asks or 1) > 1 then
+    lines[#lines + 1] = format(L["Asked %d times, first %s."], s.asks, R.AgoText(s.first or s.t))
+  end
+  lines[#lines + 1] = NS.Trade and NS.Trade.CraftedText(s.from) or nil
+  R.SetInfo(lines)
+  reqs.linkNeeds = nil
+  reqs.linkBtn:Hide()
+  -- With their own mats, what I'm short of doesn't matter.
+  FillMissingLine(reqs.missing, not s.mats and cc and cc.missing or nil)
+  R.SetReagents(cc and Chain.AnnotateMakers(cc.reagents) or {}, nil, cc ~= nil)
+  reqs.qtyLine:SetText("")
+  R.Stack()
+end
+
+-- A queued craft: for whom, since when, reagents for its quantity; or the whole queue's sum.
+function R.QueueDetail(e)
+  reqs.linkNeeds = nil
+  reqs.linkBtn:Hide()
+  reqs.qtyLine:SetText("")
+  if e.queueTotal then
+    FillHeader(reqs.header, nil, nil, L["Queue"], format(#e.list == 1 and L["%d craft"] or L["%d crafts"], #e.list))
+    reqs.header.icon:SetTexture(QUEUE_ICON)
+    SetDetailBackground(reqs, nil)
+    local lines = {}
+    for i, q in ipairs(e.list) do
+      if i > 6 then
+        lines[#lines + 1] = format(L["and %d more"], #e.list - 6)
+        break
+      end
+      lines[i] = "\194\183 " .. q.label .. (q.queue.who and (DOT .. Short(q.queue.who)) or "")
+    end
+    R.SetInfo(lines)
+    local totals = NS.Queue and NS.Queue.Totals() or {}
+    local missing = {}
+    for _, r in ipairs(totals) do
+      if r.have < r.need then missing[#missing + 1] = r end
+    end
+    FillMissingLine(reqs.missing, missing)
+    R.SetReagents(Chain.AnnotateMakers(totals), L["No reagents recorded."], true)
+    R.Stack()
+    return
+  end
+  local x, rec = e.queue, e.rec
+  FillHeader(reqs.header, x.recipeID, x.item, e.name,
+    (x.who and format(L["for %s"], Short(x.who)) .. DOT or "") .. format(L["queued %s"], R.AgoText(x.t)))
+  SetDetailBackground(reqs, rec and rec.p)
+  local cc = rec and NS.Inventory and NS.Inventory.CanCraft(rec, x.qty) or nil
+  R.SetInfo({ x.who and NS.Trade and NS.Trade.CraftedText(x.who) or nil })
+  FillMissingLine(reqs.missing, cc and cc.missing or nil)
+  R.SetReagents(cc and Chain.AnnotateMakers(cc.reagents) or {}, L["No reagents recorded."], true)
+  reqs.qtyLine:SetText(format(L["Quantity: %d"], x.qty))
+  R.Stack()
+end
+
+function R.Detail(e)
+  reqs.entry = e
+  R.Buttons(e)
+  if not e then
+    reqs.body:Hide()
+    reqs.none:SetText(reqs.noneText or "")
+    reqs.none:Show()
+    SetDetailBackground(reqs, nil)
+    return
+  end
+  reqs.none:Hide()
+  reqs.body:Show()
+  if e.chat then
+    R.ChatDetail(e)
+  elseif e.queue or e.queueTotal then
+    R.QueueDetail(e)
+  else
+    R.PostDetail(e)
+  end
+end
+
+-- Build ---------------------------------------------------------------------------
 
 function BuildRequests(p)
   reqs.keyOf = function(e) return e.id end
   reqs.selectedKey = function() return reqs.selected end
   reqs.selectKey = function(id) UI.SelectRequest(id) end
   reqs.refilter = function(keep) UI.FilterRequests(keep) end
+  reqs.actions = R.Actions
 
   local left = ListColumn(p, reqs)
+  AddFilter(reqs, left, function()
+    return { { kind = "check", text = L["Only what I can craft"],
+      tip = L["Hides board requests and chat asks none of your characters can make."],
+      get = R.OnlyCan,
+      set = function()
+        local db = UIDB()
+        if db then db.reqOnlyCan = not R.OnlyCan() or nil end
+        UI.FilterRequests(false)
+      end } }
+  end, function() return not R.OnlyCan() end, function()
+    local db = UIDB()
+    if db then db.reqOnlyCan = nil end
+    UI.FilterRequests(false)
+  end)
   reqs.search = NewSearchBox("CraftBoardRequestsSearchBox", left, reqs)
   reqs.search:SetPoint("TOPLEFT", left, "TOPLEFT", 13, -8)
-  reqs.search:SetPoint("TOPRIGHT", left, "TOPRIGHT", -12, -8)
-  GroupList(reqs, left, "CraftBoardRequestsScroll", RequestRowFactory(), GroupFill(FillRequestEntry))
+  reqs.search:SetPoint("RIGHT", reqs.filter, "LEFT", -4, 0)
+  GroupList(reqs, left, "CraftBoardRequestsScroll", R.RowFactory(), GroupFill(R.FillEntry))
   -- Empty board: "No open requests" (the list's no-results text) and a grey line under it.
   local sub = Label(reqs.list.box, L["Posts from other CraftBoard users appear here."],
     Font("GameFontDisableSmall", "GameFontDisable"))
@@ -2690,8 +3220,22 @@ function BuildRequests(p)
   reqs.header = NewHeader(body)
   reqs.header.desc:SetTextColor(C.short[1], C.short[2], C.short[3])
 
+  reqs.info = Label(body, nil, FontOf(FONTS.desc))
+  if reqs.info.SetWordWrap then reqs.info:SetWordWrap(true) end
+  if reqs.info.SetMaxLines then reqs.info:SetMaxLines(9) end
+  if reqs.info.SetJustifyV then reqs.info:SetJustifyV("TOP") end
+  reqs.missing = NewMissingLine(body)
+  reqs.linkBtn = PanelButton(body, L["Post linked orders"], 150, 22)
+  reqs.linkBtn:SetScript("OnClick", function() R.PostLinked(reqs.entry) end)
+  reqs.linkBtn:SetScript("OnEnter", function(self)
+    TextTooltip(self, L["Post linked orders"],
+      format(L["Asks the board for the intermediates other crafters make: %s. Each order is linked to this request."],
+        Chain.NeedsText(reqs.linkNeeds or {})))
+  end)
+  reqs.linkBtn:SetScript("OnLeave", HideTooltip)
+  reqs.linkBtn:Hide()
+
   reqs.reagLabel = SectionLabel(body, L["Reagents:"])
-  reqs.reagLabel:SetPoint("TOPLEFT", reqs.header.holder, "BOTTOMLEFT", -1, -12)
   reqs.reagents = NewList("CraftBoardRequestReagentsScroll", body, REAGENT_H, ReagentRow, FillReagentRow,
     { bar = false, inline = true, stripes = false })
   reqs.reagents.box:SetPoint("TOPLEFT", reqs.reagLabel, "TOPLEFT", 1, -20)
@@ -2701,70 +3245,62 @@ function BuildRequests(p)
   reqs.qtyLine:SetWidth(300)
   reqs.qtyLine:SetPoint("TOPLEFT", reqs.reagents.box, "BOTTOMLEFT", -1, -12)
 
-  -- Create row: Offer (red, where Create is) with the whisper square left of it, or Retract.
+  -- Create row. Red button where Create is (Offer / Whisper / Retract / Done), the whisper
+  -- square left of it, Queue left of that, and for chat lines a Hide text button.
   local bar = NewBar(p, d)
   reqs.bar = bar
-  reqs.offer = RedButton(bar, L["Offer"], 112, 28)
-  reqs.offer:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -9, 7)
-  reqs.offer:SetScript("OnClick", function()
-    local e = reqs.entry
-    if not e or e.mine then return end
-    if not (NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, OfferText(e.post))) then
-      NS.Print(format(L["Could not whisper %s."], Short(e.post.from)))
-    end
+  local function red(text, fn, tip)
+    local b = RedButton(bar, text, 112, 28)
+    b:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -9, 7)
+    b:SetScript("OnClick", function() fn(reqs.entry) end)
+    b:SetScript("OnEnter", function(self)
+      local title, body = tip(reqs.entry)
+      if title then TextTooltip(self, title, body) end
+    end)
+    b:SetScript("OnLeave", HideTooltip)
+    b:Hide()
+    return b
+  end
+  reqs.offer = red(L["Offer"], R.Offer, function(e)
+    if e and e.post then return format(L["Whisper %s"], Short(e.post.from)), R.OfferText(e.post) end
   end)
-  reqs.offer:SetScript("OnEnter", function(self)
-    local e = reqs.entry
-    if e and not e.mine then
-      TextTooltip(self, format(L["Whisper %s"], Short(e.post.from)),
-        format(L["[CraftBoard] I can craft %s for you."], ItemName(e.post.item)))
-    end
+  reqs.retract = red(L["Retract"], R.Retract, function()
+    return L["Retract"], L["Takes the request off the board for everyone, with its linked orders."]
   end)
-  reqs.offer:SetScript("OnLeave", HideTooltip)
-
-  reqs.retract = RedButton(bar, L["Retract"], 112, 28)
-  reqs.retract:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -9, 7)
-  reqs.retract:SetScript("OnClick", function()
-    local e = reqs.entry
-    if not (e and e.mine and NS.Comm and NS.Comm.Retract) then return end
-    NS.Comm.Retract(e.id)
-    UI.Refresh()
+  reqs.chatWhisper = red(L["Whisper"], R.WhisperChat, function(e)
+    if e and e.chat then return format(L["Whisper %s"], Short(e.seen.from)), L["[CraftBoard] I can craft that for you."] end
   end)
-  reqs.retract:SetScript("OnEnter", function(self)
-    TextTooltip(self, L["Retract"], L["Takes the request off the board for everyone."])
+  reqs.done = red(L["Done"], R.Done, function()
+    return L["Done"], L["Takes the craft off your queue. A trade that hands it over does this by itself."]
   end)
-  reqs.retract:SetScript("OnLeave", HideTooltip)
-  reqs.retract:Hide()
 
   reqs.whisper = SquareButton(bar, L["Whisper"])
   reqs.whisper.cbKind = "whisper"
-  reqs.whisper:SetPoint("RIGHT", reqs.offer, "LEFT", reqs.whisper.cbSquare and -6 or -4, 0)
   reqs.whisper:SetScript("OnClick", function()
     local e = reqs.entry
-    if e and not e.mine then OpenTell(e.post.from) end
+    if e and e.queue then R.WhisperQueue(e) else R.WhisperPost(e) end
   end)
   reqs.whisper:SetScript("OnEnter", function(self)
     local e = reqs.entry
-    if e and not e.mine then TextTooltip(self, format(L["Whisper %s"], Short(e.post.from))) end
+    local who = e and (e.queue and e.queue.who or (e.post and not e.mine and e.post.from))
+    if who then TextTooltip(self, format(L["Whisper %s"], Short(who))) end
   end)
   reqs.whisper:SetScript("OnLeave", HideTooltip)
 
-  -- "Seen in chat" entries: red Whisper (chat box opened with the offer typed in) and a Hide
-  -- text button left of it.
-  reqs.chatWhisper = RedButton(bar, L["Whisper"], 112, 28)
-  reqs.chatWhisper:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -9, 7)
-  reqs.chatWhisper:SetScript("OnClick", function()
+  reqs.queueBtn = PanelButton(bar, L["Queue"], 70, 22)
+  reqs.queueBtn:SetScript("OnClick", function() R.AddToQueue(reqs.entry) end)
+  reqs.queueBtn:SetScript("OnEnter", function(self)
     local e = reqs.entry
-    if e and e.chat then OpenWhisper(e.seen.from, nil, nil, L["[CraftBoard] I can craft that for you."]) end
-  end)
-  reqs.chatWhisper:SetScript("OnEnter", function(self)
-    local e = reqs.entry
-    if e and e.chat then
-      TextTooltip(self, format(L["Whisper %s"], Short(e.seen.from)), L["[CraftBoard] I can craft that for you."])
+    if NS.Queue and e and NS.Queue.Has(e.id) then
+      TextTooltip(self, L["Queued"], L["This request is on your queue."])
+    elseif self:IsEnabled() then
+      TextTooltip(self, L["Queue"], L["Adds the craft to your queue, where the reagents of everything queued are summed up."])
+    else
+      TextTooltip(self, L["Queue"], L["Only crafts your current character knows can be queued."])
     end
   end)
-  reqs.chatWhisper:SetScript("OnLeave", HideTooltip)
-  reqs.chatWhisper:Hide()
+  reqs.queueBtn:SetScript("OnLeave", HideTooltip)
+  reqs.queueBtn:Hide()
 
   reqs.chatHide = CreateFrame("Button", nil, bar)
   reqs.chatHide:SetNormalFontObject(Font("GameFontNormal"))
@@ -2772,14 +3308,8 @@ function BuildRequests(p)
   reqs.chatHide:SetText(L["Hide"])
   reqs.chatHide.fs = reqs.chatHide:GetFontString()
   reqs.chatHide:SetSize(max(40, (reqs.chatHide.fs and StringWidth(reqs.chatHide.fs) or 24) + 16), 28)
-  reqs.chatHide:SetPoint("RIGHT", reqs.chatWhisper, "LEFT", -6, 0)
-  reqs.chatHide:SetScript("OnClick", function()
-    local e = reqs.entry
-    if not (e and e.chat and NS.ChatWatch and NS.ChatWatch.Hide) then return end
-    NS.ChatWatch.Hide(e.seen.from)
-    reqs.selected = nil
-    UI.RefreshRequests(true)
-  end)
+  reqs.chatHide:SetPoint("RIGHT", reqs.queueBtn, "LEFT", -6, 0)
+  reqs.chatHide:SetScript("OnClick", function() R.HideChat(reqs.entry) end)
   reqs.chatHide:SetScript("OnEnter", function(self)
     TextTooltip(self, L["Hide"], L["Removes this line from the list."])
   end)
@@ -2787,99 +3317,9 @@ function BuildRequests(p)
   reqs.chatHide:Hide()
 end
 
--- Reagent slots shown without scrolling: what fits between the header and the quantity line.
-local function RequestReagentRows(body, n)
-  local h = body:GetHeight() or 0
-  local fit = h > 0 and floor((h - 190) / REAGENT_H) or 4
-  return min(max(1, n), max(2, fit))
-end
-
 function UI.RefreshRequestDetail()
   if not reqs.body then return end
-  local e = reqs.selected and reqs.byID and reqs.byID[reqs.selected] or nil
-  reqs.entry = e
-  local mine = e and e.mine or false
-  local chat = e and e.chat or false
-  reqs.retract:SetShown(mine)
-  reqs.retract:SetEnabled(mine)
-  reqs.offer:SetShown(not mine and not chat)
-  reqs.offer:SetEnabled(e ~= nil and not mine)
-  reqs.whisper:SetShown(not mine and not chat)
-  reqs.whisper:SetEnabled(e ~= nil and not mine)
-  reqs.chatWhisper:SetShown(chat)
-  reqs.chatHide:SetShown(chat)
-  reqs.reagLabel:Show()
-  reqs.reagents.box:Show()
-  if chat then
-    UI.RefreshChatDetail(e)
-    return
-  end
-  if not e then
-    reqs.body:Hide()
-    reqs.none:SetText(reqs.noneText or "")
-    reqs.none:Show()
-    SetDetailBackground(reqs, nil)
-    return
-  end
-  reqs.none:Hide()
-  reqs.body:Show()
-
-  local post, know = e.post, e.know
-  local who = mine and L["you"] or Short(post.from)
-  local note = type(post.note) == "string" and post.note ~= "" and ("\"" .. post.note .. "\"") or nil
-  FillHeader(reqs.header, know and know.recipeID, post.item, e.name,
-    format(L["Requested by %s"], who) .. DOT .. AgoText(post.t), note)
-  AnchorBelowHeader(reqs.header, reqs.reagLabel)
-  SetDetailBackground(reqs, know and know.prof)
-
-  local qty = post.qty or 1
-  local rec = know and know.rec
-  local reagents, emptyText = {}, nil
-  if rec and type(rec.r) == "table" and #rec.r > 0 and NS.Inventory and NS.Inventory.CanCraft then
-    reagents = NS.Inventory.CanCraft(rec, qty).reagents or {}
-  elseif rec then
-    emptyText = L["No reagents recorded."]
-  else
-    emptyText = L["Reagents unknown"]
-  end
-  reqs.reagents.box:SetHeight(#reagents > 0 and REAGENT_H * RequestReagentRows(reqs.body, #reagents) or SUBROW_H)
-  reqs.reagents:SetItems(reagents, emptyText, true)
-  reqs.qtyLine:SetText(format(L["Requested quantity: %d"], qty))
-end
-
--- Card for a "Seen in chat" entry: item (else profession) as title, "Bob in Trade · 3m ago",
--- the chat line quoted, and my reagents have/need when one of my chars knows the recipe.
-function UI.RefreshChatDetail(e)
-  reqs.none:Hide()
-  reqs.body:Show()
-  local s, rec = e.seen, e.rec
-  local itemID = rec and type(rec.o) == "number" and rec.o or nil
-  -- Several linked items: title by profession and show the links as a list instead of one
-  -- long quoted line that truncates. One item: the line quoted, as before.
-  local title, desc
-  if s.links then
-    title = s.prof or L["Crafting request"]
-    local shown, n = {}, #s.links
-    for i = 1, math.min(n, 6) do shown[i] = "\194\183 " .. s.links[i] end
-    if n > 6 then shown[#shown + 1] = format(L["and %d more"], n - 6) end
-    desc = table.concat(shown, "\n")
-    itemID = nil
-  else
-    title = s.itemName or s.prof or L["Crafting request"]
-    desc = "\"" .. (s.text or "") .. "\""
-  end
-  FillHeader(reqs.header, not s.links and s.recipeID or nil, itemID, title,
-    format(L["%s in %s"], Short(s.from), s.channel or "") .. DOT .. AgoText(s.t), desc)
-  if not (s.recipeID or itemID) and ProfIcon(s.profID) then reqs.header.icon:SetTexture(ProfIcon(s.profID)) end
-  AnchorBelowHeader(reqs.header, reqs.reagLabel)
-  SetDetailBackground(reqs, rec and rec.p or s.profID)
-  reqs.qtyLine:SetText("")
-  local has = rec and type(rec.r) == "table" and #rec.r > 0 and NS.Inventory and NS.Inventory.CanCraft
-  reqs.reagLabel:SetShown(has and true or false)
-  reqs.reagents.box:SetShown(has and true or false)
-  local reagents = has and NS.Inventory.CanCraft(rec, 1).reagents or {}
-  reqs.reagents.box:SetHeight(#reagents > 0 and REAGENT_H * RequestReagentRows(reqs.body, #reagents) or SUBROW_H)
-  reqs.reagents:SetItems(reagents, nil, true)
+  R.Detail(reqs.selected and reqs.byID and reqs.byID[reqs.selected] or nil)
 end
 
 function UI.SelectRequest(id)
@@ -2888,28 +3328,42 @@ function UI.SelectRequest(id)
   UI.RefreshRequestDetail()
 end
 
--- Filter the annotated posts by item name / requester and group them: other players'
--- requests first, then mine, newest first within each. A selection the filter hides is
--- replaced by the first visible request.
+-- The Requests tab's primary action for the selected entry (gamepad A).
+function UI.RequestPrimary()
+  local a = R.Actions(reqs.entry)[1]
+  if a then a.fn() end
+end
+
+-- Group and filter ---------------------------------------------------------------
+
+local function NewestFirst(a, b)
+  if (a.t or 0) ~= (b.t or 0) then return (a.t or 0) > (b.t or 0) end
+  return tostring(a.id) < tostring(b.id)
+end
+
+local function ReadyNewest(a, b)
+  if (a.ready or false) ~= (b.ready or false) then return a.ready end
+  return NewestFirst(a, b)
+end
+
+-- Filter the annotated entries by text (item, requester, chat line) and group them. A selection
+-- the filter hides is replaced by the first visible entry.
 function UI.FilterRequests(keepScroll)
   if not reqs.list then return end
   local all = reqs.all or {}
   local text = strtrim(reqs.search:GetText() or "")
   local searching = #text >= 2
   reqs.searching = searching
+  local onlyCan = R.OnlyCan()
   local results = {}
-  if searching then
-    local tokens = Tokens(text)
-    for _, e in ipairs(all) do
-      local ok = true
-      for i = 1, #tokens do
-        local t = tokens[i]
-        if not (e.lname:find(t, 1, true) or e.lfrom:find(t, 1, true)) then ok = false break end
-      end
-      if ok then results[#results + 1] = e end
+  local tokens = searching and Tokens(text) or {}
+  for _, e in ipairs(all) do
+    local ok = true
+    for i = 1, #tokens do
+      local t = tokens[i]
+      if not (e.lname:find(t, 1, true) or e.lfrom:find(t, 1, true)) then ok = false break end
     end
-  else
-    for i = 1, #all do results[i] = all[i] end
+    if ok then results[#results + 1] = e end
   end
 
   local visible = false
@@ -2918,19 +3372,31 @@ function UI.FilterRequests(keepScroll)
   end
   if not visible then reqs.selected = nil end
 
-  -- Open requests, Seen in chat (while the chat watcher is on; shown empty with a hint line
-  -- when nothing was seen, unless searching), My requests.
-  local groups = { { key = "open", name = L["Open requests"], list = {} },
-    { key = "chat", name = L["Seen in chat"], list = {}, always = reqs.chatOn and not searching },
-    { key = "mine", name = L["My requests"], list = {} } }
+  local groups = {
+    { key = "can", name = L["You can craft"], list = {}, sort = ReadyNewest },
+    { key = "queue", name = L["My queue"], list = {} },
+    { key = "open", name = L["Open requests"], list = {}, sort = NewestFirst, hide = onlyCan },
+    { key = "chat", name = L["Seen in chat"], list = {}, sort = NewestFirst, hide = onlyCan },
+    { key = "mine", name = L["My requests"], list = {}, sort = NewestFirst },
+  }
+  local anyChat = false
   for _, e in ipairs(results) do
-    local g = e.chat and groups[2] or e.mine and groups[3] or groups[1]
+    local g
+    if e.queue or e.queueTotal then g = groups[2]
+    elseif e.mine then g = groups[5]
+    elseif e.can then g = groups[1]
+    elseif e.chat then g = groups[4]
+    else g = groups[3] end
+    if e.chat then anyChat = true end
     g.list[#g.list + 1] = e
   end
-  local collapsed = searching and {} or ReqCollapsed()
+  -- "Seen in chat" shows while empty (with a hint) only when nothing at all came from chat.
+  groups[4].always = reqs.chatOn and not searching and not anyChat
+  local collapsed = searching and {} or R.Collapsed()
   local items, nav = {}, {}
   for _, g in ipairs(groups) do
-    if #g.list > 0 or g.always then
+    if not g.hide and (#g.list > 0 or g.always) then
+      if g.sort then table.sort(g.list, g.sort) end
       local open = not collapsed[g.key]
       items[#items + 1] = { kind = "cat", key = g.key, name = g.name, count = #g.list, depth = 0, collapsed = not open }
       if open and #g.list == 0 then
@@ -2952,12 +3418,14 @@ function UI.FilterRequests(keepScroll)
     emptyText = L["No open requests"]
     reqs.noneText = PeerCounts() == 0 and EMPTY_PEERS or L["No open requests. Post one from the Find tab."]
   else
-    if #results == 0 then emptyText = format(L["No request matches \"%s\"."], text) end
+    if #results == 0 then emptyText = format(L["No request matches \"%s\"."], text)
+    elseif #nav == 0 and onlyCan then emptyText = L["Nothing you can craft right now."] end
     reqs.noneText = L["Select a request to see its details."]
   end
   reqs.emptySub:SetShown(#items == 0 and #all == 0)
   reqs.list:SetItems(items, emptyText, keepScroll)
-  local pick = not reqs.selected and (nav[1] or results[1])
+  SyncFilterButton(reqs.filter, reqs.filterEntries)
+  local pick = not reqs.selected and nav[1]
   if pick then
     UI.SelectRequest(pick.id)
   else
@@ -2965,55 +3433,110 @@ function UI.FilterRequests(keepScroll)
   end
 end
 
--- Rebuild the annotated posts (names, requester, my recipe for the item, ready now).
-function UI.RefreshRequests(keepScroll)
-  if not reqs.list then return end
+-- Annotated entries for every board post, chat ask and queued craft: all (list), byID, and the
+-- number of other players' requests I can craft (the tab's count).
+local function Annotate()
   local posts = NS.Comm and NS.Comm.Requests and NS.Comm.Requests() or {}
-  local byOut = RecipesByOutput()
+  local byOut = R.RecipesByOutput()
   local canCraft = NS.Inventory and NS.Inventory.CanCraft
-  local all, byID = {}, {}
+  local all, byID, count = {}, {}, 0
+  local now = time()
+  local function add(e)
+    all[#all + 1] = e
+    byID[e.id] = e
+    if e.can and not e.mine then count = count + 1 end
+  end
   for _, post in ipairs(posts) do
     if type(post) == "table" and type(post.item) == "number" and post.id ~= nil then
       local know = byOut[post.item]
       local name = ItemName(post.item)
+      local qty = post.qty or 1
+      local mine = R.IsMyPost(post)
       local e = {
-        post = post, id = post.id, outputItemID = post.item, mine = IsMyPost(post), know = know,
+        post = post, id = post.id, outputItemID = post.item, mine = mine, know = know, t = post.t,
         name = name, lname = strlower(name), lfrom = strlower(Short(post.from)), ready = false,
+        label = qty > 1 and (format(L["%dx"], qty) .. " " .. name) or name, icon = ItemIcon(post.item),
+        status = mine and Age(post.t) or (Short(post.from) .. DOT .. Age(post.t)),
+        can = know ~= nil and know.rec ~= nil, dim = now - (post.t or now) > OLD_AGE,
       }
-      -- Ready: the current char knows it and has the reagents for the whole request.
-      if know and know.current and know.rec and canCraft then
-        e.ready = canCraft(know.rec, post.qty or 1).ready and true or false
+      -- Ready: the current char knows it and has the reagents for the whole request; grey
+      -- check: only an alt knows it.
+      if e.can and know.current and canCraft then
+        e.ready = canCraft(know.rec, qty).ready and true or false
+      elseif e.can then
+        e.readyAlt = true
       end
-      all[#all + 1] = e
-      byID[e.id] = e
+      add(e)
     end
   end
-  -- Chat lines (ChatWatch.lua): id "chat:Name-Realm"; ready = I have the profession or recipe,
-  -- or any of my characters knows the recipe and this one carries the mats; readyAlt (grey
-  -- check) = only an alt knows it (knownOn, shown in the row tooltip).
+  -- Chat lines (ChatWatch.lua): id "chat:Name-Realm". can = I have the profession, or any of my
+  -- characters knows the recipe; ready = that, and (for a known recipe) this character carries
+  -- the mats or knows it; readyAlt (grey check) = only an alt knows it.
   local CW = NS.ChatWatch
   reqs.chatOn = CW and CW.Enabled and CW.Enabled() or false
+  local mineRecipes = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine() or {}
   for _, s in ipairs(reqs.chatOn and CW.Seen() or {}) do
     local title = s.itemName or s.prof or L["Crafting request"]
+    local rec = s.recipeID and NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(s.recipeID) or nil
+    local out = rec and type(rec.o) == "number" and rec.o or nil
     local e = {
-      chat = true, seen = s, id = "chat:" .. s.from, ready = CW.CanHelp(s) and true or false,
-      rec = s.recipeID and NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(s.recipeID) or nil,
-      name = title, lname = strlower(title .. " " .. (s.text or "")), lfrom = strlower(Short(s.from)),
-      knownOn = s.knownOn,
+      chat = true, seen = s, id = "chat:" .. s.from, ready = CW.CanHelp(s) and true or false, rec = rec,
+      name = title, label = title, lname = strlower(title .. " " .. (s.text or "")), lfrom = strlower(Short(s.from)),
+      knownOn = s.knownOn, t = s.t, outputItemID = out,
+      icon = ItemIcon(out) or (s.recipeID and SpellIcon(s.recipeID)) or ProfIcon(s.profID),
+      status = Short(s.from) .. DOT .. Age(s.t), dim = now - (s.t or now) > OLD_AGE,
     }
     if not e.ready and s.knownOn then
-      local rec = e.rec
       if rec and type(rec.r) == "table" and #rec.r > 0 and canCraft and canCraft(rec, 1).ready then
         e.ready = true
       else
         e.readyAlt = true
       end
     end
-    all[#all + 1] = e
-    byID[e.id] = e
+    e.can = e.ready or e.readyAlt or false
+    add(e)
   end
-  reqs.all, reqs.byID = all, byID
+  -- My queue, with the reagent sum first once there is more than one craft in it.
+  local queued = {}
+  for _, x in ipairs(NS.Queue and NS.Queue.Entries() or {}) do
+    local rec = mineRecipes[x.recipeID]
+    local name = (x.item and ItemName(x.item)) or (rec and rec.n) or format(L["Recipe %d"], x.recipeID)
+    local e = {
+      queue = x, id = "queue:" .. x.id, rec = rec, recipeID = x.recipeID, outputItemID = x.item, t = x.t,
+      name = name, label = x.qty > 1 and (format(L["%dx"], x.qty) .. " " .. name) or name,
+      icon = RecipeIcon(x.recipeID, x.item), status = x.who and Short(x.who) or "",
+      lname = strlower(name), lfrom = strlower(x.who and Short(x.who) or ""),
+      ready = rec and canCraft and canCraft(rec, x.qty).ready or false,
+    }
+    queued[#queued + 1] = e
+  end
+  if #queued > 1 then
+    local ready = true
+    for _, r in ipairs(NS.Queue.Totals()) do
+      if r.have < r.need then ready = false break end
+    end
+    add({ queueTotal = true, id = "queue:total", list = queued, name = L["All reagents"], label = L["All reagents"],
+      icon = QUEUE_ICON, status = format(L["%d crafts"], #queued), lname = strlower(L["All reagents"]), lfrom = "",
+      ready = ready, t = math.huge })
+  end
+  for _, e in ipairs(queued) do add(e) end
+  return all, byID, count
+end
+
+-- Rebuild the annotated entries and refresh the list.
+function UI.RefreshRequests(keepScroll)
+  if not reqs.list then return end
+  -- Linked orders and reagent tooltips need to know who on the board makes what.
+  BuildUniverse()
+  local all, byID, count = Annotate()
+  reqs.all, reqs.byID, reqs.count = all, byID, count
   UI.FilterRequests(keepScroll)
+end
+
+-- Other players' requests I can craft, for the tab's count.
+function UI.RequestCount()
+  local _, _, count = Annotate()
+  return count
 end
 end
 -- Window --------------------------------------------------------------------
@@ -3210,6 +3733,7 @@ local function SelectTab(i)
   if i == 2 then UpdatePortrait(nil) end
   REFRESH[i](false)
   UI.RefreshStatus()
+  if UI.UpdateBadge then UI.UpdateBadge() end
 end
 
 local TAB_NAMES = { L["Find"], L["Requests"] }
@@ -3403,6 +3927,106 @@ end
 
 end
 
+-- Requests count and gamepad ----------------------------------------------------------
+do
+-- "Requests (2)": other players' requests I can craft. Top tabs carry it in their label; side
+-- tabs get a small number in the icon's corner.
+local shownCount
+function UI.UpdateBadge()
+  if not tabs[2] then return end
+  -- The Requests tab just counted while it is the one showing.
+  local n = activeTab == 2 and reqs.count or (UI.RequestCount and UI.RequestCount()) or 0
+  if n == shownCount then return end
+  shownCount = n
+  local label = n > 0 and format(L["%s (%d)"], TAB_NAMES[2], n) or TAB_NAMES[2]
+  local side = tabs[2]
+  if side.cbIcon then
+    if not side.cbBadge then
+      side.cbBadge = side:CreateFontString(nil, "OVERLAY", Font("NumberFontNormal", "GameFontHighlightSmall"))
+      side.cbBadge:SetPoint("BOTTOMRIGHT", side, "BOTTOMRIGHT", -9, 7)
+    end
+    side.cbBadge:SetText(n > 0 and n or "")
+  elseif side.SetText then
+    side:SetText(label)
+    if side.isPanelTab and PanelTemplates_TabResize then pcall(PanelTemplates_TabResize, side, 0) end
+  end
+  local top = topTabs[2]
+  if top then
+    if top.cbLabel then
+      top.cbLabel:SetText(label)
+      top:SetWidth(ceil(StringWidth(top.cbLabel)) + 16)
+    else
+      top:SetText(label)
+      if PanelTemplates_TabResize then pcall(PanelTemplates_TabResize, top, 0) end
+    end
+    if host and hostOpts[host] and hostOpts[host].topTabs then ArrangeTabs(host) end
+  end
+end
+
+-- Gamepad (C_GamePad enabled and the "gamepad" option on): D-pad up / down steps through the
+-- visible list, A does the selected row's main action (Find: whisper, else post; Requests: the
+-- red button's), B closes, the shoulder buttons switch tabs. Other buttons pass through.
+local function GamepadOn()
+  if not (C_GamePad and C_GamePad.IsEnabled and C_GamePad.IsEnabled()) then return false end
+  return not (type(CraftBoardDB) == "table" and CraftBoardDB.gamepad == false)
+end
+
+local function Step(t, down)
+  local list = t.results or {}
+  if #list == 0 then return end
+  local keyOf = t.keyOf or function(u) return u.recipeID end
+  local cur = t.selectedKey and t.selectedKey() or selectedID
+  local idx = 0
+  for i, u in ipairs(list) do
+    if keyOf(u) == cur then idx = i break end
+  end
+  idx = down and min(#list, idx + 1) or max(1, idx - 1)
+  local key = keyOf(list[idx])
+  if t.selectKey then t.selectKey(key) else UI.PickRecipe(key) end
+  if t.list then t.list:ScrollTo(list[idx].idx) end
+end
+
+local function OnPad(self, button)
+  local handled = true
+  if button == "PADDUP" or button == "PADDDOWN" then
+    Step(activeTab == 1 and find or reqs, button == "PADDDOWN")
+  elseif button == "PAD1" then
+    if activeTab == 2 then
+      UI.RequestPrimary()
+    elseif find.whisper and find.whisper:IsEnabled() then
+      find.whisper:Click()
+    elseif find.post and find.post:IsEnabled() then
+      find.post:Click()
+    end
+  elseif button == "PAD2" then
+    UI.Hide()
+  elseif button == "PADLSHOULDER" or button == "PADRSHOULDER" then
+    SelectTab(activeTab % #TAB_NAMES + 1)
+  else
+    handled = false
+  end
+  -- Let every button we don't use reach the game (keyboard propagation covers the gamepad on
+  -- clients without a separate gamepad call).
+  if not (InCombatLockdown and InCombatLockdown()) then
+    local propagate = self.SetPropagateGamePadInput or self.SetPropagateKeyboardInput
+    if propagate then pcall(propagate, self, not handled) end
+  end
+end
+
+function UI.SetupGamepad()
+  local on = GamepadOn()
+  for _, p in ipairs(panels) do
+    if p.EnableGamePadButton then
+      if not p.cbPad then
+        p.cbPad = true
+        p:SetScript("OnGamePadButtonDown", OnPad)
+      end
+      pcall(p.EnableGamePadButton, p, on)
+    end
+  end
+end
+end
+
 -- First tab's anchor on host h: the host's placeTabs(tab1, sideTabs) when given (returning false
 -- or failing means "use the default"), else side tabs off its TOPRIGHT at 0,-60 and bottom tabs
 -- under its bottom-left corner.
@@ -3540,6 +4164,7 @@ end
 local function OnContentShown()
   dirty = false
   SelectTab(activeTab)
+  UI.SetupGamepad()
   FocusSearch()
   if NS.Onboarding then NS.Onboarding.Check("shown") end
 end
@@ -3711,15 +4336,17 @@ function UI.Refresh()
   dirty = false
   REFRESH[activeTab](true)
   UI.RefreshStatus()
+  UI.UpdateBadge()
 end
 
 local scheduleRefresh = Debouncer(0.3, UI.Refresh)
 
 if NS.RegisterCallback then
   for _, ev in ipairs({ "RECIPES_UPDATED", "PEERS_UPDATED", "ITEM_NAMES_UPDATED", "INVENTORY_UPDATED", "POSTS_UPDATED",
-    "CHAT_SEEN_UPDATED", "BUSY_UPDATED" }) do
+    "CHAT_SEEN_UPDATED", "BUSY_UPDATED", "QUEUE_UPDATED", "COOLDOWNS_UPDATED", "CRAFTED_UPDATED", "IGNORE_UPDATED" }) do
     NS.RegisterCallback(owner, ev, scheduleRefresh)
   end
+  NS.RegisterCallback(owner, "OPTIONS_UPDATED", function() if panels[1] then UI.SetupGamepad() end end)
 end
 
 -- Public ------------------------------------------------------------------------

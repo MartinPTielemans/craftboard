@@ -20,13 +20,20 @@ Libs\LibDBIcon-1.0\lib.xml
 
 Core.lua
 Locales.lua
+Locales_deDE.lua
+Locales_frFR.lua
+Locales_esES.lua
 Options.lua
 Launcher.lua
 Recipes.lua
 Inventory.lua
+Cooldowns.lua
+Queue.lua
 Comm.lua
 ChatWatch.lua
+Trade.lua
 UI.lua
+Tooltips.lua
 Onboarding.lua
 Welcome.lua
 Hooks.lua

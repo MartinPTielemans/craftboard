@@ -61,7 +61,7 @@ end)
 
 -- DB
 local DEFAULTS = { chars = {}, peers = {}, posts = {}, realmChannel = true, guildShare = true, recipeNames = {}, tips = {},
-  autoBusy = true }
+  autoBusy = true, offered = {}, crafted = {}, backOnline = true, groupTooltips = true, gamepad = true }
 
 local function InitDB()
   if type(CraftBoardDB) ~= "table" then CraftBoardDB = {} end
@@ -95,6 +95,77 @@ function NS.UpdateIdentity()
   return NS.Me
 end
 
+-- Escape sequences off a chat line or peer string: colours (both "|cffRRGGBB" and Forever's
+-- named "|cnIQ1:" quality colours), "|r", links reduced to their "[Name]", textures, atlases.
+function NS.StripCodes(s)
+  if type(s) ~= "string" then return "" end
+  s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|cn[^:|]*:", ""):gsub("|r", ""):gsub("|H.-|h(.-)|h", "%1")
+  s = s:gsub("|T.-|t", ""):gsub("|A.-|a", "")
+  return s
+end
+
+-- Names ------------------------------------------------------------------------
+-- Characters are keyed "Name-Realm". Forever names are two words ("Raion Lyzl") and some APIs
+-- return only the first, so NS.SamePlayer also accepts a first-word match on the same realm.
+
+function NS.ShortName(full)
+  if type(full) ~= "string" then return "?" end
+  if Ambiguate then return Ambiguate(full, "none") end
+  return full:match("^[^%-]+") or full
+end
+
+local function SplitName(full)
+  local name, realm = full:match("^(.-)%-([^%-]+)$")
+  return name or full, realm
+end
+
+-- "Name" (my realm), "Name-Realm" or a unit's name and realm -> "Name-Realm", or nil.
+function NS.FullName(name, realm)
+  if type(name) ~= "string" or name == "" or name:find("[|%c]") then return nil end
+  if type(realm) == "string" and realm ~= "" then return name .. "-" .. realm:gsub("[%s%-]", "") end
+  if name:find("-", 1, true) then return name end
+  local mine = NS.Realm or (GetNormalizedRealmName and GetNormalizedRealmName())
+  if type(mine) ~= "string" or mine == "" then return nil end
+  return name .. "-" .. mine
+end
+
+function NS.SamePlayer(a, b)
+  if type(a) ~= "string" or type(b) ~= "string" then return false end
+  if a == b then return true end
+  local na, ra = SplitName(a)
+  local nb, rb = SplitName(b)
+  if ra ~= rb then return false end
+  return na:match("^(%S+)") == nb:match("^(%S+)")
+end
+
+-- On my ignore list. Never errors; unknown API = not ignored.
+function NS.IsIgnored(full)
+  if type(full) ~= "string" or full == "" then return false end
+  local check = (C_FriendList and C_FriendList.IsIgnored) or IsIgnored
+  if not check then return false end
+  local ok, yes = pcall(check, NS.ShortName(full))
+  return ok and yes and true or false
+end
+
+-- Party / raid members other than me: list of "Name-Realm".
+function NS.GroupMembers()
+  local out = {}
+  if not (IsInGroup and IsInGroup() and GetNumGroupMembers and UnitName) then return out end
+  local raid = IsInRaid and IsInRaid()
+  local n = GetNumGroupMembers() or 0
+  for i = 1, raid and n or n - 1 do
+    local unit = (raid and "raid" or "party") .. i
+    if not (UnitIsUnit and UnitIsUnit(unit, "player")) then
+      local name, realm = UnitName(unit)
+      local full = NS.FullName(name, realm)
+      if full then out[#out + 1] = full end
+    end
+  end
+  return out
+end
+
+NS.Register("IGNORELIST_UPDATE", function() NS.Fire("IGNORE_UPDATED") end)
+
 NS.Register("ADDON_LOADED", function(_, name)
   if name == ADDON then
     InitDB()
@@ -124,6 +195,7 @@ local function PrintHelp()
   NS.Print(L["/cb options - open the settings panel"])
   NS.Print(L["/cb welcome - show the welcome window again"])
   NS.Print(L["/cb busy - toggle busy (the board won't whisper you)"])
+  NS.Print(L["/cb cd - crafting cooldowns on your characters"])
   NS.Print(L["/cb debug - list known peers"])
   NS.Print(L["/cb help - this help"])
 end
@@ -196,6 +268,8 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
       table.sort(names)
       NS.Print(string.format(L["accepted channels: %s"], #names > 0 and table.concat(names, ", ") or L["none yet"]))
     end
+  elseif cmd == "cd" or cmd == "cooldowns" then
+    if NS.Cooldowns and NS.Cooldowns.Print then NS.Cooldowns.Print() end
   elseif cmd == "busy" then
     if NS.Comm and NS.Comm.ToggleBusy then NS.Comm.ToggleBusy() end
   elseif cmd == "frames" then

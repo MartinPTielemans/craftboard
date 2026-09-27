@@ -28,10 +28,16 @@ CurseForge app and WowUp under the Forever game version.
 - **Seen in chat.** Players asking for a crafter in Trade or General ("LF enchanter", "WTB [item]")
   are listed on the Requests tab, with a green check when you can make it. This works even when
   nobody else on your realm runs CraftBoard.
+- **Queue and chains.** Queue the requests you take on and see the reagents for all of them at
+  once. When a craft needs an intermediate someone else makes, post linked orders for it.
+- **Trade window help.** One click casts a requested enchant on your partner's item, and
+  CraftBoard privately counts how often you've crafted for each other.
+- **Cooldowns.** Transmute and Mooncloth cooldowns show next to crafters; `/cb cd` lists yours.
 - **Busy mode.** Mark yourself busy and other users see you greyed out and can't whisper you from
   the board. It turns on by itself in dungeons, raids and combat.
 - **Advertise.** One button posts a single plain line to Trade for players without the addon, at
   most once a minute.
+- **In your language.** English, German, French and Spanish.
 - **Easy to reach.** Minimap button, addon compartment, a key binding, and `/cb`.
 
 ## Principles
@@ -51,6 +57,7 @@ CurseForge app and WowUp under the Forever game version.
 |---|---|
 | `/cb` | Open or close the board |
 | `/cb busy` | Toggle busy |
+| `/cb cd` | List crafting cooldowns on your characters |
 | `/cb scan` | Rescan the open profession window |
 | `/cb options` | Open the settings |
 | `/cb welcome` | Show the welcome window again |
