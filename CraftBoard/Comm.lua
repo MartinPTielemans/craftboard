@@ -40,6 +40,7 @@ local ONLINE_WINDOW = 15 * 60
 local PEER_TTL = 30 * 86400
 local POST_TTL = 24 * 3600
 local MAX_POSTS_PER_SENDER = 5
+local MAX_REPEATED_X = 20         -- my retractions re-sent with each hello
 local MAX_POSTS = 300
 local POST_GAP = 10               -- our own post rate limit
 local INBOUND_WINDOW = 60
@@ -91,6 +92,14 @@ local function Retracted()
   if type(CraftBoardDB) ~= "table" then return {} end
   if type(CraftBoardDB.retracted) ~= "table" then CraftBoardDB.retracted = {} end
   return CraftBoardDB.retracted
+end
+
+-- My own retracted post ids ([id] = time): their X goes out again with every hello for the post
+-- lifetime, like the posts themselves, so peers who were offline for it still learn of it.
+local function MyRetracted()
+  if type(CraftBoardDB) ~= "table" then return {} end
+  if type(CraftBoardDB.myRetracted) ~= "table" then CraftBoardDB.myRetracted = {} end
+  return CraftBoardDB.myRetracted
 end
 local pendingXTimer = false
 
@@ -583,8 +592,10 @@ local function PrunePosts()
       db.posts[id] = nil
     end
   end
-  for id, t in pairs(Retracted()) do
-    if type(t) ~= "number" or t < cutoff then Retracted()[id] = nil end
+  for _, tomb in ipairs({ Retracted(), MyRetracted() }) do
+    for id, t in pairs(tomb) do
+      if type(t) ~= "number" or t < cutoff then tomb[id] = nil end
+    end
   end
   if type(db.offered) == "table" then
     for id in pairs(db.offered) do
@@ -614,6 +625,11 @@ function SendMyPosts(dist)
     if type(p) == "table" and p.from == me and type(p.t) == "number" and now - p.t < POST_TTL then
       local target = dist == "CHANNEL" and channelId or nil
       Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa }, dist, target, "BULK")
+    end
+  end
+  for id, t in pairs(MyRetracted()) do
+    if type(t) == "number" and now - t < POST_TTL then
+      Send("X", { v = VERSION, id = id }, dist, dist == "CHANNEL" and channelId or nil, "BULK")
     end
   end
 end
@@ -700,6 +716,15 @@ function Comm.Retract(id)
   db.posts[id] = nil
   if p.from == me then
     Retracted()[id] = time()
+    local mineX = MyRetracted()
+    mineX[id] = time()
+    -- Repeated with every hello, so keep the newest few (older ones have reached most peers).
+    local n, oldest, oldT = 0, nil, nil
+    for rid, t in pairs(mineX) do
+      n = n + 1
+      if not oldT or t < oldT then oldest, oldT = rid, t end
+    end
+    if n > MAX_REPEATED_X then mineX[oldest] = nil end
     SendRetract(id)
     for cid, c in pairs(db.posts) do
       if type(c) == "table" and c.pa == id and c.from == me then
@@ -870,7 +895,12 @@ function handlers.H(full, data)
     p.cd = cd
     if changed then Fire("PEERS_UPDATED") end
   end
-  if data.l == true then Comm.NoteBackOnline(full) end
+  -- Their posts follow the login hello: check once they have had time to arrive (the second
+  -- check only speaks if the first found nothing; NoteBackOnline rate-limits itself).
+  if data.l == true and C_Timer and C_Timer.After then
+    C_Timer.After(5, function() Comm.NoteBackOnline(full) end)
+    C_Timer.After(20, function() Comm.NoteBackOnline(full) end)
+  end
   local profs = CleanProfs(data.profs)
   if profs then p.profs = profs end
   if (p.busy and true or false) ~= busy then
@@ -990,10 +1020,22 @@ function handlers.X(full, data)
   if Duplicate(full, "X", id) then return end
   Touch(full)
   local db = DB()
-  local p = db and db.posts[id]
-  if type(p) == "table" and p.from == full then
+  if not db then return end
+  local p = db.posts[id]
+  -- The sender must own the post: as stored, or (a post we never saw, e.g. an X repeated with a
+  -- later hello) by the author in its id ("Name-Realm:time:n").
+  local owner = type(p) == "table" and p.from or id:match("^(.+):%d+:%d+$")
+  if owner and NS.SamePlayer(owner, full) then
     db.posts[id] = nil
-    Retracted()[id] = time()
+    if Retracted()[id] then
+      -- Already known: only children that arrived since need dropping.
+      local any = false
+      for _, c in pairs(db.posts) do
+        if type(c) == "table" and c.pa == id then any = true break end
+      end
+      if not any then return end
+    end
+    Retracted()[id] = Retracted()[id] or time()
     -- Its linked orders go with it: mine are retracted for everyone; other players' are dropped
     -- here (their authors retract them too, or, if offline now, get them dropped on arrival).
     local me = MyKey()

@@ -3053,8 +3053,9 @@ function R.PostDetail(e)
   R.SetInfo(lines)
 
   -- Intermediates other players make, not yet posted as linked orders.
+  -- Only for the current character's own recipe: an alt's shortages aren't in these bags.
   local needs = {}
-  for _, n in ipairs(Chain.LinkedNeeds(missing)) do
+  for _, n in ipairs(rec and know.current and Chain.LinkedNeeds(missing) or {}) do
     if not linked[n.itemID] then needs[#needs + 1] = n end
   end
   reqs.linkNeeds = needs
