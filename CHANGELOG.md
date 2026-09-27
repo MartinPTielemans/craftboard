@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-09-27
+
 ### Fixed
 - Your own character no longer shows up as a peer ("1 crafter online" with nobody else installed).
 - Adverts with bracketed words like [PvP] are no longer read as crafting requests; a plain
