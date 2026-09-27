@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- First login after install shows a welcome dialog with an "Open Professions" button instead of a chat line.
+- "Show tips again" now opens the window and plays the three tips straight away.
+- Advertise defaults to the Trade channel.
+
 ### Added
 - Minimap button (LibDataBroker launcher shown by LibDBIcon): left-click opens the window,
   right-click opens the settings, shift-left-click rescans the open profession window. The

@@ -89,12 +89,19 @@ NS.Register("PLAYER_LOGIN", function()
   Launcher.Register()
   if type(CraftBoardDB) == "table" and not CraftBoardDB.seenWelcome then
     CraftBoardDB.seenWelcome = true
-    -- Not NS.Print: its "CraftBoard:" prefix would repeat the name.
-    local msg = L["CraftBoard loaded. Minimap button, /cb, or set a key in Key Bindings."]
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-      DEFAULT_CHAT_FRAME:AddMessage(msg, 0.2, 0.8, 1)
+    -- First login after install: one Blizzard-style dialog, like other addons' first-run popups.
+    if StaticPopupDialogs and StaticPopup_Show then
+      local opener = NS.Onboarding and NS.Onboarding.ProfessionsOpener and NS.Onboarding.ProfessionsOpener()
+      StaticPopupDialogs["CRAFTBOARD_WELCOME"] = {
+        text = L["Welcome to CraftBoard.\n\nOpen each of your profession windows once so your recipes are recorded and shared with other CraftBoard users.\n\nOpen the board any time from the minimap button, the Professions window, or /cb."],
+        button1 = opener and L["Open Professions"] or OKAY,
+        button2 = opener and L["Later"] or nil,
+        OnAccept = function() if opener then opener() end end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+      }
+      C_Timer.After(3, function() StaticPopup_Show("CRAFTBOARD_WELCOME") end)
     else
-      print(msg)
+      NS.Print(L["CraftBoard loaded. Minimap button, /cb, or set a key in Key Bindings."])
     end
   end
 end)

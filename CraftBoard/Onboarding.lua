@@ -20,6 +20,7 @@ local TEXT = {
 
 local showing = {}       -- [key] = parent frame the tip was shown on (this session)
 local recorded = false   -- RECIPES_UPDATED with recipes seen this session
+local tour = false          -- set by Reset so the tour plays even with recipes recorded
 local openButton         -- "Open Professions" under the scan tip
 
 local function Available()
@@ -128,6 +129,7 @@ local function Show(key, parent, anchor, targetPoint, withButton)
     onAcknowledgeCallback = function()
       showing[key] = nil
       if key == "scan" then HideOpenButton() end
+      if tour and key ~= "request" then C_Timer.After(0.2, function() Onboarding.Check("shown") end) end
     end,
     onHideCallback = function()
       showing[key] = nil
@@ -165,15 +167,15 @@ function Onboarding.Check(context)
   local a = NS.UI and NS.UI.TipAnchors and NS.UI.TipAnchors()
   if not (a and a.shown) then return end
 
-  if not tips.scan and context == "shown" and a.findTab and a.list and MyRecipeCount() == 0 then
+  if not tips.scan and context == "shown" and a.findTab and a.list and (MyRecipeCount() == 0 or tour) then
     Show("scan", a.findPanel, a.list, "RightEdgeCenter", true)
     return
   end
-  if not tips.shared and recorded and not IsShowing("scan") and a.status then
+  if not tips.shared and (recorded or (tour and tips.scan)) and not IsShowing("scan") and a.status then
     Show("shared", a.frame, a.status, "BottomEdgeCenter")
     return
   end
-  if not tips.request and context == "selected" and tips.shared and not IsShowing("shared")
+  if not tips.request and (context == "selected" or (tour and context == "shown")) and tips.shared and not IsShowing("shared")
     and a.findTab and a.post then
     Show("request", a.findPanel, a.post, "TopEdgeCenter")
   end
@@ -190,7 +192,9 @@ function Onboarding.Reset()
   end
   HideOpenButton()
   if type(CraftBoardDB) == "table" then CraftBoardDB.tips = {} end
-  NS.Print(L["Tips will show again."])
+  tour = true
+  if NS.UI and NS.UI.Show then NS.UI.Show() end
+  Onboarding.Check("shown")
 end
 
 if NS.RegisterCallback then

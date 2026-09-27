@@ -2152,8 +2152,8 @@ end
 function AdvertiseChoice()
   if NS.Options and NS.Options.AdvertiseChannel then return NS.Options.AdvertiseChannel() end
   local v = type(CraftBoardDB) == "table" and CraftBoardDB.advertiseChannel
-  if v == "Trade" or v == "Off" then return v end
-  return "General"
+  if v == "General" or v == "Off" then return v end
+  return "Trade"
 end
 
 -- Joined channel id for "General" / "Trade" ("General - Orgrimmar", "Trade - City"), or nil.

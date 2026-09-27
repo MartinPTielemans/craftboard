@@ -186,7 +186,8 @@ local enUS = {
   "Your recipes are now shared with guildmates and realm players who run CraftBoard. Everyone on the board appears in Find.",
   "Post a request to the board, or whisper a crafter directly.",
   "Open Professions",
-  "Tips will show again.",
+  "Later",
+  "Welcome to CraftBoard.\n\nOpen each of your profession windows once so your recipes are recorded and shared with other CraftBoard users.\n\nOpen the board any time from the minimap button, the Professions window, or /cb.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

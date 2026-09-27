@@ -77,17 +77,17 @@ local TIPS_TIP = L["Shows the first-run tips on the CraftBoard window again."]
 
 -- Advertise channel: where Find's Advertise button posts its one line ("General" by default,
 -- "Trade" (cities only), or "Off").
-local ADVERTISE = { "General", "Trade", "Off" }
+local ADVERTISE = { "Trade", "General", "Off" }
 local ADVERTISE_LABEL = { General = L["General"], Trade = L["Trade"], Off = L["Off"] }
 
 function Options.AdvertiseChannel()
   local v = type(CraftBoardDB) == "table" and CraftBoardDB.advertiseChannel
-  if v == "Trade" or v == "Off" then return v end
-  return "General"
+  if v == "General" or v == "Off" then return v end
+  return "Trade"
 end
 
 function Options.SetAdvertiseChannel(v)
-  if v ~= "Trade" and v ~= "Off" then v = "General" end
+  if v ~= "General" and v ~= "Off" then v = "Trade" end
   if type(CraftBoardDB) == "table" then CraftBoardDB.advertiseChannel = v end
   if NS.UI and NS.UI.Refresh then NS.UI.Refresh() end
 end
