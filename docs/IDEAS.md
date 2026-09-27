@@ -28,3 +28,15 @@ purchasable. Shipped in 0.9.2.
 
 ## Chat watch tuning (in progress)
 Detector must be tuned on real Trade lines (`CraftBoardDB.chatlog`), not synthetic ones.
+
+## Owner verdicts on the ambitious list (2026-09-27)
+- **Rejected:** orders by mail (requires too much trust), web board with a desktop uploader.
+- **Wanted:** multi-crafter chains (a request missing an intermediate splits into linked orders for
+  each crafter, e.g. Toughened Leather Gloves needs an alchemist for Elixir of Lesser Defense).
+- **Maybe:** realm demand insights (most-requested crafts, recipes wanted but rarely known);
+  crowd-sourced recipe sources (record trainer / vendor / drop when a recipe is learned).
+- **Open question:** a board that persists while authors are offline (peers relay open posts).
+- **Wanted, small:** crafter queue with total mats; one-click enchant in the trade window via a
+  secure button; cooldown sharing (transmutes, Mooncloth); private "crafted for you N times";
+  respect the ignore list; crafters-in-your-group tooltips; gamepad support; full UI translations
+  (deDE, frFR, esES).
