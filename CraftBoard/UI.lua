@@ -3484,7 +3484,8 @@ local function Annotate()
     local rec = s.recipeID and NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(s.recipeID) or nil
     local out = rec and type(rec.o) == "number" and rec.o or nil
     local e = {
-      chat = true, seen = s, id = "chat:" .. s.from, ready = CW.CanHelp(s) and true or false, rec = rec,
+      -- The ask is part of the id, so a new ask from the same player isn't taken for a queued one.
+      chat = true, seen = s, id = "chat:" .. s.from .. ":" .. (s.itemName or s.prof or ""), ready = CW.CanHelp(s) and true or false, rec = rec,
       name = title, label = (s.qty or 1) > 1 and (format(L["%dx"], s.qty) .. " " .. title) or title,
       lname = strlower(title .. " " .. (s.text or "")), lfrom = strlower(Short(s.from)),
       knownOn = s.knownOn, t = s.t, outputItemID = out,
@@ -4346,11 +4347,16 @@ end
 
 local scheduleRefresh = Debouncer(0.3, UI.Refresh)
 
--- Cooldown times on crafter rows ("4h") count down: re-fill the visible crafter rows once a
--- minute while Find is showing (only the few visible rows are touched).
+-- Once a minute while the window is up: cooldown times on crafter rows count down (Find: only
+-- the few visible rows are re-filled), and request ages and dimming move on (Requests).
 if C_Timer and C_Timer.NewTicker then
   C_Timer.NewTicker(60, function()
-    if activeTab == 1 and find.entry and find.crafters and UI.IsShown() then find.crafters:Render() end
+    if not UI.IsShown() then return end
+    if activeTab == 1 and find.entry and find.crafters then
+      find.crafters:Render()
+    elseif activeTab == 2 then
+      UI.RefreshRequests(true)
+    end
   end)
 end
 

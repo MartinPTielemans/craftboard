@@ -305,6 +305,8 @@ local function ReadRecipe(recipeID, info, profID, prev)
       end
     end
   end
+  -- A cooldown seen running once (Cooldowns.FromTradeSkill) stays known across rescans.
+  if prev and prev.cdr then rec.cdr = true end
   if not rec.o and TSUI.GetRecipeOutputItemData then
     local ok, out = pcall(TSUI.GetRecipeOutputItemData, recipeID)
     if ok and type(out) == "table" then rec.o = out.itemID end

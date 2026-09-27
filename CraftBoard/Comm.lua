@@ -77,7 +77,7 @@ local sentBusy = {}       -- [dist] = busy flag carried by the last hello sent t
 local busyPending = false -- a busy hello is scheduled
 local loginHello = {}     -- [dist] = true once the login hello (l=true) went out there
 local backAlerted = {}    -- [peer] = time of the last back-online notice
-local pendingX = {}       -- [post id] = true: my retractions waiting for sending to be allowed
+local pendingX = {}       -- [post id] = { dists = {[dist]=true}, t= }: retractions not yet sent everywhere
 local pendingXTimer = false
 
 -- Helpers ---------------------------------------------------------------
@@ -646,27 +646,39 @@ function Comm.PostRequest(itemID, qty, note, parent)
   return id
 end
 
--- Broadcast X for one of my posts; in combat or chat lockdown it waits and is retried, so peers
--- never keep a post I already dropped.
-local function SendRetract(id)
-  if CanSend() and #Broadcast("X", { v = VERSION, id = id }) > 0 then return end
-  if not (InGuild() and GuildShareOn()) and not (RealmChannelOn() and ResolveChannel()) then return end
-  pendingX[id] = true
-  if pendingXTimer or not (C_Timer and C_Timer.After) then return end
-  pendingXTimer = true
-  local function retry()
-    pendingXTimer = false
-    if not CanSend() then
-      pendingXTimer = true
-      C_Timer.After(15, retry)
-      return
-    end
-    for pid in pairs(pendingX) do
-      pendingX[pid] = nil
-      SendRetract(pid)
+-- Broadcast X for one of my posts on every distribution it may have reached (guild, realm
+-- channel). A distribution that can't be sent to right now (combat, chat lockdown, channel not
+-- joined yet) keeps it pending and is retried every 15 s for as long as the post would have
+-- lived, so peers never keep a post I already dropped. Distributions turned off are skipped.
+local SendRetract
+local function RetryRetracts()
+  pendingXTimer = false
+  local now = time()
+  for pid, e in pairs(pendingX) do
+    pendingX[pid] = nil
+    if now - e.t < POST_TTL then SendRetract(pid, e.dists, e.t) end
+  end
+end
+
+function SendRetract(id, dists, since)
+  dists = dists or { GUILD = true, CHANNEL = true }
+  local left
+  for dist in pairs(dists) do
+    local wanted = (dist == "GUILD" and InGuild() and GuildShareOn()) or (dist == "CHANNEL" and RealmChannelOn())
+    if wanted then
+      local sent = CanSend() and DistAvailable(dist)
+        and Send("X", { v = VERSION, id = id }, dist, dist == "CHANNEL" and channelId or nil)
+      if not sent then
+        left = left or {}
+        left[dist] = true
+      end
     end
   end
-  C_Timer.After(15, retry)
+  if not left then return end
+  pendingX[id] = { dists = left, t = since or time() }
+  if pendingXTimer or not (C_Timer and C_Timer.After) then return end
+  pendingXTimer = true
+  C_Timer.After(15, RetryRetracts)
 end
 
 -- Retracting one of my posts also retracts the linked orders posted for it.
