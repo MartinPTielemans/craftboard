@@ -77,6 +77,8 @@ local sentBusy = {}       -- [dist] = busy flag carried by the last hello sent t
 local busyPending = false -- a busy hello is scheduled
 local loginHello = {}     -- [dist] = true once the login hello (l=true) went out there
 local backAlerted = {}    -- [peer] = time of the last back-online notice
+local pendingX = {}       -- [post id] = true: my retractions waiting for sending to be allowed
+local pendingXTimer = false
 
 -- Helpers ---------------------------------------------------------------
 
@@ -644,6 +646,29 @@ function Comm.PostRequest(itemID, qty, note, parent)
   return id
 end
 
+-- Broadcast X for one of my posts; in combat or chat lockdown it waits and is retried, so peers
+-- never keep a post I already dropped.
+local function SendRetract(id)
+  if CanSend() and #Broadcast("X", { v = VERSION, id = id }) > 0 then return end
+  if not (InGuild() and GuildShareOn()) and not (RealmChannelOn() and ResolveChannel()) then return end
+  pendingX[id] = true
+  if pendingXTimer or not (C_Timer and C_Timer.After) then return end
+  pendingXTimer = true
+  local function retry()
+    pendingXTimer = false
+    if not CanSend() then
+      pendingXTimer = true
+      C_Timer.After(15, retry)
+      return
+    end
+    for pid in pairs(pendingX) do
+      pendingX[pid] = nil
+      SendRetract(pid)
+    end
+  end
+  C_Timer.After(15, retry)
+end
+
 -- Retracting one of my posts also retracts the linked orders posted for it.
 function Comm.Retract(id)
   local db, me = DB(), MyKey()
@@ -652,11 +677,11 @@ function Comm.Retract(id)
   if not p then return false end
   db.posts[id] = nil
   if p.from == me then
-    Broadcast("X", { v = VERSION, id = id })
+    SendRetract(id)
     for cid, c in pairs(db.posts) do
       if type(c) == "table" and c.pa == id and c.from == me then
         db.posts[cid] = nil
-        Broadcast("X", { v = VERSION, id = cid })
+        SendRetract(cid)
       end
     end
   end

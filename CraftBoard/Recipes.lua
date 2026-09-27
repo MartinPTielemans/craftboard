@@ -272,6 +272,9 @@ local function ReadRecipe(recipeID, info, profID, prev)
   local schem = TSUI.GetRecipeSchematic and TSUI.GetRecipeSchematic(recipeID, false)
   if type(schem) == "table" then
     rec.o = schem.outputItemID
+    -- Items per craft (arrows, bullets...); only stored when more than one.
+    local y = tonumber(schem.quantityMin)
+    if y and y > 1 then rec.y = math.floor(y) end
     if not rec.n then rec.n = schem.name end
     if type(schem.reagentSlotSchematics) == "table" then
       for _, slot in ipairs(schem.reagentSlotSchematics) do

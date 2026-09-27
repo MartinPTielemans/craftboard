@@ -3903,6 +3903,7 @@ function ArrangeTabs(h)
   local top = hostOpts[h] and hostOpts[h].topTabs and true or false
   for _, t in ipairs(tabs) do t:SetShown(not top) end
   if top and not topTabs[1] then
+    UI.badgeCount = nil     -- new tab controls: the next UpdateBadge must label them
     for i, label in ipairs(TAB_NAMES) do topTabs[i] = TopTab(h, i, label) end
   end
   local right = 0
@@ -3936,13 +3937,12 @@ end
 do
 -- "Requests (2)": other players' requests I can craft. Top tabs carry it in their label; side
 -- tabs get a small number in the icon's corner.
-local shownCount
 function UI.UpdateBadge()
   if not tabs[2] then return end
   -- The Requests tab just counted while it is the one showing.
   local n = activeTab == 2 and reqs.count or (UI.RequestCount and UI.RequestCount()) or 0
-  if n == shownCount then return end
-  shownCount = n
+  if n == UI.badgeCount then return end
+  UI.badgeCount = n
   local label = n > 0 and format(L["%s (%d)"], TAB_NAMES[2], n) or TAB_NAMES[2]
   local side = tabs[2]
   if side.cbIcon then
@@ -4345,6 +4345,14 @@ function UI.Refresh()
 end
 
 local scheduleRefresh = Debouncer(0.3, UI.Refresh)
+
+-- Cooldown times on crafter rows ("4h") count down: re-fill the visible crafter rows once a
+-- minute while Find is showing (only the few visible rows are touched).
+if C_Timer and C_Timer.NewTicker then
+  C_Timer.NewTicker(60, function()
+    if activeTab == 1 and find.entry and find.crafters and UI.IsShown() then find.crafters:Render() end
+  end)
+end
 
 if NS.RegisterCallback then
   for _, ev in ipairs({ "RECIPES_UPDATED", "PEERS_UPDATED", "ITEM_NAMES_UPDATED", "INVENTORY_UPDATED", "POSTS_UPDATED",

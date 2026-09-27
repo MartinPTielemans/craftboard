@@ -38,10 +38,17 @@ local function ResolveRecord(recipe)
   return nil
 end
 
+-- Crafts needed for `count` items of a record's output (recipes may yield several per craft).
+function Inventory.CraftsFor(rec, count)
+  local y = type(rec) == "table" and tonumber(rec.y) or 1
+  return math.ceil((count or 1) / math.max(1, y or 1))
+end
+
+-- count: how many of the output item are wanted (default 1), turned into crafts by the yield.
 -- {ready=bool, reagents={ {itemID=,need=,have=} }, missing={ same, only short ones }, times=max crafts}
-function Inventory.CanCraft(recipe, times)
-  times = times or 1
+function Inventory.CanCraft(recipe, count)
   local rec = ResolveRecord(recipe)
+  local times = Inventory.CraftsFor(rec, count)
   local result = { ready = false, reagents = {}, missing = {}, times = 0 }
   if not rec or type(rec.r) ~= "table" then return result end
   local maxTimes
@@ -236,11 +243,12 @@ function NS.CanCraftItem(itemID)
 end
 
 -- Every reagent of a craft list with have/need, needs summed over the list:
--- list { {record=, qty=}, ... } -> { {itemID=, need=, have=, alts=}, ... } in first-seen order.
+-- list { {record=, qty= (output items)}, ... } -> { {itemID=, need=, have=, alts=}, ... } in first-seen order.
 function Inventory.Totals(list)
   local need, order, alts = {}, {}, {}
   for _, e in ipairs(list or {}) do
-    local rec, qty = e.record, e.qty or 1
+    local rec = e.record
+    local qty = Inventory.CraftsFor(rec, e.qty)
     if type(rec) == "table" and type(rec.r) == "table" then
       for _, reg in ipairs(rec.r) do
         local itemID, n = reg[1], reg[2]
