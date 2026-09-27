@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-09-27
+
 ### Fixed
 - Player names with a space (every Forever character) were rejected by the sync layer and the
   chat watcher, so peers and chat requests never appeared.
