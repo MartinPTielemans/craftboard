@@ -99,7 +99,10 @@ local C = {
 local EMPTY_RECIPES = L["Open a profession window to record your recipes."]
 local EMPTY_PEERS = L["No one on the board yet \226\128\148 guildmates who install CraftBoard appear here."]
 
-local frame                    -- main window, created on first show
+local frame                    -- standalone window, created on first show
+local host                     -- frame the content (pages, status line, side tabs) is in right now:
+                               -- the standalone window or Embed.lua's page in ProfessionsFrame
+local hostOpts = {}            -- [host frame] = options given to UI.BuildContent
 local tabs, panels = {}, {}
 local activeTab = 1
 local selectedID               -- recipeID selected in Find
@@ -227,12 +230,12 @@ end
 
 local function ShowTooltip(anchor, itemID, recipeID)
   if not GameTooltip then return end
-  -- Anchor to the window's right edge (past the side tabs) so the tooltip never covers the
+  -- Anchor to the host's right edge (past the side tabs) so the tooltip never covers the
   -- recipe page.
-  if frame and frame.GetRight then
-    GameTooltip:SetOwner(frame, "ANCHOR_NONE")
+  if host and host.GetRight then
+    GameTooltip:SetOwner(host, "ANCHOR_NONE")
     GameTooltip:ClearAllPoints()
-    GameTooltip:SetPoint("TOPLEFT", frame, "TOPRIGHT", sideTabs and 58 or 4, -30)
+    GameTooltip:SetPoint("TOPLEFT", host, "TOPRIGHT", sideTabs and 58 or 4, -30)
   else
     GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
   end
@@ -1832,9 +1835,10 @@ end
 
 local SetPortrait   -- Window section
 
--- Portrait: the selected profession's icon, else CraftBoard's own.
+-- Portrait: the selected profession's icon, else CraftBoard's own. Standalone window only:
+-- Blizzard's portrait on ProfessionsFrame is never touched.
 local function UpdatePortrait(profID)
-  if not (frame and MODERN) then return end
+  if not (frame and MODERN and host == frame) then return end
   local tex = (profID ~= nil and ProfIcon(profID)) or TEX.portrait
   if tex == portraitNow then return end
   portraitNow = tex
@@ -1848,7 +1852,8 @@ end
 -- magnifying glass (grey 0.6) at LEFT 1,-1, text (10 pt) and the "Search" hint 16 px in.
 -- Keys for the list t: Enter picks the arrowed or first visible entry, arrows move the
 -- selection through the visible entries (t.results), Escape clears the text first and then
--- closes the window. t.keyOf / t.selectedKey / t.selectKey map entries to the selection
+-- closes the standalone window (inside ProfessionsFrame it only lets go of the keyboard, so the
+-- next Escape closes Blizzard's window the usual way). t.keyOf / t.selectedKey / t.selectKey map entries to the selection
 -- (default: Find's recipe IDs).
 local function NewSearchBox(name, parent, t)
   local keyOf = t.keyOf or function(u) return u.recipeID end
@@ -1909,7 +1914,7 @@ local function NewSearchBox(name, parent, t)
       self:SetText("")
     else
       self:ClearFocus()
-      if frame then frame:Hide() end
+      if frame and host == frame then frame:Hide() end
     end
   end)
   box:SetScript("OnArrowPressed", function(_, key)
@@ -3005,14 +3010,15 @@ end
 
 local TAB_NAMES = { L["Find"], L["Requests"] }
 
-local BuildTabs
+local BuildTabs, SideTab
 do
 -- Side tab, like ProfessionsOverviewTab / ProfessionsNTab: 55x55, common-sidetab (55x60)
 -- behind a 50x50 icon at CENTER -4,0 (texcoords 0.031..0.969, masked by common-sidetab-mask),
--- common-sidetab-selected over it when selected and common-sidetab-hover as highlight. The
--- first hangs off the frame's TOPRIGHT at 0,-60, the others 2 px below each other.
-local function SideTab(f, i, label)
-  local tab = CreateFrame("Button", "CraftBoardFrameTab" .. i, f)
+-- common-sidetab-selected over it when selected (tab.cbSelected) and common-sidetab-hover as
+-- highlight. The first hangs off the host's TOPRIGHT at 0,-60 (or where the host's placeTabs
+-- puts it), the others 2 px below each other. Also Embed.lua's tab on ProfessionsFrame.
+function SideTab(parent, name, iconFile, label)
+  local tab = CreateFrame("Button", name, parent)
   tab:SetSize(55, 55)
   local bg = tab:CreateTexture(nil, "BACKGROUND")
   SetAtlasSized(bg, A.sidetab, 55, 60)
@@ -3020,7 +3026,7 @@ local function SideTab(f, i, label)
   local icon = tab:CreateTexture(nil, "ARTWORK")
   icon:SetSize(50, 50)
   icon:SetPoint("CENTER", -4, 0)
-  icon:SetTexture(TEX.tabs[i])
+  icon:SetTexture(iconFile)
   icon:SetTexCoord(0.03125, 0.96875, 0.03125, 0.96875)
   local mask = HasAtlas(A.sidetabMask) and tab.CreateMaskTexture and tab:CreateMaskTexture()
   if mask and icon.AddMaskTexture then
@@ -3048,21 +3054,20 @@ local function SideTab(f, i, label)
   end)
   tab:SetScript("OnLeave", HideTooltip)
   tab.text = label
+  tab.cbIcon = icon
   return tab
 end
 
 -- Side tabs when the common-sidetab atlases exist, else PanelTabButtonTemplate tabs under the
--- frame (else plain buttons).
+-- frame (else plain buttons). The first tab is placed by PlaceTabs.
 function BuildTabs(f)
   sideTabs = HasAtlases(A.sidetab, A.sidetabSel, A.sidetabHover)
   local usePanel = not sideTabs and HasTemplate("PanelTabButtonTemplate")
   for i, label in ipairs(TAB_NAMES) do
     local tab
     if sideTabs then
-      tab = SideTab(f, i, label)
-      if i == 1 then
-        tab:SetPoint("TOPLEFT", f, "TOPRIGHT", 0, -60)
-      else
+      tab = SideTab(f, "CraftBoardFrameTab" .. i, TEX.tabs[i], label)
+      if i > 1 then
         tab:SetPoint("TOPLEFT", tabs[i - 1], "BOTTOMLEFT", 0, -2)
       end
     elseif usePanel then
@@ -3072,22 +3077,16 @@ function BuildTabs(f)
         tab.isPanelTab = true
         if tab.Text then tab.Text:SetText(label) else tab:SetText(label) end
         if PanelTemplates_TabResize then pcall(PanelTemplates_TabResize, tab, 0) end
-        if i == 1 then
-          tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 11, 2)
-        else
-          tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", 3, 0)
-        end
+        if i > 1 then tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", 3, 0) end
+        tab.cbKind = "panel"
       else
         usePanel = false
       end
     end
     if not tab then
       tab = PanelButton(f, label, 90, 22)
-      if i == 1 then
-        tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 8, 0)
-      else
-        tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", 2, 0)
-      end
+      if i > 1 then tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", 2, 0) end
+      tab.cbKind = "plain"
     end
     tab:SetID(i)
     tab:SetScript("OnClick", function(self)
@@ -3098,6 +3097,28 @@ function BuildTabs(f)
   end
 end
 
+end
+
+-- First tab's anchor on host h: the host's placeTabs(tab1, sideTabs) when given (returning false
+-- or failing means "use the default"), else side tabs off its TOPRIGHT at 0,-60 and bottom tabs
+-- under its bottom-left corner.
+local function PlaceTabs(h)
+  local tab = tabs[1]
+  if not tab then return end
+  tab:ClearAllPoints()
+  local opts = hostOpts[h]
+  if opts and opts.placeTabs then
+    local ok, placed = pcall(opts.placeTabs, tab, sideTabs)
+    if ok and placed ~= false then return end
+    tab:ClearAllPoints()
+  end
+  if sideTabs then
+    tab:SetPoint("TOPLEFT", h, "TOPRIGHT", 0, -60)
+  elseif tab.cbKind == "panel" then
+    tab:SetPoint("TOPLEFT", h, "BOTTOMLEFT", 11, 2)
+  else
+    tab:SetPoint("TOPLEFT", h, "BOTTOMLEFT", 8, 0)
+  end
 end
 
 -- Resize grip in the bottom-right corner (Blizzard's window has none; ours can grow).
@@ -3205,10 +3226,145 @@ local function SetupChrome(f, noPage)
   end
 end
 
+-- Content -------------------------------------------------------------------------
+-- The Find / Requests pages, the status line and the Find / Requests tabs are built once, into
+-- the first host that shows them, and move (SetParent + re-anchor) to whichever host shows
+-- next: the standalone window or Embed.lua's page inside ProfessionsFrame. Only one host holds
+-- them at a time; showing one hides the other. Every region inside uses the dump's
+-- frame-relative offsets, so any 673x594-or-larger host gets the CraftingPage layout.
+
+local function OnContentShown()
+  dirty = false
+  SelectTab(activeTab)
+  FocusSearch()
+  if NS.Onboarding then NS.Onboarding.Check("shown") end
+end
+
+local function OnContentHidden()
+  HideTooltip()
+  if find.search then find.search:ClearFocus() end
+  if reqs.search then reqs.search:ClearFocus() end
+end
+
+-- Builds the pages, status line and tabs into h (first time only).
+local function BuildParts(h)
+  host = h
+  LEFT_W = SplitWidth(h:GetWidth())
+  -- Pages cover the whole host, like CraftingPage.
+  for i = 1, #TAB_NAMES do
+    local p = CreateFrame("Frame", nil, h)
+    p:SetAllPoints()
+    p:Hide()
+    panels[i] = p
+  end
+  statusLine = NewStatusLine(h)
+
+  BuildFind(panels[1])
+  BuildRequests(panels[2])
+  BuildTabs(h)
+  PlaceTabs(h)
+  splitDone = false
+  LayoutSplit(h:GetWidth())
+
+  local db = UIDB()
+  if db then
+    -- Saved by the three-tab window (Find / Mine / Requests): Mine opens Find, Requests stays.
+    if db.tabs ~= 2 then
+      if db.tab == 3 then db.tab = 2 elseif db.tab == 2 then db.tab = 1 end
+      db.tabs, db.showAll = 2, nil
+    end
+    if type(db.tab) == "number" and TAB_NAMES[db.tab] then activeTab = db.tab end
+  end
+end
+
+-- Moves the content into h (building it on first use); hides the host it leaves.
+local function Attach(h)
+  if host == h then return end
+  if not panels[1] then
+    BuildParts(h)
+    return
+  end
+  local old = host
+  host = h
+  local level = (h.GetFrameLevel and h:GetFrameLevel() or 0) + 1
+  local strata = h.GetFrameStrata and h:GetFrameStrata()
+  local function move(f)
+    f:SetParent(h)
+    if strata and f.SetFrameStrata then f:SetFrameStrata(strata) end
+    if f.SetFrameLevel then f:SetFrameLevel(level) end
+  end
+  for _, p in ipairs(panels) do
+    move(p)
+    p:ClearAllPoints()
+    p:SetAllPoints(h)
+  end
+  move(statusLine)
+  statusLine:ClearAllPoints()
+  statusLine:SetPoint("TOPLEFT", h, "TOPLEFT", G.statusX, G.statusY)
+  for _, tab in ipairs(tabs) do move(tab) end
+  PlaceTabs(h)
+  splitDone = false
+  LayoutSplit(h:GetWidth())
+  if old and old ~= h and old:IsShown() then old:Hide() end
+end
+
+-- Registers h as a host for the content and returns its controller:
+--   ctl:Show()           show h with the content in it (built on first show)
+--   ctl:Hide()           hide h
+--   ctl:IsShown()        the content is in h and h is visible
+--   ctl:Refresh()        refresh the visible tab
+--   ctl:SelectTab(i)     1 = Find, 2 = Requests (moves the content into h first)
+--   ctl:TipAnchors()     Onboarding's anchors while the content is in h, else nil
+-- opts.placeTabs(tab1, isSideTab): anchors the first Find / Requests tab for this host (the
+-- default hangs side tabs off the host's TOPRIGHT at 0,-60). h's OnShow moves the content in.
+function UI.BuildContent(h, opts)
+  if not h then return nil end
+  if not hostOpts[h] then
+    hostOpts[h] = opts or {}
+    -- Hooks, not SetScript: the portrait templates may have their own show/hide handlers.
+    h:HookScript("OnShow", function()
+      Attach(h)
+      OnContentShown()
+    end)
+    h:HookScript("OnHide", function()
+      if host == h then OnContentHidden() end
+    end)
+    h:HookScript("OnSizeChanged", function(_, w)
+      if host == h then LayoutSplit(w) end
+    end)
+  elseif opts then
+    hostOpts[h] = opts
+  end
+  local ctl = { host = h }
+  function ctl.Show()
+    if h:IsShown() then
+      Attach(h)
+    else
+      h:Show()
+    end
+  end
+  function ctl.Hide() h:Hide() end
+  function ctl.IsShown() return host == h and h:IsVisible() and true or false end
+  function ctl.Refresh() UI.Refresh() end
+  function ctl.SelectTab(i)
+    if not TAB_NAMES[i] then return end
+    Attach(h)
+    SelectTab(i)
+  end
+  function ctl.TipAnchors()
+    if host ~= h then return nil end
+    return UI.TipAnchors()
+  end
+  return ctl
+end
+
+-- Standalone window -------------------------------------------------------------
+
+local windowCtl
+
 local function Create()
   local f, modern = NewWindow()
   frame, MODERN = f, modern
-  LEFT_W = SplitWidth(WIDTH)
   f:Hide()
   f:SetSize(WIDTH, HEIGHT)
   f:SetFrameStrata("HIGH")
@@ -3232,53 +3388,16 @@ local function Create()
     SetupChrome(f)
     PortraitTooltip(f)
   end
-
-  -- Pages cover the whole frame, like CraftingPage; every region inside uses the dump's
-  -- frame-relative offsets.
-  for i = 1, #TAB_NAMES do
-    local p = CreateFrame("Frame", nil, f)
-    p:SetAllPoints()
-    p:Hide()
-    panels[i] = p
-  end
-  statusLine = NewStatusLine(f)
-
-  BuildFind(panels[1])
-  BuildRequests(panels[2])
-  BuildTabs(f)
   BuildResizeGrip(f)
-  LayoutSplit(f:GetWidth())
-  f:HookScript("OnSizeChanged", function(_, w) LayoutSplit(w) end)
-
   if UISpecialFrames then tinsert(UISpecialFrames, "CraftBoardFrame") end
-
-  -- Hooks, not SetScript: the portrait templates may have their own show/hide handlers.
-  f:HookScript("OnShow", function()
-    dirty = false
-    SelectTab(activeTab)
-    FocusSearch()
-    if NS.Onboarding then NS.Onboarding.Check("shown") end
-  end)
-  f:HookScript("OnHide", function()
-    HideTooltip()
-    if find.search then find.search:ClearFocus() end
-    if reqs.search then reqs.search:ClearFocus() end
-  end)
-
-  local db = UIDB()
-  if db then
-    -- Saved by the three-tab window (Find / Mine / Requests): Mine opens Find, Requests stays.
-    if db.tabs ~= 2 then
-      if db.tab == 3 then db.tab = 2 elseif db.tab == 2 then db.tab = 1 end
-      db.tabs, db.showAll = 2, nil
-    end
-    if type(db.tab) == "number" and TAB_NAMES[db.tab] then activeTab = db.tab end
-  end
+  windowCtl = UI.BuildContent(f)
+  -- Build now (hidden) so the window's parts exist before its first show, as before.
+  if not panels[1] then BuildParts(f) end
 end
 
 -- Refresh the visible tab (keeps scroll position); marks dirty while hidden.
 function UI.Refresh()
-  if not (frame and frame:IsShown()) then
+  if not (host and host:IsVisible()) then
     dirty = true
     return
   end
@@ -3296,26 +3415,48 @@ if NS.RegisterCallback then
 end
 
 -- Public ------------------------------------------------------------------------
+-- Show / Toggle open CraftBoard where it lives: as a tab of Blizzard's Professions window when
+-- Embed.lua can (see Embed.Open), else the standalone window.
+
+-- The standalone window, whatever the embedding.
+function UI.ShowWindow()
+  if not frame then Create() end
+  windowCtl.Show()
+end
+
+function UI.Window()
+  return frame
+end
+
+-- CraftBoard is on screen (standalone or inside ProfessionsFrame).
+function UI.IsShown()
+  return host ~= nil and host:IsVisible() and true or false
+end
 
 function UI.Show()
-  if not frame then Create() end
-  frame:Show()
+  local E = NS.Embed
+  if E and E.Open and E.Open() then return end
+  UI.ShowWindow()
 end
 
 function UI.Hide()
-  if frame then frame:Hide() end
+  if frame and frame:IsShown() then frame:Hide() end
+  local E = NS.Embed
+  if E and E.Close and host and host ~= frame then E.Close() end
 end
 
 function UI.Toggle()
-  if frame and frame:IsShown() then UI.Hide() else UI.Show() end
+  if UI.IsShown() then UI.Hide() else UI.Show() end
 end
 
--- Anchors for the first-run tips (Onboarding.lua); nil until the window exists.
+-- Anchors for the first-run tips (Onboarding.lua), from whichever host holds the content; nil
+-- until it has been built. embedded: the host is the page inside ProfessionsFrame.
 function UI.TipAnchors()
-  if not frame then return nil end
+  if not (host and panels[1]) then return nil end
   return {
-    frame = frame, shown = frame:IsShown() and true or false, findTab = activeTab == 1,
+    frame = host, shown = host:IsVisible() and true or false, findTab = activeTab == 1,
     findPanel = panels[1], list = find.list and find.list.box, status = statusLine, post = find.post,
+    embedded = host ~= frame,
   }
 end
 
@@ -3323,8 +3464,8 @@ function UI.IsDirty()
   return dirty
 end
 
--- The window's building blocks, for other CraftBoard windows (Welcome.lua): the same portrait
--- frame, chrome, buttons and slot atlases, each with the fallbacks above.
+-- The window's building blocks, for other CraftBoard windows (Welcome.lua, Embed.lua): the same
+-- portrait frame, chrome, buttons, side tab and slot atlases, each with the fallbacks above.
 UI.Kit = {
   NewWindow = NewWindow,            -- (globalName) -> frame, modern
   SetPortrait = SetPortrait,        -- (frame, texture)
@@ -3332,7 +3473,12 @@ UI.Kit = {
   SetupChrome = SetupChrome,        -- (frame, noPage)
   RedButton = RedButton,            -- (parent, text, width, height)
   PanelButton = PanelButton,        -- (parent, text, width, height)
+  SideTab = SideTab,                -- (parent, globalName, iconFile, tooltip) -> tab (.cbSelected)
   HasAtlas = HasAtlas,
+  HasAtlases = HasAtlases,
   Font = Font,
   slotBg = A.slotBg, slotFrame = A.slotFrame,
+  atlas = { frameBg = A.frameBg, pageBg = A.pageBg, sidetab = A.sidetab, sidetabMask = A.sidetabMask,
+    sidetabSel = A.sidetabSel, sidetabHover = A.sidetabHover },
+  portrait = TEX.portrait,
 }

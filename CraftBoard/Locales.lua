@@ -179,6 +179,10 @@ local enUS = {
   "Show",
   "Shows the CraftBoard welcome window again.",
 
+  -- Options / Embed: CraftBoard as a tab of the Professions window
+  "Open CraftBoard inside the Professions window",
+  "CraftBoard opens as a tab of the Professions window. Off: it always opens in its own window.",
+
   -- Launcher: minimap button, key binding
   "CraftBoard",
   "Toggle CraftBoard window",

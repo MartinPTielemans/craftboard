@@ -29,4 +29,5 @@ UI.lua
 Onboarding.lua
 Welcome.lua
 Hooks.lua
+Embed.lua
 Debug.lua

@@ -44,6 +44,16 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
    nothing that WoW's own UI already shows is repeated. No external UI libs. Status data from
    `NS.Comm.Status()` → `{peers, online, posts, channel, channelOn, guild}`.
    Design rules: Bind-on-Pickup outputs never appear in Find (they cannot be made for others).
+   The Find / Requests content is built by `NS.UI.BuildContent(host)` and moves between hosts
+   (one at a time): the standalone window or Embed.lua's page.
+6. `Embed.lua` — a CraftBoard side tab on Blizzard's `ProfessionsFrame` (under its lowest
+   side tab) and a 673x594 overlay page holding the same content. Never goes through Blizzard's
+   tab system (no AddNamedTab/SetTab calls, no fields written on Blizzard frames, no page
+   shown/hidden by us); Blizzard tab clicks hide the page via post-hooks. /cb, the minimap
+   button and the key binding open ProfessionsFrame on this tab when Blizzard_Professions is
+   loaded, the player has a profession and is out of combat; otherwise the standalone window.
+   Option "Open CraftBoard inside the Professions window" (default on). Hooks.lua's buttons
+   are hidden while the tab exists.
 
 ## Protocol (Comm.lua) — prefix `CBRD`, version byte first
 Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonChannel.

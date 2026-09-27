@@ -5,7 +5,8 @@
 --   shared   recipes were recorded this session and the window is shown -> the status line
 --   request  a recipe is picked in Find after "shared" has gone -> the Post request button
 -- UI calls Onboarding.Check("shown") when the window opens and Check("selected") when the player
--- picks a recipe; RECIPES_UPDATED is watched here.
+-- picks a recipe; RECIPES_UPDATED is watched here. Anchors come from UI.TipAnchors, i.e. from
+-- whichever host shows CraftBoard (standalone window or its tab in the Professions window).
 local ADDON, NS = ...
 
 local L = NS.L
@@ -88,19 +89,32 @@ local function HideOpenButton()
   if openButton then openButton:Hide() end
 end
 
-local function ShowOpenButton(parent, info, anchor)
-  local opener = ProfessionsOpener()
-  if not opener then return end
+-- What "Open Professions" under the scan tip does: inside the Professions window, step off our
+-- tab to Blizzard's page underneath (its profession tabs are right there); in the standalone
+-- window, open the profession book. nil when neither is possible.
+local function OpenAction(a)
+  if a and a.embedded and NS.Embed and NS.Embed.Deselect then
+    return function() NS.Embed.Deselect() end
+  end
+  if not ProfessionsOpener() then return nil end
+  return function()
+    local fn = ProfessionsOpener()
+    if fn then pcall(fn) end
+  end
+end
+
+local function ShowOpenButton(parent, info, anchor, action)
+  if not action then return end
   if not openButton then
     openButton = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     openButton:SetSize(140, 22)
     openButton:SetText(L["Open Professions"])
-    openButton:SetScript("OnClick", function()
+    openButton:SetScript("OnClick", function(self)
       if InCombatLockdown and InCombatLockdown() then return end
-      local fn = ProfessionsOpener()
-      if fn then pcall(fn) end
+      if self.cbAction then self.cbAction() end
     end)
   end
+  openButton.cbAction = action
   openButton:SetParent(parent)
   openButton:ClearAllPoints()
   local tip = TipFrame(info)
@@ -115,7 +129,8 @@ local function ShowOpenButton(parent, info, anchor)
   openButton:Show()
 end
 
-local function Show(key, parent, anchor, targetPoint, withButton)
+-- buttonAction: when given, an "Open Professions" button under the tip runs it.
+local function Show(key, parent, anchor, targetPoint, buttonAction)
   local tips = Tips()
   if not (tips and parent and anchor) then return false end
   local P = HelpTip.Point or {}
@@ -140,7 +155,7 @@ local function Show(key, parent, anchor, targetPoint, withButton)
   if not ok then return false end
   tips[key] = true
   showing[key] = parent
-  if withButton then ShowOpenButton(parent, info, anchor) end
+  if buttonAction then ShowOpenButton(parent, info, anchor, buttonAction) end
   return true
 end
 
@@ -168,7 +183,7 @@ function Onboarding.Check(context)
   if not (a and a.shown) then return end
 
   if not tips.scan and context == "shown" and a.findTab and a.list and (MyRecipeCount() == 0 or tour) then
-    Show("scan", a.findPanel, a.list, "RightEdgeCenter", true)
+    Show("scan", a.findPanel, a.list, "RightEdgeCenter", OpenAction(a))
     return
   end
   if not tips.shared and (recorded or (tour and tips.scan)) and not IsShowing("scan") and a.status then

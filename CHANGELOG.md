@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- CraftBoard now lives in Blizzard's Professions window as its own side tab (under the
+  profession tabs, note icon). Find and Requests are the same as in the standalone window, with
+  their tabs under CraftBoard's. Clicking a Blizzard tab goes back to Blizzard's page; Escape
+  closes the Professions window as usual. The minimap button, `/cb` and the key binding open the
+  Professions window on the CraftBoard tab once it has been opened this session; before that, in
+  combat, or without any profession they open the standalone window, which stays available.
+  "Open Professions" in the welcome window lands on the CraftBoard tab. The old "CraftBoard"
+  buttons on the Professions window are gone while the tab is there. CraftBoard never goes
+  through Blizzard's own tab switching, so crafting is unaffected.
 - First login after install shows a welcome window instead of a chat line (see Added).
 - "Show tips again" now opens the window and plays the three tips straight away.
 - Advertise defaults to the Trade channel.
@@ -18,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   minimap edge; the position is remembered. Also listed in the addon compartment (the addon
   list button by the minimap) on clients that have one.
 - "Show minimap button" option.
+- "Open CraftBoard inside the Professions window" option (on by default); off keeps CraftBoard
+  in its own window and brings back the CraftBoard buttons on the Professions window.
 - Key binding "Toggle CraftBoard window" under Key Bindings > AddOns > CraftBoard (no default key).
 - Welcome window, 3 s after the first login after install (waits for combat to end): the board
   art, three steps (record your recipes, find crafters, ask and offer) and an "Open Professions"

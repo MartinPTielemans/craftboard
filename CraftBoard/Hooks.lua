@@ -2,12 +2,29 @@
 -- Both Blizzard UIs are load-on-demand, so buttons are attached on ADDON_LOADED (or right away when
 -- they are already loaded). Plain, non-secure buttons parented to Blizzard frames; no hooks on
 -- secure code, no protected calls. If a frame is missing on this client we silently do nothing.
+-- When Embed.lua puts CraftBoard in the Professions window as a tab, it hides these buttons
+-- (Hooks.SetShown(false)); they stay the way in on clients where embedding is off or fails.
 local ADDON, NS = ...
 
 local L = NS.L
 local max = math.max
 
+local Hooks = {}
+NS.Hooks = Hooks
+
 local done = {}
+local buttons = {}
+local shown = true
+
+-- Shows or hides every CraftBoard button on Blizzard's windows, now and for ones made later.
+function Hooks.SetShown(v)
+  shown = v and true or false
+  for i = 1, #buttons do buttons[i]:SetShown(shown) end
+end
+
+function Hooks.Buttons()
+  return buttons
+end
 
 local function OnClick()
   if NS.UI and NS.UI.Toggle then NS.UI.Toggle() end
@@ -39,6 +56,8 @@ local function MakeButton(name, parent)
   b:SetScript("OnClick", OnClick)
   b:SetScript("OnEnter", OnEnter)
   b:SetScript("OnLeave", OnLeave)
+  buttons[#buttons + 1] = b
+  b:SetShown(shown)
   return b
 end
 

@@ -1,7 +1,8 @@
 -- CraftBoard Welcome: the first-run splash, in the main window's metal portrait frame.
 -- Hero art (Media\welcome, 400x200 under the title bar), three steps (slot-framed icon, gold
 -- title, grey line) and a button row: red "Open Professions" (or "Get started" when this client
--- has no way to open the profession book) and "Later".
+-- has no way to open the profession book) and "Later". "Open Professions" lands on CraftBoard's
+-- tab in the Professions window when that is on (Embed.lua).
 -- Shown once, 3 s after the first login after install (CraftBoardDB.seenWelcome), never in
 -- combat (waits for PLAYER_REGEN_ENABLED). /cb welcome and the options button reopen it.
 local ADDON, NS = ...
@@ -185,10 +186,15 @@ local function Create()
   -- Button row like the main window's (red button at BOTTOMRIGHT -9,7), Later to its left.
   openButton = (kit.RedButton or kit.PanelButton)(f, L["Open Professions"], 150, 28)
   openButton:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -9, 7)
+  -- With CraftBoard embedded in the Professions window this opens that window on our tab
+  -- (Embed.Open may load it first); otherwise just the profession book.
   openButton:SetScript("OnClick", function()
-    local fn = Opener()
     f:Hide()
-    if fn and not InCombat() then pcall(fn) end
+    if InCombat() then return end
+    local E = NS.Embed
+    if E and E.Open and E.Open(true) then return end
+    local fn = Opener()
+    if fn then pcall(fn) end
   end)
   laterButton = kit.PanelButton(f, L["Later"], 96, 22)
   laterButton:SetPoint("RIGHT", openButton, "LEFT", -8, 0)

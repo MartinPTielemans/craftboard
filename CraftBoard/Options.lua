@@ -65,6 +65,22 @@ end
 
 local MINIMAP_TIP = L["Show the CraftBoard button on the minimap. Drag it around the minimap edge to move it."]
 
+-- CraftBoard as a tab of the Professions window (Embed.lua): CraftBoardDB.embed, default on.
+local function GetEmbed()
+  return not (type(CraftBoardDB) == "table" and CraftBoardDB.embed == false)
+end
+
+local function SetEmbed(v)
+  v = v and true or false
+  if NS.Embed and NS.Embed.SetEnabled then
+    NS.Embed.SetEnabled(v)
+  elseif type(CraftBoardDB) == "table" then
+    CraftBoardDB.embed = v
+  end
+end
+
+local EMBED_TIP = L["CraftBoard opens as a tab of the Professions window. Off: it always opens in its own window."]
+
 local function ResetTips()
   if NS.Onboarding and NS.Onboarding.Reset then
     NS.Onboarding.Reset()
@@ -138,6 +154,10 @@ local function RegisterVertical()
   local minimap = S.RegisterProxySetting(category, "CRAFTBOARD_MINIMAP_BUTTON", bool,
     L["Show minimap button"], true, GetMinimap, SetMinimap)
   createCheckbox(category, minimap, MINIMAP_TIP)
+
+  local embed = S.RegisterProxySetting(category, "CRAFTBOARD_EMBED", bool,
+    L["Open CraftBoard inside the Professions window"], true, GetEmbed, SetEmbed)
+  createCheckbox(category, embed, EMBED_TIP)
 
   -- Advertise channel: a dropdown where the API has one, else a button that cycles.
   local dropdown = S.CreateDropdown and S.CreateControlTextContainer and pcall(function()
@@ -217,10 +237,11 @@ local function BuildPanel()
     L["Announce your recipes and board posts to guildmates who use CraftBoard."],
     -76, GetGuildShare, SetGuildShare)
   Check(L["Show minimap button"], MINIMAP_TIP, -104, GetMinimap, SetMinimap)
+  Check(L["Open CraftBoard inside the Professions window"], EMBED_TIP, -132, GetEmbed, SetEmbed)
 
   local advertise = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   advertise:SetSize(220, 22)
-  advertise:SetPoint("TOPLEFT", 20, -142)
+  advertise:SetPoint("TOPLEFT", 20, -170)
   advertise.label = L["Advertise channel"]
   advertise.tip = ADVERTISE_TIP
   local function syncAdvertise()
@@ -236,7 +257,7 @@ local function BuildPanel()
 
   local forget = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   forget:SetSize(180, 22)
-  forget:SetPoint("TOPLEFT", 20, -174)
+  forget:SetPoint("TOPLEFT", 20, -202)
   forget:SetText(L["Forget all peer data"])
   forget.label = L["Forget all peer data"]
   forget.tip = L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."]
@@ -246,7 +267,7 @@ local function BuildPanel()
 
   local tips = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   tips:SetSize(180, 22)
-  tips:SetPoint("TOPLEFT", 20, -206)
+  tips:SetPoint("TOPLEFT", 20, -234)
   tips:SetText(L["Show tips again"])
   tips.label = L["Show tips again"]
   tips.tip = TIPS_TIP
