@@ -3101,10 +3101,34 @@ end
 -- with a gold underline; otherwise a grey label. Template-free.
 local ArrangeTabs
 do
-local TOPTAB_X, TOPTAB_H, TOPTAB_GAP, TOPTAB_PAD = 10, 20, 2, 8
+-- Start at the rank bar's x (110) so the row clears the portrait, like Blizzard's own header.
+local TOPTAB_X, TOPTAB_H, TOPTAB_GAP, TOPTAB_PAD = 110, 20, 2, 8
 local STATUS_GAP = 12                   -- status line starts this far right of the last top tab
 
+-- Blizzard's standard panel tab (the gold tab shape used across the game) when the template
+-- exists; otherwise a flat text tab with a gold underline.
 local function TopTab(parent, i, label)
+  if HasTemplate("PanelTabButtonTemplate") then
+    local ok, b = pcall(CreateFrame, "Button", "CraftBoardTopTab" .. i, parent, "PanelTabButtonTemplate")
+    if ok and b and b.SetText then
+      b:SetText(label)
+      if PanelTemplates_TabResize then pcall(PanelTemplates_TabResize, b, 0) end
+      function b.cbSetSelected(on)
+        if on then
+          if PanelTemplates_SelectTab then PanelTemplates_SelectTab(b) end
+        elseif PanelTemplates_DeselectTab then
+          PanelTemplates_DeselectTab(b)
+        end
+      end
+      b.text = label
+      b:SetID(i)
+      b:SetScript("OnClick", function(self)
+        SelectTab(self:GetID())
+        if self:GetID() == 1 then FocusSearch() end
+      end)
+      return b
+    end
+  end
   local b = CreateFrame("Button", "CraftBoardTopTab" .. i, parent)
   b:SetHeight(TOPTAB_H)
   local tint = b:CreateTexture(nil, "BACKGROUND")
@@ -3149,7 +3173,8 @@ function ArrangeTabs(h)
     if t:GetParent() ~= h then t:SetParent(h) end
     t:ClearAllPoints()
     if i == 1 then
-      t:SetPoint("TOPLEFT", h, "TOPLEFT", TOPTAB_X, G.statusY + (TOPTAB_H - G.statusH) / 2)
+      local th = t:GetHeight() or TOPTAB_H
+      t:SetPoint("TOPLEFT", h, "TOPLEFT", TOPTAB_X, G.statusY + (th - G.statusH) / 2)
       right = TOPTAB_X
     else
       t:SetPoint("LEFT", topTabs[i - 1], "RIGHT", TOPTAB_GAP, 0)
