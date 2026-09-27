@@ -726,10 +726,12 @@ function Comm.Retract(id)
     end
     if n > MAX_REPEATED_X then mineX[oldest] = nil end
     SendRetract(id)
+    -- Its linked orders go too: mine are retracted for everyone; other players' are dropped
+    -- here (I never receive my own X, so nothing else would drop them on this client).
     for cid, c in pairs(db.posts) do
-      if type(c) == "table" and c.pa == id and c.from == me then
+      if type(c) == "table" and c.pa == id then
         db.posts[cid] = nil
-        SendRetract(cid)
+        if c.from == me then SendRetract(cid) end
       end
     end
   end

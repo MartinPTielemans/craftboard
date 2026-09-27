@@ -162,7 +162,8 @@ local function WantedEnchant(who)
     if x.who and NS.SamePlayer(x.who, who) then take(x.recipeID) end
   end
   for _, s in ipairs(NS.ChatWatch and NS.ChatWatch.Seen() or {}) do
-    if s.current and NS.SamePlayer(s.from, who) then take(s.recipeID) end
+    -- A line linking several items names no single enchant.
+    if s.current and not s.links and NS.SamePlayer(s.from, who) then take(s.recipeID) end
   end
   if n ~= 1 then return nil end
   return found, name

@@ -46,7 +46,9 @@ local PROF_WORDS = {
 local ASK = { " lf ", " looking for ", " need a ", " need an ", " wtb ", " anyone can ", " anyone who can ",
   " anyone that can " }
 local OFFER = { " wts ", " selling ", " lfw ", " can craft ", " crafting for tips ", " tips welcome ", " max ench " }
--- The asker brings the reagents.
+-- The asker brings the reagents (unless the line says they don't: NO_MATS).
+local NO_MATS = { " dont have ", " don t have ", " do not have ", " no mats ", " without mats ", " need mats ",
+  " havent got ", " haven t got ", " not have ", " no have " }
 local MATS = { " have mats ", " have the mats ", " have all mats ", " my mats ", " with mats ", " own mats ",
   " got mats ", " mats ready ", " i have mats " }
 
@@ -132,7 +134,7 @@ function ChatWatch.Detect(text)
   local qty = tonumber(s:match(" (%d+) ?x ") or s:match(" x ?(%d+) ") or "")
   if qty and (qty < 1 or qty > 200) then qty = nil end
   return { prof = prof and prof[1], profID = prof and prof[2], itemName = itemName,
-           links = #links > 1 and links or nil, mats = Has(s, MATS) or nil, qty = qty }
+           links = #links > 1 and links or nil, mats = (Has(s, MATS) and not Has(s, NO_MATS)) or nil, qty = qty }
 end
 
 -- Words that only restate "someone make this for me": the ask markers, fillers, counts and
