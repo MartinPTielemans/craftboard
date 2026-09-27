@@ -17,7 +17,30 @@ local TSUI = C_TradeSkillUI
 local KNOWN = {
   [18560] = true,   -- Mooncloth
   [17187] = true,   -- Transmute: Arcanite
+  [11479] = true,   -- Transmute: Iron to Gold
+  [11480] = true,   -- Transmute: Mithril to Truesilver
+  [17559] = true, [17560] = true, [17561] = true, [17562] = true,   -- elemental transmutes
+  [17563] = true, [17564] = true, [17565] = true, [17566] = true,
+  [25146] = true,   -- Transmute: Elemental Fire
 }
+
+-- The client's own word for "Transmute", from Transmute: Arcanite's localized name (the part
+-- before the colon), so other transmutes are recognised on any client language.
+local transmutePrefix
+local function TransmutePrefix()
+  if transmutePrefix ~= nil then return transmutePrefix end
+  local name
+  if C_Spell and C_Spell.GetSpellName then
+    local ok, n = pcall(C_Spell.GetSpellName, 17187)
+    if ok then name = n end
+  elseif GetSpellInfo then
+    local ok, n = pcall(GetSpellInfo, 17187)
+    if ok then name = n end
+  end
+  local prefix = type(name) == "string" and name:match("^([^:]+):")
+  if prefix then transmutePrefix = prefix end
+  return prefix or "Transmute"
+end
 
 local function MyChar()
   local db = type(CraftBoardDB) == "table" and CraftBoardDB
@@ -30,7 +53,10 @@ function Cooldowns.Is(recipeID, rec)
   if KNOWN[recipeID] then return true end
   if type(rec) == "table" then
     if rec.cdr then return true end
-    if type(rec.n) == "string" and rec.n:find("^Transmute") then return true end
+    if type(rec.n) == "string" then
+      local prefix = TransmutePrefix()
+      if rec.n:sub(1, #prefix) == prefix or rec.n:find("^Transmute") then return true end
+    end
   end
   return false
 end

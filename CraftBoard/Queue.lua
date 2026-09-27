@@ -86,13 +86,19 @@ function Queue.Delivered(who, item, recipeID, count)
   local q = List()
   if not q then return end
   count = count or 1
-  for i, x in ipairs(q) do
+  local changed = false
+  local i = 1
+  while i <= #q and count > 0 do
+    local x = q[i]
     if x.who and NS.SamePlayer(x.who, who)
       and ((item and x.item == item) or (recipeID and x.recipeID == recipeID)) then
-      x.qty = x.qty - count
-      if x.qty <= 0 then table.remove(q, i) end
-      NS.Fire("QUEUE_UPDATED")
-      return
+      -- A delivery bigger than this row carries over to their next row for the same craft.
+      local take = math.min(count, x.qty)
+      x.qty, count, changed = x.qty - take, count - take, true
+      if x.qty <= 0 then table.remove(q, i) else i = i + 1 end
+    else
+      i = i + 1
     end
   end
+  if changed then NS.Fire("QUEUE_UPDATED") end
 end

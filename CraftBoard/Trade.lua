@@ -93,8 +93,10 @@ local function Completed()
   local who, s = partner, snap
   if not (who and s) then return end
   local byMe, forMe = false, s.enchantGot ~= nil
+  -- Only what this character crafts: handing over an item an alt could make isn't crafting.
+  local mine = NS.Inventory and NS.Inventory.MyRecipeFor
   for _, g in ipairs(s.gave) do
-    if NS.CanCraftItem(g.item) then
+    if mine and select(4, mine(g.item)) then
       byMe = true
       if NS.Queue then NS.Queue.Delivered(who, g.item, nil, g.n) end
     end

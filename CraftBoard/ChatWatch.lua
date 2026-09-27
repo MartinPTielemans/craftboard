@@ -128,8 +128,11 @@ function ChatWatch.Detect(text)
   if not ask then return nil, "noask" end
   if not (prof or itemName) then return nil, "nothing" end
   local links = LinkNames(text)
+  -- "5x [Item]" / "[Item] x5" / "x 5": how many, when the line says (1..200).
+  local qty = tonumber(s:match(" (%d+) ?x ") or s:match(" x ?(%d+) ") or "")
+  if qty and (qty < 1 or qty > 200) then qty = nil end
   return { prof = prof and prof[1], profID = prof and prof[2], itemName = itemName,
-           links = #links > 1 and links or nil, mats = Has(s, MATS) or nil }
+           links = #links > 1 and links or nil, mats = Has(s, MATS) or nil, qty = qty }
 end
 
 -- Words that only restate "someone make this for me": the ask markers, fillers, counts and
@@ -348,7 +351,7 @@ function ChatWatch.Add(text, sender, channel, guild)
   local now = time()
   local e = {
     from = from, text = clean, prof = hit.prof, profID = hit.profID, itemName = hit.itemName,
-    links = hit.links, mats = hit.mats,
+    links = hit.links, mats = hit.mats, qty = hit.qty,
     channel = channel, guild = guild or nil, t = now, first = now, asks = 1,
   }
   -- One row per player: asking again for the same thing bumps the count and keeps when it was

@@ -803,15 +803,24 @@ function handlers.H(full, data)
   local p = Touch(full)
   if not p then return end
   if type(data.cd) == "table" then
-    local cd, c, now = {}, 0, time()
+    local cd, c, now, changed = {}, 0, time(), false
     for id, sec in pairs(data.cd) do
       if c >= MAX_CD then break end
       if PosInt(id, 1e8) and type(sec) == "number" and sec >= 0 and sec <= MAX_CD_SECONDS then
         cd[id] = now + floor(sec)
         c = c + 1
+        -- Ready-state flips and drifts over a minute count; the clock ticking doesn't.
+        local was = type(p.cd) == "table" and p.cd[id]
+        if not was or (was <= now) ~= (sec == 0) or math.abs(was - cd[id]) > 60 then changed = true end
+      end
+    end
+    if type(p.cd) == "table" then
+      for id in pairs(p.cd) do
+        if cd[id] == nil then changed = true end
       end
     end
     p.cd = cd
+    if changed then Fire("PEERS_UPDATED") end
   end
   if data.l == true then Comm.NoteBackOnline(full) end
   local profs = CleanProfs(data.profs)
@@ -933,6 +942,11 @@ function handlers.X(full, data)
   local p = db and db.posts[id]
   if type(p) == "table" and p.from == full then
     db.posts[id] = nil
+    -- My linked orders for that request go with it (theirs are retracted by their authors).
+    local me = MyKey()
+    for cid, c in pairs(db.posts) do
+      if type(c) == "table" and c.pa == id and c.from == me then Comm.Retract(cid) end
+    end
     Fire("POSTS_UPDATED")
   end
 end

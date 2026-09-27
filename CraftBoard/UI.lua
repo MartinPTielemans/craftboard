@@ -2753,7 +2753,7 @@ function R.QueueTarget(e)
     return e.know.recipeID, e.post.item, e.post.qty or 1, e.post.from
   end
   if e.chat and e.seen.recipeID and e.seen.current then
-    return e.seen.recipeID, e.rec and e.rec.o or nil, 1, e.seen.from
+    return e.seen.recipeID, e.rec and e.rec.o or nil, e.seen.qty or 1, e.seen.from
   end
   return nil
 end
@@ -3090,7 +3090,7 @@ function R.ChatDetail(e)
   SetDetailBackground(reqs, rec and rec.p or s.profID)
 
   local has = rec and type(rec.r) == "table" and #rec.r > 0 and NS.Inventory and NS.Inventory.CanCraft
-  local cc = has and NS.Inventory.CanCraft(rec, 1) or nil
+  local cc = has and NS.Inventory.CanCraft(rec, s.qty or 1) or nil
   local profName = not s.recipeID and NS.ChatWatch.CanHelp(s) and s.prof or nil
   local lines = { R.KnowLine(s.recipeID and s.current, s.knownOn, profName) }
   if s.mats then
@@ -3108,7 +3108,7 @@ function R.ChatDetail(e)
   -- With their own mats, what I'm short of doesn't matter.
   FillMissingLine(reqs.missing, not s.mats and cc and cc.missing or nil)
   R.SetReagents(cc and Chain.AnnotateMakers(cc.reagents) or {}, nil, cc ~= nil)
-  reqs.qtyLine:SetText("")
+  reqs.qtyLine:SetText((s.qty or 1) > 1 and format(L["Requested quantity: %d"], s.qty) or "")
   R.Stack()
 end
 
@@ -3366,12 +3366,6 @@ function UI.FilterRequests(keepScroll)
     if ok then results[#results + 1] = e end
   end
 
-  local visible = false
-  for _, e in ipairs(results) do
-    if e.id == reqs.selected then visible = true break end
-  end
-  if not visible then reqs.selected = nil end
-
   local groups = {
     { key = "can", name = L["You can craft"], list = {}, sort = ReadyNewest },
     { key = "queue", name = L["My queue"], list = {} },
@@ -3392,6 +3386,16 @@ function UI.FilterRequests(keepScroll)
   end
   -- "Seen in chat" shows while empty (with a hint) only when nothing at all came from chat.
   groups[4].always = reqs.chatOn and not searching and not anyChat
+  -- A selection in a group the filter hides (not merely collapsed) is let go.
+  local visible = false
+  for _, g in ipairs(groups) do
+    if not g.hide then
+      for _, e in ipairs(g.list) do
+        if e.id == reqs.selected then visible = true break end
+      end
+    end
+  end
+  if not visible then reqs.selected = nil end
   local collapsed = searching and {} or R.Collapsed()
   local items, nav = {}, {}
   for _, g in ipairs(groups) do
@@ -3481,13 +3485,14 @@ local function Annotate()
     local out = rec and type(rec.o) == "number" and rec.o or nil
     local e = {
       chat = true, seen = s, id = "chat:" .. s.from, ready = CW.CanHelp(s) and true or false, rec = rec,
-      name = title, label = title, lname = strlower(title .. " " .. (s.text or "")), lfrom = strlower(Short(s.from)),
+      name = title, label = (s.qty or 1) > 1 and (format(L["%dx"], s.qty) .. " " .. title) or title,
+      lname = strlower(title .. " " .. (s.text or "")), lfrom = strlower(Short(s.from)),
       knownOn = s.knownOn, t = s.t, outputItemID = out,
       icon = ItemIcon(out) or (s.recipeID and SpellIcon(s.recipeID)) or ProfIcon(s.profID),
       status = Short(s.from) .. DOT .. Age(s.t), dim = now - (s.t or now) > OLD_AGE,
     }
     if not e.ready and s.knownOn then
-      if rec and type(rec.r) == "table" and #rec.r > 0 and canCraft and canCraft(rec, 1).ready then
+      if rec and type(rec.r) == "table" and #rec.r > 0 and canCraft and canCraft(rec, s.qty or 1).ready then
         e.ready = true
       else
         e.readyAlt = true
