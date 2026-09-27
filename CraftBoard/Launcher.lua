@@ -9,7 +9,7 @@ local Launcher = {}
 NS.Launcher = Launcher
 
 local NAME = "CraftBoard"
-local ICON = "Interface\\Icons\\INV_Misc_Note_01"   -- same as the window portrait
+local ICON = "Interface\\AddOns\\CraftBoard\\Media\\icon"   -- same as the window portrait
 
 local LDB = LibStub and LibStub("LibDataBroker-1.1", true)
 local DBIcon = LibStub and LibStub("LibDBIcon-1.0", true)

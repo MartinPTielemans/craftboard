@@ -4,7 +4,7 @@
 ## Author: mpt
 ## Version: 0.9.0
 ## SavedVariables: CraftBoardDB
-## IconTexture: Interface\Icons\INV_Misc_Note_01
+## IconTexture: Interface\AddOns\CraftBoard\Media\icon
 ## X-Category: Professions
 ## X-License: MIT
 ## X-Website: https://github.com/MartinPTielemans/craftboard

@@ -12,7 +12,7 @@ local Welcome = {}
 NS.Welcome = Welcome
 
 local NAME = "CraftBoardWelcomeFrame"
-local PORTRAIT = "Interface\\Icons\\INV_Misc_Note_01"
+local PORTRAIT = "Interface\\AddOns\\CraftBoard\\Media\\icon"
 local HERO = "Interface\\AddOns\\CraftBoard\\Media\\welcome"
 local WIDTH = 420
 local HERO_W, HERO_H, HERO_Y = 400, 200, -24   -- under the title bar
