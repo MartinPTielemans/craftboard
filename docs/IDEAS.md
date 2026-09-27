@@ -35,7 +35,10 @@ Detector must be tuned on real Trade lines (`CraftBoardDB.chatlog`), not synthet
   each crafter, e.g. Toughened Leather Gloves needs an alchemist for Elixir of Lesser Defense).
 - **Maybe:** realm demand insights (most-requested crafts, recipes wanted but rarely known);
   crowd-sourced recipe sources (record trainer / vendor / drop when a recipe is learned).
-- **Open question:** a board that persists while authors are offline (peers relay open posts).
+- **Rejected:** a board that persists while authors are offline. The trade itself needs both
+  players online, so offline posts are mostly clutter.
+- **Instead, small:** "back online" alert. When a player whose request I can craft (or offered on)
+  comes online again, show a quiet notice. Uses posts already kept locally for 24 h; no relaying.
 - **Wanted, small:** crafter queue with total mats; one-click enchant in the trade window via a
   secure button; cooldown sharing (transmutes, Mooncloth); private "crafted for you N times";
   respect the ignore list; crafters-in-your-group tooltips; gamepad support; full UI translations
