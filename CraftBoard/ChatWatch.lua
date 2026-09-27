@@ -140,11 +140,11 @@ end
 local function BuildIndex()
   index, indexDirty = {}, false
   local itemName = NS.Inventory and NS.Inventory.ItemName
-  local function take(c, current)
+  local function take(c, current, key)
     if type(c) ~= "table" or type(c.recipes) ~= "table" then return end
     for id, rec in pairs(c.recipes) do
       if type(rec) == "table" and type(id) == "number" then
-        local e = { recipeID = id, current = current, prof = rec.p }
+        local e = { recipeID = id, current = current, prof = rec.p, char = key }
         if type(rec.n) == "string" and not index[lower(rec.n)] then index[lower(rec.n)] = e end
         local out = type(rec.o) == "number" and itemName and itemName(rec.o)
         if type(out) == "string" and not index[lower(out)] then index[lower(out)] = e end
@@ -152,19 +152,32 @@ local function BuildIndex()
     end
   end
   local chars = MyChars()
-  if NS.Me then take(chars[NS.Me], true) end
-  for key, c in pairs(chars) do
-    if key ~= NS.Me then take(c, false) end
+  if NS.Me then take(chars[NS.Me], true, NS.Me) end
+  -- Alts in name order, so "Known on <alt>" doesn't change between sessions.
+  local keys = {}
+  for key in pairs(chars) do
+    if key ~= NS.Me and type(key) == "string" then keys[#keys + 1] = key end
   end
+  sort(keys)
+  for _, key in ipairs(keys) do take(chars[key], false, key) end
 end
 
--- Recipe of mine (current char first, then alts) for an item or enchant name: recipeID, current.
+-- Recipe of mine (current char first, then alts) for an item or enchant name:
+-- recipeID, current, prof, char ("Name-Realm" of the character that knows it).
 function ChatWatch.Resolve(name)
   if type(name) ~= "string" or name == "" then return nil end
   if indexDirty or not index then BuildIndex() end
   local e = index[lower(name)]
   if not e then return nil end
-  return e.recipeID, e.current, e.prof
+  return e.recipeID, e.current, e.prof, e.char
+end
+
+-- Resolve an entry's item name onto it: recipeID, current, knownOn (the alt that knows it
+-- when the current character doesn't).
+local function ResolveEntry(e)
+  local id, current, _, char = ChatWatch.Resolve(e.itemName)
+  e.recipeID, e.current = id, current
+  e.knownOn = id and not current and char or nil
 end
 
 -- The current character has this profession, or knows the recipe.
@@ -239,15 +252,13 @@ local function Prune(keep)
 end
 
 -- Newest first: { from="Name-Realm", text=, prof=, profID=, itemName=, recipeID=, current=,
--- channel="Trade", t= }. Copies; entries older than 30 min are gone.
+-- knownOn="Alt-Realm", channel="Trade", t= }. Copies; entries older than 30 min are gone.
 function ChatWatch.Seen()
   Prune()
   local list = {}
   if not ChatWatch.Enabled() then return list end
   for _, e in pairs(seen) do
-    if e.itemName and not e.recipeID then
-      e.recipeID, e.current = ChatWatch.Resolve(e.itemName)
-    end
+    if e.itemName and not e.recipeID then ResolveEntry(e) end
     local copy = {}
     for k, v in pairs(e) do copy[k] = v end
     list[#list + 1] = copy
@@ -318,7 +329,7 @@ function ChatWatch.Add(text, sender, channel, guild)
     links = hit.links,
     channel = channel, guild = guild or nil, t = time(),
   }
-  if hit.itemName then e.recipeID, e.current = ChatWatch.Resolve(hit.itemName) end
+  if hit.itemName then ResolveEntry(e) end
   seen[from] = e
   Prune(from)
   FireSoon()
@@ -355,12 +366,13 @@ local function PublicChannel(baseName, channelName)
   -- English". Match on the leading word so those all count; the server list is only used to
   -- also accept localized names it reports.
   -- The label shown in the list is the leading word ("Trade"), never the full server name.
+  -- Second value: the name without its " - English" / " - City" suffix (for /cb chatdebug).
   local head = base:match("^(%a+)") or base
   local server = ServerChannels()
-  if server[base] then return head end
-  if head == "Trade" or head == "General" or head == "LookingForGroup" then return head end
+  if server[base] then return head, base end
+  if head == "Trade" or head == "General" or head == "LookingForGroup" then return head, base end
   for name in pairs(server) do
-    if base:sub(1, #name) == name then return head end
+    if base:sub(1, #name) == name then return head, base end
   end
   return nil
 end
@@ -373,7 +385,8 @@ local function Secret(...)
   return false
 end
 
-local stats = { seen = 0, channel = 0, accepted = 0, matched = 0, last = "" }
+-- /cb chatdebug counters; bases = set of accepted channel names ("Trade (Services)"), capped.
+local stats = { seen = 0, channel = 0, accepted = 0, matched = 0, last = "", bases = {}, nbases = 0 }
 ChatWatch.Stats = function() return stats end
 
 local function OnChat(event, text, sender, _, channelName, _, _, _, _, baseName)
@@ -385,10 +398,15 @@ local function OnChat(event, text, sender, _, channelName, _, _, _, _, baseName)
   if event == "CHAT_MSG_CHANNEL" then
     stats.channel = stats.channel + 1
     if Secret(channelName, baseName) then stats.secret = (stats.secret or 0) + 1; return end
-    label = PublicChannel(baseName, channelName)
+    local base
+    label, base = PublicChannel(baseName, channelName)
     stats.last = tostring(baseName or channelName)
     if label then
       stats.accepted = stats.accepted + 1
+      if base and not stats.bases[base] and stats.nbases < 20 then
+        stats.bases[base] = true
+        stats.nbases = stats.nbases + 1
+      end
       -- Keep the last 40 accepted lines (saved) so the detector can be tuned on real chat.
       if type(CraftBoardDB) == "table" then
         local log = CraftBoardDB.chatlog or {}

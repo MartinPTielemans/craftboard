@@ -111,6 +111,22 @@ end
 local CHAT_TIP = L["Lists players asking for a crafter in Trade, General, LookingForGroup, say and yell under \"Seen in chat\" on the Requests tab. Nothing is sent or saved."]
 local CHAT_GUILD_TIP = L["Also watch guild chat for crafting requests."]
 
+-- Auto-busy (Comm.lua): CraftBoardDB.autoBusy, default on.
+local function GetAutoBusy()
+  return not (type(CraftBoardDB) == "table" and CraftBoardDB.autoBusy == false)
+end
+
+local function SetAutoBusy(v)
+  v = v and true or false
+  if NS.Comm and NS.Comm.SetAutoBusy then
+    NS.Comm.SetAutoBusy(v)
+  elseif type(CraftBoardDB) == "table" then
+    CraftBoardDB.autoBusy = v
+  end
+end
+
+local AUTO_BUSY_TIP = L["While you are in a dungeon or raid, or in combat, other CraftBoard users see you as busy and the board won't whisper you. /cb busy marks you busy by hand."]
+
 local function ResetTips()
   if NS.Onboarding and NS.Onboarding.Reset then
     NS.Onboarding.Reset()
@@ -197,6 +213,10 @@ local function RegisterVertical()
     L["Include guild chat"], false, GetChatGuild, SetChatGuild)
   createCheckbox(category, chatGuild, CHAT_GUILD_TIP)
 
+  local autoBusy = S.RegisterProxySetting(category, "CRAFTBOARD_AUTO_BUSY", bool,
+    L["Automatically mark me busy in dungeons and combat"], true, GetAutoBusy, SetAutoBusy)
+  createCheckbox(category, autoBusy, AUTO_BUSY_TIP)
+
   -- Advertise channel: a dropdown where the API has one, else a button that cycles.
   local dropdown = S.CreateDropdown and S.CreateControlTextContainer and pcall(function()
     local str = S.VarType and S.VarType.String or "string"
@@ -278,10 +298,11 @@ local function BuildPanel()
   Check(L["Open CraftBoard inside the Professions window"], EMBED_TIP, -132, GetEmbed, SetEmbed)
   Check(L["Watch chat for crafting requests"], CHAT_TIP, -160, GetChatWatch, SetChatWatch)
   Check(L["Include guild chat"], CHAT_GUILD_TIP, -188, GetChatGuild, SetChatGuild)
+  Check(L["Automatically mark me busy in dungeons and combat"], AUTO_BUSY_TIP, -216, GetAutoBusy, SetAutoBusy)
 
   local advertise = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   advertise:SetSize(220, 22)
-  advertise:SetPoint("TOPLEFT", 20, -226)
+  advertise:SetPoint("TOPLEFT", 20, -254)
   advertise.label = L["Advertise channel"]
   advertise.tip = ADVERTISE_TIP
   local function syncAdvertise()
@@ -297,7 +318,7 @@ local function BuildPanel()
 
   local forget = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   forget:SetSize(180, 22)
-  forget:SetPoint("TOPLEFT", 20, -258)
+  forget:SetPoint("TOPLEFT", 20, -286)
   forget:SetText(L["Forget all peer data"])
   forget.label = L["Forget all peer data"]
   forget.tip = L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."]
@@ -307,7 +328,7 @@ local function BuildPanel()
 
   local tips = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   tips:SetSize(180, 22)
-  tips:SetPoint("TOPLEFT", 20, -290)
+  tips:SetPoint("TOPLEFT", 20, -318)
   tips:SetText(L["Show tips again"])
   tips.label = L["Show tips again"]
   tips.tip = TIPS_TIP

@@ -14,6 +14,7 @@ local enUS = {
   "/cb scan - rescan the open profession window",
   "/cb options - open the settings panel",
   "/cb welcome - show the welcome window again",
+  "/cb busy - toggle busy (the board won't whisper you)",
   "/cb debug - list known peers",
   "/cb help - this help",
   "UI not loaded",
@@ -25,6 +26,9 @@ local enUS = {
   ", seen %dm ago",
   "online",
   "offline",
+  "chat events %d, channel %d, accepted %d, secret %d, last channel '%s'",
+  "accepted channels: %s",
+  "none yet",
 
   -- Recipes: scan skip reasons, fallback name
   "profession API unavailable",
@@ -66,6 +70,21 @@ local enUS = {
   "%ds ago",
   "never",
   "missing comm libraries; sync disabled",
+
+  -- Busy / available (Comm, UI header toggle, crafter list, minimap button)
+  "You are busy: other CraftBoard users see it and the board won't whisper you.",
+  "Manual busy off, but you are still busy automatically (dungeon or combat).",
+  "You are available for whispers from the board.",
+  "Available",
+  "Busy",
+  "Other CraftBoard users see you as busy and the board won't whisper you. Click to become available.",
+  "Busy automatically while you are in a dungeon or in combat. You can turn this off in the CraftBoard options.",
+  "Click to mark yourself busy: other CraftBoard users see you greyed out and the board won't whisper you.",
+  "%s (busy)",
+  "%s is busy",
+  "Busy: not taking whispers from the board right now.",
+  "Busy: you won't be whispered from the board",
+  "Shift-right-click: busy / available",
 
   -- UI
   "Find",
@@ -148,6 +167,7 @@ local enUS = {
   "and %d more",
   "%s in %s",
   "[CraftBoard] I can craft that for you.",
+  "Known on %s",
   "Hide",
   "Removes this line from the list.",
   "Say",
@@ -200,6 +220,10 @@ local enUS = {
   "Lists players asking for a crafter in Trade, General, LookingForGroup, say and yell under \"Seen in chat\" on the Requests tab. Nothing is sent or saved.",
   "Include guild chat",
   "Also watch guild chat for crafting requests.",
+
+  -- Options: auto-busy
+  "Automatically mark me busy in dungeons and combat",
+  "While you are in a dungeon or raid, or in combat, other CraftBoard users see you as busy and the board won't whisper you. /cb busy marks you busy by hand.",
 
   -- Launcher: minimap button, key binding
   "CraftBoard",

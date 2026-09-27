@@ -567,8 +567,9 @@ function Recipes.GroupOf(recipeID, itemID)
   return Recipes.CategoryOf(recipeID) or Recipes.ItemGroup(itemID or OutputOf(recipeID)) or L["Other"]
 end
 
--- Fairness rule: online crafters first, then my own characters; within a group the order is
--- shuffled once per session so no name is always at the top. Nothing else ranks a crafter.
+-- Fairness rule: online crafters first (busy ones after the available ones), then my own
+-- characters; within a group the order is shuffled once per session so no name is always at
+-- the top. Nothing else ranks a crafter.
 local sessionSalt = math.random(1, 1e6)
 local function shuffleKey(name)
   local h = sessionSalt
@@ -577,6 +578,7 @@ local function shuffleKey(name)
 end
 local function crafterLess(a, b)
   if a.online ~= b.online then return a.online end
+  if (a.busy or false) ~= (b.busy or false) then return not a.busy end
   if a.mine ~= b.mine then return a.mine end
   return shuffleKey(a.name) < shuffleKey(b.name)
 end
@@ -616,7 +618,8 @@ function Recipes.Search(text)
       if type(p) == "table" and type(p.recipes) == "table" and not myNames[name] then
         for recipeID in pairs(p.recipes) do
           if type(recipeID) == "number" then
-            add(recipeID, { name = name, mine = false, online = p.online and true or false, sameRealm = true })
+            add(recipeID, { name = name, mine = false, online = p.online and true or false, sameRealm = true,
+              busy = p.busy and true or false })
           end
         end
       end

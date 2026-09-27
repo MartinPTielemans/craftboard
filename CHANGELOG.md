@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Busy / available (requested on Reddit): mark yourself busy with `/cb busy`, shift-right-click
+  on the minimap button, or the "Available" / "Busy" switch on the board header. Other
+  CraftBoard users then see you greyed out with "(busy)" in the crafter list, can't pick you
+  from it, and their Whisper button stays off; busy crafters are listed after available ones
+  and still count as online. By default you are also busy automatically in dungeons, raids and
+  combat (option "Automatically mark me busy in dungeons and combat"). Older versions simply
+  don't see the flag.
+- "Seen in chat" knows your alts: the check is green when any of your characters knows the
+  recipe and this one carries the mats, and grey when only an alt knows it; the row tooltip
+  says which alt.
+- `/cb chatdebug` also lists the chat channels the watcher has accepted so far (for example
+  "Trade, Trade (Services)").
+
 ## [0.9.3] - 2026-09-27
 
 ### Fixed

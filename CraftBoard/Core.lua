@@ -60,7 +60,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 -- DB
-local DEFAULTS = { chars = {}, peers = {}, posts = {}, realmChannel = true, guildShare = true, recipeNames = {}, tips = {} }
+local DEFAULTS = { chars = {}, peers = {}, posts = {}, realmChannel = true, guildShare = true, recipeNames = {}, tips = {},
+  autoBusy = true }
 
 local function InitDB()
   if type(CraftBoardDB) ~= "table" then CraftBoardDB = {} end
@@ -122,6 +123,7 @@ local function PrintHelp()
   NS.Print(L["/cb scan - rescan the open profession window"])
   NS.Print(L["/cb options - open the settings panel"])
   NS.Print(L["/cb welcome - show the welcome window again"])
+  NS.Print(L["/cb busy - toggle busy (the board won't whisper you)"])
   NS.Print(L["/cb debug - list known peers"])
   NS.Print(L["/cb help - this help"])
 end
@@ -186,9 +188,16 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
   elseif cmd == "chatdebug" then
     local st = NS.ChatWatch and NS.ChatWatch.Stats and NS.ChatWatch.Stats()
     if st then
-      NS.Print(string.format("chat events %d, channel %d, accepted %d, secret %d, last channel '%s'",
+      NS.Print(string.format(L["chat events %d, channel %d, accepted %d, secret %d, last channel '%s'"],
         st.seen, st.channel, st.accepted, st.secret or 0, st.last))
+      -- Distinct channel names accepted so far (" - English" / " - City" suffix dropped).
+      local names = {}
+      for name in pairs(type(st.bases) == "table" and st.bases or {}) do names[#names + 1] = name end
+      table.sort(names)
+      NS.Print(string.format(L["accepted channels: %s"], #names > 0 and table.concat(names, ", ") or L["none yet"]))
     end
+  elseif cmd == "busy" then
+    if NS.Comm and NS.Comm.ToggleBusy then NS.Comm.ToggleBusy() end
   elseif cmd == "frames" then
     if NS.ListFrames then NS.ListFrames() end
   else

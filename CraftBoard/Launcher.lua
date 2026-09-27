@@ -30,9 +30,12 @@ function CraftBoard_ToggleBinding()
 end
 
 local function OnClick(_, button)
-  if button == "RightButton" then
+  local shift = IsShiftKeyDown and IsShiftKeyDown()
+  if button == "RightButton" and shift then
+    if NS.Comm and NS.Comm.ToggleBusy then NS.Comm.ToggleBusy() end
+  elseif button == "RightButton" then
     if NS.Options and NS.Options.Open then NS.Options.Open() end
-  elseif button == "LeftButton" and IsShiftKeyDown and IsShiftKeyDown() then
+  elseif button == "LeftButton" and shift then
     NS.ScanNow()
   else
     Toggle()
@@ -44,7 +47,11 @@ local function OnTooltipShow(tt)
   tt:AddLine(L["CraftBoard"])
   local status = NS.UI and NS.UI.StatusText and NS.UI.StatusText()
   if status then tt:AddLine(status, 1, 1, 1) end
+  if NS.Comm and NS.Comm.IsBusy and NS.Comm.IsBusy() then
+    tt:AddLine(L["Busy: you won't be whispered from the board"], 0.62, 0.62, 0.62)
+  end
   tt:AddLine(L["Left-click: open \194\183 Right-click: settings"], 0.6, 0.6, 0.6)
+  tt:AddLine(L["Shift-right-click: busy / available"], 0.6, 0.6, 0.6)
 end
 
 local dataObject = LDB and LDB:NewDataObject(NAME, {

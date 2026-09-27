@@ -1424,7 +1424,8 @@ end
 
 -- Detail rows ---------------------------------------------------------------
 
--- Crafter: name green when online, grey when offline; me and my alts marked.
+-- Crafter: name green when online, grey when offline or busy ("Bob (busy)", not clickable);
+-- me and my alts marked.
 local function CrafterRow(parent, rowH)
   local row = RowBase(parent, rowH)
   row.state = Muted(Label(row, nil, "GameFontHighlightSmall"))
@@ -1435,13 +1436,15 @@ local function CrafterRow(parent, rowH)
   row.name:SetPoint("RIGHT", row.state, "LEFT", -6, 0)
   row:SetScript("OnEnter", function(self)
     local c = self.crafter
-    if c and not c.mine then
+    if c and c.busy then
+      TextTooltip(self, Short(c.name), L["Busy: not taking whispers from the board right now."])
+    elseif c and not c.mine then
       TextTooltip(self, Short(c.name), find.itemID and L["Click to whisper a request."] or nil)
     end
   end)
   row:SetScript("OnClick", function(self)
     local c = self.crafter
-    if not c or c.mine then return end
+    if not c or c.mine or c.busy then return end
     find.crafter = c.name
     find.crafters:Render()
     UI.UpdateWhisper()
@@ -1452,21 +1455,24 @@ end
 
 local function FillCrafterRow(row, c)
   row.crafter = c
-  row.name:SetText(Short(c.name))
-  if c.online then
+  row.name:SetText(c.busy and format(L["%s (busy)"], Short(c.name)) or Short(c.name))
+  if c.online and not c.busy then
     row.name:SetTextColor(ONLINE_RGB[1], ONLINE_RGB[2], ONLINE_RGB[3])
   else
     row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
   end
   if c.mine then
     row.state:SetText("|cffffd100" .. (c.name == NS.Me and L["you"] or L["alt"]) .. "|r")
-  elseif c.online then
+  elseif c.online and not c.busy then
     row.state:SetText(GREEN .. L["online"] .. "|r")
+  elseif c.online then
+    row.state:SetText(L["online"])
   else
     row.state:SetText(L["offline"])
   end
+  -- Busy rows keep the mouse for their tooltip; OnClick ignores them.
   row:EnableMouse(not c.mine)
-  row.sel:SetShown(not c.mine and c.name == find.crafter)
+  row.sel:SetShown(not c.mine and not c.busy and c.name == find.crafter)
 end
 
 -- Reagent slot, like SchematicForm.Reagents: a 39x39 slot (Professions-Slot-bg behind the
@@ -2313,6 +2319,8 @@ local function BuildFind(p)
       TextTooltip(self, format(L["Whisper %s"], Short(find.whisperTo)), RequestText(find.itemID, ReadQty(find.qty)))
     elseif not find.itemID then
       TextTooltip(self, L["This recipe makes no item to request"])
+    elseif find.whisperBusy then
+      TextTooltip(self, format(L["%s is busy"], Short(find.whisperBusy)), L["Busy: not taking whispers from the board right now."])
     else
       TextTooltip(self, L["Only you and your alts know this recipe."])
     end
@@ -2333,19 +2341,31 @@ local function BuildFind(p)
   end)
 end
 
--- Whisper target: the chosen crafter if still listed, else the first other player (the list
--- is sorted online first).
+-- Whisper target: the chosen crafter if still listed, else the first other player who isn't
+-- busy (the list is sorted online first). Disabled when the chosen crafter has gone busy, or
+-- when everyone else who knows it is busy (find.whisperBusy: who, for the tooltip).
 function UI.UpdateWhisper()
   if not find.whisper then return end
   local e = find.entry
-  local target, chosenOk
+  local target, chosen, firstBusy
   for _, c in ipairs(e and e.crafters or {}) do
     if not c.mine then
-      if not target then target = c.name end
-      if c.name == find.crafter then chosenOk = true end
+      if c.busy then
+        firstBusy = firstBusy or c.name
+      elseif not target then
+        target = c.name
+      end
+      if c.name == find.crafter then chosen = c end
     end
   end
-  if chosenOk then target = find.crafter end
+  find.whisperBusy = nil
+  if chosen and chosen.busy then
+    target, find.whisperBusy = nil, chosen.name
+  elseif chosen then
+    target = chosen.name
+  elseif not target then
+    find.whisperBusy = firstBusy
+  end
   find.whisperTo = target
   find.whisper:SetEnabled(target ~= nil and find.itemID ~= nil)
 end
@@ -2570,7 +2590,8 @@ local function ToggleRequestGroup(it)
   UI.FilterRequests(true)
 end
 
--- Find's grouped row plus the ready check in the 21 px before the label.
+-- Find's grouped row plus the ready check in the 21 px before the label (grey on "Seen in
+-- chat" lines only an alt of mine can craft).
 local function RequestRowFactory()
   local base = GroupRowFactory(function(it) if it.id then UI.SelectRequest(it.id) end end, ToggleRequestGroup)
   return function(parent)
@@ -2581,6 +2602,10 @@ local function RequestRowFactory()
       if not it or it.kind or it.placeholder then return end
       if it.chat then
         TextTooltip(self, Short(it.seen.from), it.seen.text)
+        if it.knownOn and GameTooltip then
+          GameTooltip:AddLine(format(L["Known on %s"], Short(it.knownOn)), MUTED[1], MUTED[2], MUTED[3])
+          GameTooltip:Show()
+        end
       else
         ShowTooltip(self, it.outputItemID, it.recipeID)
       end
@@ -2606,7 +2631,10 @@ local function FillRequestEntry(row, e)
       row.name:SetTextColor(C.label[1], C.label[2], C.label[3])
     end
     row.status:SetText(e.placeholder and "" or (e.seen.channel or "") .. DOT .. Age(e.seen.t))
-    row.check:SetShown(e.ready)
+    local alt = e.readyAlt and true or false
+    row.check:SetShown(e.ready or alt)
+    if row.check.SetDesaturated then row.check:SetDesaturated(alt) end
+    row.check:SetAlpha(alt and 0.6 or 1)
     row.sel:SetShown(e.id ~= nil and e.id == reqs.selected)
     return
   end
@@ -2615,6 +2643,8 @@ local function FillRequestEntry(row, e)
   row.name:SetTextColor(NameRGB(post.item))
   row.status:SetText(format(L["%dx"], post.qty or 1) .. DOT .. Age(post.t))
   row.check:SetShown(e.ready)
+  if row.check.SetDesaturated then row.check:SetDesaturated(false) end
+  row.check:SetAlpha(1)
   row.sel:SetShown(e.id == reqs.selected)
 end
 
@@ -2958,7 +2988,9 @@ function UI.RefreshRequests(keepScroll)
       byID[e.id] = e
     end
   end
-  -- Chat lines (ChatWatch.lua): id "chat:Name-Realm"; ready = I have the profession or recipe.
+  -- Chat lines (ChatWatch.lua): id "chat:Name-Realm"; ready = I have the profession or recipe,
+  -- or any of my characters knows the recipe and this one carries the mats; readyAlt (grey
+  -- check) = only an alt knows it (knownOn, shown in the row tooltip).
   local CW = NS.ChatWatch
   reqs.chatOn = CW and CW.Enabled and CW.Enabled() or false
   for _, s in ipairs(reqs.chatOn and CW.Seen() or {}) do
@@ -2967,7 +2999,16 @@ function UI.RefreshRequests(keepScroll)
       chat = true, seen = s, id = "chat:" .. s.from, ready = CW.CanHelp(s) and true or false,
       rec = s.recipeID and NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(s.recipeID) or nil,
       name = title, lname = strlower(title .. " " .. (s.text or "")), lfrom = strlower(Short(s.from)),
+      knownOn = s.knownOn,
     }
+    if not e.ready and s.knownOn then
+      local rec = e.rec
+      if rec and type(rec.r) == "table" and #rec.r > 0 and canCraft and canCraft(rec, 1).ready then
+        e.ready = true
+      else
+        e.readyAlt = true
+      end
+    end
     all[#all + 1] = e
     byID[e.id] = e
   end
@@ -3006,13 +3047,52 @@ end
 -- left-aligned GameFontHighlightSmall line in grey about the board ("2 crafters online ·
 -- 1 open request", " · realm channel off" when the realm channel is disabled). The older
 -- "61 recipes · 0 peers · channel ok" summary is the portrait's tooltip.
+-- At its right end, the Available / Busy toggle (b.busy): gold "Available", grey "Busy";
+-- a click flips manual busy (Comm.ToggleBusy). It is a child of the line, so it moves with it.
 local function NewStatusLine(f)
   local b = CreateFrame("Frame", nil, f)
   b:SetSize(G.statusW, G.statusH)
   b:SetPoint("TOPLEFT", f, "TOPLEFT", G.statusX, G.statusY)
+  local t = CreateFrame("Button", nil, b)
+  t:SetHeight(G.statusH)
+  t:SetPoint("RIGHT", b, "RIGHT", 0, 0)
+  t.label = Label(t, nil, Font("GameFontNormalSmall"))
+  t.label:SetPoint("CENTER", t, "CENTER", 0, 0)
+  local hl = t:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetAllPoints()
+  hl:SetColorTexture(1, 1, 1, 0.08)
+  function t.cbSync()
+    local cm = NS.Comm
+    local busy = cm and cm.IsBusy and cm.IsBusy() or false
+    t.label:SetText(busy and L["Busy"] or L["Available"])
+    local c = busy and MUTED or GOLD_RGB
+    t.label:SetTextColor(c[1], c[2], c[3])
+    t:SetWidth(ceil(StringWidth(t.label)) + 10)
+  end
+  local function tip(self)
+    local cm = NS.Comm
+    local busy, manual = false, false
+    if cm and cm.BusyState then busy, manual = cm.BusyState() end
+    if manual then
+      TextTooltip(self, L["Busy"], L["Other CraftBoard users see you as busy and the board won't whisper you. Click to become available."])
+    elseif busy then
+      TextTooltip(self, L["Busy"], L["Busy automatically while you are in a dungeon or in combat. You can turn this off in the CraftBoard options."])
+    else
+      TextTooltip(self, L["Available"], L["Click to mark yourself busy: other CraftBoard users see you greyed out and the board won't whisper you."])
+    end
+  end
+  t:SetScript("OnClick", function(self)
+    if NS.Comm and NS.Comm.ToggleBusy then NS.Comm.ToggleBusy(true) end
+    self.cbSync()
+    tip(self)
+  end)
+  t:SetScript("OnEnter", tip)
+  t:SetScript("OnLeave", HideTooltip)
+  t.cbSync()
+  b.busy = t
   b.text = Muted(Label(b, nil, Font("GameFontHighlightSmall")))
   b.text:SetPoint("LEFT", b, "LEFT", 0, 0)
-  b.text:SetPoint("RIGHT", b, "RIGHT", 0, 0)
+  b.text:SetPoint("RIGHT", t, "LEFT", -8, 0)
   return b
 end
 
@@ -3050,7 +3130,10 @@ function UI.StatusText()
 end
 
 function UI.RefreshStatus()
-  if statusLine then statusLine.text:SetText(BoardLine()) end
+  if statusLine then
+    statusLine.text:SetText(BoardLine())
+    if statusLine.busy then statusLine.busy.cbSync() end
+  end
 end
 
 -- Invisible hit area over the portrait for the summary tooltip; drags still move the window.
@@ -3634,7 +3717,7 @@ local scheduleRefresh = Debouncer(0.3, UI.Refresh)
 
 if NS.RegisterCallback then
   for _, ev in ipairs({ "RECIPES_UPDATED", "PEERS_UPDATED", "ITEM_NAMES_UPDATED", "INVENTORY_UPDATED", "POSTS_UPDATED",
-    "CHAT_SEEN_UPDATED" }) do
+    "CHAT_SEEN_UPDATED", "BUSY_UPDATED" }) do
     NS.RegisterCallback(owner, ev, scheduleRefresh)
   end
 end

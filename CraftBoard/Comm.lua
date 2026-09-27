@@ -1,6 +1,7 @@
 -- CraftBoard Comm: sync layer over addon messages (GUILD + hidden realm CHANNEL).
 -- Wire format: one type char followed by LibSerialize -> CompressDeflate -> EncodeForWoWAddonChannel.
---   H hello   {v=1, profs={[profID]={n=,r=,m=}}, n=#recipes, h=hash}      GUILD/CHANNEL
+--   H hello   {v=1, profs={[profID]={n=,r=,m=}}, n=#recipes, h=hash, b=true when busy}  GUILD/CHANNEL
+--             (b is optional: older clients read only the fields they know and ignore it)
 --   Q query   {v=1}                                                     WHISPER to hello sender
 --   R recipes {v=1, h=hash, profs=..., list={ {id, name, outputItemID, profID}, ... }}  WHISPER
 --   P post    {v=1, id=, item=, qty=, note=, t=}                        GUILD/CHANNEL
@@ -41,6 +42,8 @@ local MAX_POSTS = 300
 local POST_GAP = 10               -- our own post rate limit
 local INBOUND_WINDOW = 60
 local INBOUND_MAX = 40            -- messages per sender per window before we ignore them
+local BUSY_DEBOUNCE = 5           -- a busy change is announced this long after it happens
+local BUSY_MIN_GAP = 15           -- per distribution, for hellos sent only to announce busy
 
 local LibSerialize = LibStub and LibStub("LibSerialize", true)
 local LibDeflate = LibStub and LibStub("LibDeflate", true)
@@ -64,6 +67,10 @@ local lastPost = 0
 local postCounter = 0
 local rosterCache, rosterAt = nil, 0
 local started = false
+local busyNow = false     -- effective busy (manual, or auto in a dungeon / in combat)
+local inCombat = false    -- PLAYER_REGEN_DISABLED .. PLAYER_REGEN_ENABLED
+local sentBusy = {}       -- [dist] = busy flag carried by the last hello sent there
+local busyPending = false -- a busy hello is scheduled
 
 -- Helpers ---------------------------------------------------------------
 
@@ -337,9 +344,24 @@ end
 
 local SendMyPosts -- forward
 
+-- Announce a busy change on every distribution whose last hello carried the other state.
+local function BusyFlush()
+  busyPending = false
+  for _, dist in ipairs({ "GUILD", "CHANNEL" }) do
+    if DistAvailable(dist) and (sentBusy[dist] or false) ~= busyNow then SendHello(dist, true) end
+  end
+end
+
+local function ScheduleBusyFlush(delay)
+  if busyPending or not (C_Timer and C_Timer.After) then return end
+  busyPending = true
+  C_Timer.After(delay, BusyFlush)
+end
+
 -- Hello per distribution, rate-limited per spec (<= 1 per ~10 min per distribution).
 -- If we're inside the gap, schedule one deferred hello instead of dropping it.
-function SendHello(dist)
+-- busy: sent to announce a busy change, allowed every BUSY_MIN_GAP instead.
+function SendHello(dist, busy)
   if not dist then
     SendHello("GUILD")
     SendHello("CHANNEL")
@@ -348,7 +370,18 @@ function SendHello(dist)
   if not DistAvailable(dist) then return end
   local now = time()
   local last = lastHello[dist]
-  if last and now - last < HELLO_MIN_GAP then
+  if busy then
+    local wait = 0
+    if last and now - last < BUSY_MIN_GAP then
+      wait = BUSY_MIN_GAP - (now - last) + 1
+    elseif not CanSend() then
+      wait = 30
+    end
+    if wait > 0 then
+      ScheduleBusyFlush(wait)
+      return
+    end
+  elseif last and now - last < HELLO_MIN_GAP then
     if not helloPending[dist] then
       helloPending[dist] = true
       C_Timer.After(HELLO_MIN_GAP - (now - last) + 1, function()
@@ -371,13 +404,15 @@ function SendHello(dist)
   local h = MyHash()
   -- n must match the count part of h ("count:poly") so peers' empty-book shortcut is right.
   local n = tonumber(h:match("^(%d+):")) or CountTable(MyRecipes())
-  local payload = { v = VERSION, profs = MyProfs(), n = n, h = h }
+  local payload = { v = VERSION, profs = MyProfs(), n = n, h = h, b = busyNow or nil }
   local target = dist == "CHANNEL" and channelId or nil
   if Send("H", payload, dist, target, "BULK") then
     lastHello[dist] = now
     lastHelloAt = now
     lastHelloHash = h
-    SendMyPosts(dist)
+    sentBusy[dist] = busyNow
+    -- A busy-only hello doesn't repeat the posts, unless it is the first hello there.
+    if not busy or not last then SendMyPosts(dist) end
   end
 end
 
@@ -515,6 +550,8 @@ function Comm.Peers()
         seen = p.seen,
         hash = p.hash,
         online = online and true or false,
+        -- Busy only means something while online (an offline peer's last flag is stale).
+        busy = online and p.busy and true or false,
       }
     end
   end
@@ -675,11 +712,16 @@ local handlers = {}
 function handlers.H(full, data)
   local h = CleanString(data.h, 64)
   if not h or type(data.n) ~= "number" then return end
-  if Duplicate(full, "H", h) then return end
+  local busy = data.b == true
+  if Duplicate(full, "H", h .. (busy and ":b" or "")) then return end
   local p = Touch(full)
   if not p then return end
   local profs = CleanProfs(data.profs)
   if profs then p.profs = profs end
+  if (p.busy and true or false) ~= busy then
+    p.busy = busy or nil
+    Fire("PEERS_UPDATED")
+  end
   if p.hash == h then return end
   if data.n <= 0 then
     -- Nothing to fetch; record the empty book without a round trip.
@@ -869,14 +911,64 @@ local function Start()
   end
 end
 
+-- Busy ------------------------------------------------------------------
+-- Effective busy = manual (CraftBoardDB.chars[Me].busy) or, with CraftBoardDB.autoBusy (default
+-- on), in a dungeon / raid instance or in combat. Peers learn it from the hello's b flag.
+
+local function MyChar()
+  local db, me = DB(), MyKey()
+  local c = db and me and type(db.chars) == "table" and db.chars[me]
+  return type(c) == "table" and c or nil
+end
+
+local function ManualBusy()
+  local c = MyChar()
+  return c and c.busy == true or false
+end
+
+local function AutoBusyOn()
+  return not (type(CraftBoardDB) == "table" and CraftBoardDB.autoBusy == false)
+end
+
+local function InDungeon()
+  if not IsInInstance then return false end
+  local ok, inside, kind = pcall(IsInInstance)
+  return ok and inside and (kind == "party" or kind == "raid") and true or false
+end
+
+-- Busy because of where I am / what I'm doing, regardless of the option.
+local function AutoReason()
+  return InDungeon() or inCombat
+end
+
+local function ComputeBusy()
+  if ManualBusy() then return true end
+  return AutoBusyOn() and AutoReason() and true or false
+end
+
+-- Recompute; on a change fire BUSY_UPDATED and announce it within BUSY_DEBOUNCE seconds.
+-- notify: fire BUSY_UPDATED even when the effective state didn't change (manual toggled).
+local function UpdateBusy(notify)
+  local b = ComputeBusy()
+  local changed = b ~= busyNow
+  busyNow = b
+  if changed and started then ScheduleBusyFlush(BUSY_DEBOUNCE) end
+  if changed or notify then Fire("BUSY_UPDATED") end
+end
+
 local function OnEnteringWorld()
   Start()
+  inCombat = (UnitAffectingCombat and UnitAffectingCombat("player")) and true or false
+  UpdateBusy()
   -- Channel joins fail during the first seconds of loading; re-checked on every zone-in.
   C_Timer.After(5, function() JoinRealmChannel(1) end)
 end
 
 if NS.Register then
   NS.Register("PLAYER_ENTERING_WORLD", OnEnteringWorld)
+  NS.Register("ZONE_CHANGED_NEW_AREA", function() UpdateBusy() end)
+  NS.Register("PLAYER_REGEN_DISABLED", function() inCombat = true; UpdateBusy() end)
+  NS.Register("PLAYER_REGEN_ENABLED", function() inCombat = false; UpdateBusy() end)
 else
   local f = CreateFrame("Frame")
   f:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -904,6 +996,50 @@ end
 
 function Comm.ChannelId()
   return ResolveChannel()
+end
+
+-- Manual busy for this character (saved); the effective state may still be busy by auto.
+function Comm.SetBusy(on)
+  local c = MyChar()
+  if not c then return end
+  c.busy = on and true or nil
+  UpdateBusy(true)
+end
+
+-- Effective busy: manual, or auto in a dungeon / in combat.
+function Comm.IsBusy()
+  return busyNow
+end
+
+-- busy (effective), manual, auto (busy only because of a dungeon / combat).
+function Comm.BusyState()
+  local manual = ManualBusy()
+  return busyNow, manual, busyNow and not manual
+end
+
+function Comm.SetAutoBusy(on)
+  if type(CraftBoardDB) ~= "table" then return end
+  CraftBoardDB.autoBusy = on and true or false
+  UpdateBusy(true)
+end
+
+function Comm.AutoBusy()
+  return AutoBusyOn()
+end
+
+-- /cb busy, shift-right-click on the minimap button, the board header toggle: flips manual busy.
+-- quiet: no chat line (the header button shows the state itself).
+function Comm.ToggleBusy(quiet)
+  Comm.SetBusy(not ManualBusy())
+  if quiet then return end
+  local busy, manual = Comm.BusyState()
+  if manual then
+    Print(L["You are busy: other CraftBoard users see it and the board won't whisper you."])
+  elseif busy then
+    Print(L["Manual busy off, but you are still busy automatically (dungeon or combat)."])
+  else
+    Print(L["You are available for whispers from the board."])
+  end
 end
 
 -- Compact status for the UI footer: { peers=, online=, posts=, channel=joined, channelOn=, guild= }.
