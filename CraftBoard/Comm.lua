@@ -598,8 +598,10 @@ end
 
 -- Any message marks the peer as seen now. One who wasn't seen within ONLINE_WINDOW just came
 -- online: PEERS_UPDATED, so "N crafters online" and the green names follow.
--- Peers' online state as last checked ([full] = true/false; CheckOnline, below).
+-- Peers' online state as last checked ([full] = true/false; CheckOnline, below), and until when
+-- (after my login) a change isn't news: the roster and friend list are still filling in.
 local lastOnline = {}
+local quietUntil = math.huge
 
 local function Touch(full)
   local db = DB()
@@ -736,13 +738,22 @@ local function CheckOnline()
   local db = DB()
   if not (db and type(db.peers) == "table") then return end
   local roster, now, current, changed = GuildRoster(), time(), {}, false
+  local back = {}
   for full, p in pairs(db.peers) do
     local on = OnlineOf(full, p, roster, now) and true or false
     current[full] = on
-    if lastOnline[full] ~= nil and lastOnline[full] ~= on then changed = true end
+    if lastOnline[full] ~= nil and lastOnline[full] ~= on then
+      changed = true
+      if on then back[#back + 1] = full end
+    end
   end
   lastOnline = current
   if changed then FirePeersSoon() end
+  -- Came online by the friend list or roster, with or without a login hello (their addon off,
+  -- sharing off): the back-online notice (it checks for a request and rate-limits itself).
+  if now >= quietUntil then
+    for _, full in ipairs(back) do Comm.NoteBackOnline(full) end
+  end
 end
 
 local checkOnlinePending = false
@@ -1618,6 +1629,7 @@ local function Start()
     -- Nobody says goodbye: a peer not heard from within ONLINE_WINDOW goes offline without a
     -- message. Checked once a minute (from a first look now).
     CheckOnline()
+    quietUntil = time() + 120
     C_Timer.NewTicker(60, CheckOnline)
   end
 end

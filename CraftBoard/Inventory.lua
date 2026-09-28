@@ -520,7 +520,28 @@ NS.ItemLabel = Inventory.ItemLabel
 
 -- My recipe (any character, the current one first) making itemID:
 -- recipeID, record, charKey, current. nil when none of my characters knows one.
-function Inventory.MyRecipeFor(itemID)
+-- The current character's recipe for itemID that a request uses: of several that make it (ranks,
+-- variants), the first by recipe ID that the bags allow qty items of now, else the first. nil
+-- when this character knows none.
+function Inventory.RecipeToUse(itemID, qty)
+  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+  local c = NS.Me and chars[NS.Me]
+  if type(itemID) ~= "number" or type(c) ~= "table" or type(c.recipes) ~= "table" then return nil end
+  local ids = {}
+  for id, rec in pairs(c.recipes) do
+    if type(id) == "number" and type(rec) == "table" and rec.o == itemID then ids[#ids + 1] = id end
+  end
+  if #ids == 0 then return nil end
+  table.sort(ids)
+  if #ids > 1 then
+    for _, id in ipairs(ids) do
+      if Inventory.CanCraft(c.recipes[id], qty, true).ready then return id, c.recipes[id] end
+    end
+  end
+  return ids[1], c.recipes[ids[1]]
+end
+
+function Inventory.MyRecipeFor(itemID, qty)
   if type(itemID) ~= "number" or type(CraftBoardDB) ~= "table" or type(CraftBoardDB.chars) ~= "table" then return nil end
   local function find(c)
     if type(c) ~= "table" or type(c.recipes) ~= "table" then return nil end
@@ -528,8 +549,8 @@ function Inventory.MyRecipeFor(itemID)
       if type(rec) == "table" and rec.o == itemID then return id, rec end
     end
   end
-  if NS.Me then
-    local id, rec = find(CraftBoardDB.chars[NS.Me])
+  do
+    local id, rec = Inventory.RecipeToUse(itemID, qty)
     if id then return id, rec, NS.Me, true end
   end
   -- Alts only on this realm and faction (what they craft can reach the other player).

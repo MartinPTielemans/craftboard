@@ -296,6 +296,9 @@ local function WaitReason(recipeID)
   -- The client refuses the cast without them: the button waits (the tooltip lists what's short).
   local cc = BagCheck(recipeID)
   if cc and not cc.ready then return L["Missing reagents in your bags."] end
+  -- A rod or other tool the enchant needs (known while the Enchanting window is open).
+  local tool = recipeID and NS.Craft and NS.Craft.MissingTool and NS.Craft.MissingTool(recipeID)
+  if tool then return format(L["Requires %s."], tool) end
   return nil
 end
 

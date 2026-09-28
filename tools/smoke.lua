@@ -296,6 +296,12 @@ do
   check(m.mats == nil and Q.Totals(true)[1] ~= nil, "a queued craft follows a change of mats")
   Q.Remove(m.id)
 end
+-- Two of my recipes make the same item: a request uses the one my bags allow.
+me.recipes[8801] = { p = 165, n = "Kit (rare hide)", o = 8800, r = { { 2320, 1 } } }
+me.recipes[8802] = { p = 165, n = "Kit (leather)", o = 8800, r = { { 2318, 1 } } }
+eq((NS.Inventory.RecipeToUse(8800, 1)), 8802, "the craftable one of two recipes for an item")
+eq((NS.Inventory.RecipeToUse(8800, 5)), 8801, "none craftable: the lowest recipe ID")
+me.recipes[8801], me.recipes[8802] = nil, nil
 local arrows = { p = 202, o = 999, y = 200, r = { { 2318, 1 } } }
 eq(NS.Inventory.CanCraft(arrows, 200).reagents[1].need, 1, "yield: 200 items is one craft")
 eq(NS.Inventory.CanCraft(arrows, 201).reagents[1].need, 2, "yield rounds up")

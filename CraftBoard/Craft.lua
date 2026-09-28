@@ -57,6 +57,8 @@ local function MissingTool(recipeID)
   return nil
 end
 
+Craft.MissingTool = MissingTool
+
 -- How many times the open window says it can be made (reagents in bags), or nil if it won't say.
 local function Available(recipeID)
   if not (TSUI and TSUI.GetRecipeInfo) then return nil end

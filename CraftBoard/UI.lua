@@ -2751,7 +2751,8 @@ end
 
 -- What I know about each craftable item: { rec=, recipeID=, prof=, current=, char= } from my
 -- chars' records (the current char first, current = true), else { recipeID=, prof= } from the
--- shared recipe catalogue (for the card background only). Cached until recipes change.
+-- shared recipe catalogue (for the card background only). Cached until recipes change. multi:
+-- the current character knows several recipes for it (R.KnowFor picks one per request).
 function R.RecipesByOutput()
   if R.byOut and not R.byOutDirty then return R.byOut end
   local out = {}
@@ -2760,8 +2761,13 @@ function R.RecipesByOutput()
   local function take(c, current, key)
     if type(c) ~= "table" or type(c.recipes) ~= "table" then return end
     for id, rec in pairs(c.recipes) do
-      if type(rec) == "table" and type(rec.o) == "number" and not out[rec.o] then
-        out[rec.o] = { rec = rec, recipeID = id, prof = rec.p, current = current, char = key }
+      if type(rec) == "table" and type(rec.o) == "number" then
+        local k = out[rec.o]
+        if not k then
+          out[rec.o] = { rec = rec, recipeID = id, prof = rec.p, current = current, char = key }
+        elseif current and k.current then
+          k.multi = true
+        end
       end
     end
   end
@@ -2780,6 +2786,15 @@ function R.RecipesByOutput()
   end
   R.byOut, R.byOutDirty = out, false
   return out
+end
+
+-- The recipe a request for qty items uses on this character: know itself, or (several of my
+-- recipes make the item) the one the bags allow, else the lowest recipe ID.
+function R.KnowFor(know, itemID, qty)
+  if not (know and know.multi and NS.Inventory and NS.Inventory.RecipeToUse) then return know end
+  local id, rec = NS.Inventory.RecipeToUse(itemID, qty)
+  if not id or id == know.recipeID then return know end
+  return { rec = rec, recipeID = id, prof = rec.p, current = true, char = know.char, multi = true }
 end
 
 function R.Collapsed()
@@ -2864,7 +2879,7 @@ function R.QueueTarget(e)
     return e.know.recipeID, e.post.item, e.post.qty or 1, e.post.from, false
   end
   if e.chat and not e.seen.links and e.seen.recipeID and e.seen.current then
-    return e.seen.recipeID, e.rec and e.rec.o or nil, e.seen.qty or 1, e.seen.from, e.seen.mats
+    return e.useRecipeID or e.seen.recipeID, e.rec and e.rec.o or nil, e.seen.qty or 1, e.seen.from, e.seen.mats
   end
   return nil
 end
@@ -3773,9 +3788,9 @@ local function Annotate()
   local postedBy = {}      -- [player .. ":" .. item]: a board request, so the same chat ask isn't listed twice
   for _, post in ipairs(posts) do
     if type(post) == "table" and type(post.item) == "number" and post.id ~= nil then
-      local know = byOut[post.item]
-      local name = ItemName(post.item)
       local qty = post.qty or 1
+      local know = R.KnowFor(byOut[post.item], post.item, qty)
+      local name = ItemName(post.item)
       local mine = R.IsMyPost(post)
       local alt = not mine and R.AltOf(post.from)
       local online = mine or alt or R.Online(post.from)
@@ -3813,6 +3828,12 @@ local function Annotate()
   for _, s in ipairs(reqs.chatOn and CW.Seen() or {}) do
     local rec = s.recipeID and NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(s.recipeID) or nil
     local out = s.itemID or (rec and type(rec.o) == "number" and rec.o) or nil
+    -- Several of my recipes make it: the one this ask's quantity can be crafted with.
+    local useID = s.recipeID
+    if s.current and not s.links and out and byOut[out] and byOut[out].multi then
+      local k = R.KnowFor(byOut[out], out, s.qty or 1)
+      if k and k.recipeID ~= s.recipeID then useID, rec = k.recipeID, k.rec end
+    end
     local dup = out and postedBy[strlower(s.from) .. ":" .. out]
     if not dup then
       local profName = CW.ProfName and CW.ProfName(s) or s.prof
@@ -3827,7 +3848,7 @@ local function Annotate()
       end
       local e = {
         -- The ask is part of the id, so a new ask from the same player isn't taken for a queued one.
-        chat = true, seen = s, id = "chat:" .. s.from .. ":" .. (s.itemName or s.prof or ""),
+        chat = true, seen = s, id = "chat:" .. s.from .. ":" .. (s.itemName or s.prof or ""), useRecipeID = useID,
         ready = CW.CanHelp(s) and true or false, rec = rec, profName = profName,
         name = title, label = (s.qty or 1) > 1 and (format(L["%dx"], s.qty) .. " " .. label) or label,
         lname = strlower(title .. " " .. (s.text or "")), lfrom = strlower(Short(s.from)),
