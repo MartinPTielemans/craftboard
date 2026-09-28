@@ -185,6 +185,7 @@ local enUS = {
   "You know this recipe.",
   "Known on %s.",
   "You have %s.",
+  "You don't have %s.",
   "None of your characters knows this recipe.",
   "They have the mats.",
   "You have the reagents.",

@@ -145,6 +145,23 @@ for w in ("lf lfm wtb need needs needed anyone any can craft crafter crafting ma
   .. "pst w me a an the for x i im looking someone somebody who that to ty thanks thx is are there around "
   .. "of on in with and or"):gmatch("%S+") do FILLER[w] = true end
 
+-- A few words saying what a profession-only ask is about ("head enchant" from "any enchanter
+-- have head enchant?"): the line's words minus ask markers, fillers and profession words, at
+-- most three. nil when nothing is left.
+function ChatWatch.Topic(e)
+  if type(e) ~= "table" or type(e.text) ~= "string" then return nil end
+  local words = {}
+  for w in lower(e.text):gsub("%b[]", " "):gmatch("[%w'+]+") do
+    if not (FILLER[w] or PROF_WORDS[w] or w:match("^x?%d+x?$") or #w < 2
+      or w == "have" or w == "has" or w == "got" or w == "mats" or w == "tip" or w == "tips") then
+      words[#words + 1] = w
+      if #words == 3 then break end
+    end
+  end
+  if #words == 0 then return nil end
+  return table.concat(words, " ")
+end
+
 -- The chat line of entry e adds something to its title (a tip, "have mats", a deadline...).
 function ChatWatch.AddsDetail(e)
   if type(e) ~= "table" or type(e.text) ~= "string" then return false end

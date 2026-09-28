@@ -2994,7 +2994,8 @@ function R.Buttons(e)
   reqs.chatWhisper:SetShown(chat and true or false)
   reqs.chatHide:SetShown(chat and true or false)
   reqs.done:SetShown(e and e.queue and true or false)
-  local canQueue = (post or chat) and not queue
+  -- Queue only shows where there is a recipe to queue (not on a profession-only chat ask).
+  local canQueue = (post or (chat and e.seen.recipeID)) and not queue
   reqs.queueBtn:SetShown(canQueue and true or false)
   if canQueue then
     local queued = NS.Queue and NS.Queue.Has(e.id)
@@ -3094,8 +3095,14 @@ function R.ChatDetail(e)
 
   local has = rec and type(rec.r) == "table" and #rec.r > 0 and NS.Inventory and NS.Inventory.CanCraft
   local cc = has and NS.Inventory.CanCraft(rec, s.qty or 1) or nil
-  local profName = not s.recipeID and NS.ChatWatch.CanHelp(s) and s.prof or nil
-  local lines = { R.KnowLine(s.recipeID and s.current, s.knownOn, profName) }
+  local lines = {}
+  if s.recipeID or s.itemName then
+    lines[1] = R.KnowLine(s.recipeID and s.current, s.knownOn)
+  elseif s.prof then
+    -- Asked by profession only: whether I have it, not whether I know a recipe.
+    lines[1] = NS.ChatWatch.CanHelp(s) and (GREEN .. format(L["You have %s."], s.prof) .. "|r")
+      or (GREY .. format(L["You don't have %s."], s.prof) .. "|r")
+  end
   if s.mats then
     lines[#lines + 1] = GREEN .. L["They have the mats."] .. "|r"
   elseif cc and cc.ready then
@@ -3484,12 +3491,15 @@ local function Annotate()
   local mineRecipes = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine() or {}
   for _, s in ipairs(reqs.chatOn and CW.Seen() or {}) do
     local title = s.itemName or s.prof or L["Crafting request"]
+    -- Profession-only asks read alike ("Enchanting" x3): add what the line is about.
+    local topic = not s.itemName and not s.links and NS.ChatWatch.Topic and NS.ChatWatch.Topic(s)
+    local label = topic and (title .. DOT .. topic) or title
     local rec = s.recipeID and NS.Recipes and NS.Recipes.Record and NS.Recipes.Record(s.recipeID) or nil
     local out = rec and type(rec.o) == "number" and rec.o or nil
     local e = {
       -- The ask is part of the id, so a new ask from the same player isn't taken for a queued one.
       chat = true, seen = s, id = "chat:" .. s.from .. ":" .. (s.itemName or s.prof or ""), ready = CW.CanHelp(s) and true or false, rec = rec,
-      name = title, label = (s.qty or 1) > 1 and (format(L["%dx"], s.qty) .. " " .. title) or title,
+      name = title, label = (s.qty or 1) > 1 and (format(L["%dx"], s.qty) .. " " .. label) or label,
       lname = strlower(title .. " " .. (s.text or "")), lfrom = strlower(Short(s.from)),
       knownOn = s.knownOn, t = s.t, outputItemID = out,
       icon = ItemIcon(out) or (s.recipeID and SpellIcon(s.recipeID)) or ProfIcon(s.profID),
