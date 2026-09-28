@@ -1,10 +1,12 @@
 -- CraftBoard Tooltips: in a party or raid, item tooltips name the group members (CraftBoard
 -- users) who can craft that item, and a group member's unit tooltip lists their professions.
--- Option "groupTooltips" (default on). Any item tooltip also says how many of my recipes use
--- it as a reagent, what my queue needs of it and which alts hold it (option "reagentTooltips"),
--- and a recipe item (Pattern:, Plans:, ...) says which of my characters know it, can learn it,
--- or still need skill for it (option "recipeTooltips"). Post-hooks only (TooltipDataProcessor,
--- else OnTooltipSetItem / OnTooltipSetUnit); nothing on Blizzard's tooltips is replaced.
+-- Option "groupTooltips" (default on). A reagent's tooltip also says how many of my recipes use
+-- it, what my queue needs of it and which of my other characters hold it (option
+-- "reagentTooltips"), and a recipe item (Pattern:, Plans:, ...) says which of my other characters
+-- know it, can learn it, or still need skill for it (option "recipeTooltips"). Only GameTooltip
+-- and ItemRefTooltip get lines (not comparison, embedded or scanning tooltips). Post-hooks only
+-- (TooltipDataProcessor, else OnTooltipSetItem / OnTooltipSetUnit); nothing on Blizzard's
+-- tooltips is replaced.
 local ADDON, NS = ...
 
 local Tooltips = {}
@@ -20,6 +22,16 @@ local function On()
   return not (type(CraftBoardDB) == "table" and CraftBoardDB.groupTooltips == false)
 end
 
+-- The peer record of a group member: its own key first, else any key naming the same player.
+local function PeerOf(peers, full)
+  local p = peers[full]
+  if type(p) == "table" then return p end
+  for name, q in pairs(peers) do
+    if type(q) == "table" and NS.SamePlayer(name, full) then return q end
+  end
+  return nil
+end
+
 local function Rebuild()
   byItem, byPeer = {}, {}
   local members = NS.GroupMembers and NS.GroupMembers() or {}
@@ -27,20 +39,18 @@ local function Rebuild()
   local peers = NS.Comm and NS.Comm.Peers and NS.Comm.Peers() or {}
   local cat = type(CraftBoardDB) == "table" and type(CraftBoardDB.recipeNames) == "table" and CraftBoardDB.recipeNames or {}
   for _, m in ipairs(members) do
-    for name, p in pairs(peers) do
-      if NS.SamePlayer(name, m) then
-        byPeer[m] = p
-        local short = NS.ShortName(m)
-        for id in pairs(type(p.recipes) == "table" and p.recipes or {}) do
-          local e = cat[id]
-          local out = type(e) == "table" and e.o
-          if type(out) == "number" then
-            local list = byItem[out] or {}
-            byItem[out] = list
-            if list[#list] ~= short then list[#list + 1] = short end
-          end
+    local p = PeerOf(peers, m)
+    if p then
+      byPeer[m] = p
+      local short = NS.ShortName(m)
+      for id in pairs(type(p.recipes) == "table" and p.recipes or {}) do
+        local e = cat[id]
+        local out = type(e) == "table" and e.o
+        if type(out) == "number" then
+          local list = byItem[out] or {}
+          byItem[out] = list
+          if list[#list] ~= short then list[#list + 1] = short end
         end
-        break
       end
     end
   end
@@ -62,10 +72,8 @@ local function AddUnitLine(tt, unit)
   if not ((UnitInParty and UnitInParty(unit)) or (UnitInRaid and UnitInRaid(unit))) then return end
   if not byPeer then Rebuild() end
   local full = NS.UnitFullName(unit)
-  local p
-  for key, peer in pairs(byPeer) do
-    if NS.SamePlayer(key, full) then p = peer break end
-  end
+  if not full then return end
+  local p = PeerOf(byPeer, full)
   if not p then return end
   local parts = {}
   for _, pr in pairs(type(p.profs) == "table" and p.profs or {}) do
@@ -75,7 +83,7 @@ local function AddUnitLine(tt, unit)
   end
   if #parts == 0 then return end
   table.sort(parts)
-  tt:AddLine(format(L["CraftBoard: %s"], table.concat(parts, ", ")), LINE_RGB[1], LINE_RGB[2], LINE_RGB[3], true)
+  tt:AddLine(format(L["Professions: %s"], table.concat(parts, ", ")), LINE_RGB[1], LINE_RGB[2], LINE_RGB[3], true)
 end
 
 -- My own characters ------------------------------------------------------------
@@ -83,7 +91,10 @@ end
 
 local GREEN = { 0.25, 1, 0.25 }
 local GREY = { 0.6, 0.6, 0.6 }
-local MAX_RECIPE_LINES = 5
+local ORANGE = { 1, 0.6, 0.2 }
+local WHITE = { 1, 1, 1 }
+local MAX_ALTS = 4        -- alt rows before "and N more"
+local MAX_NAMES = 4       -- names on one recipe line before "and N more"
 
 local function OptionOn(key)
   return not (type(CraftBoardDB) == "table" and CraftBoardDB[key] == false)
@@ -98,6 +109,27 @@ local function Plain(s)
   return NS.StripCodes(s)
 end
 
+local function Line(out, text, rgb)
+  out[#out + 1] = { text = text, r = rgb[1], g = rgb[2], b = rgb[3] }
+end
+
+-- "A, B, C, D, and 2 more".
+local function Names(list)
+  local shown = {}
+  for i = 1, math.min(MAX_NAMES, #list) do shown[i] = list[i] end
+  if #list > MAX_NAMES then shown[#shown + 1] = format(L["and %d more"], #list - MAX_NAMES) end
+  return table.concat(shown, ", ")
+end
+
+local function ClassRGB(class)
+  local colors = type(class) == "string" and RAID_CLASS_COLORS
+  local c = type(colors) == "table" and colors[class]
+  if type(c) == "table" and type(c.r) == "number" and type(c.g) == "number" and type(c.b) == "number" then
+    return { c.r, c.g, c.b }
+  end
+  return WHITE
+end
+
 -- [itemID] = number of distinct recipes (over all my characters) with it in a reagent slot.
 local usedIn = nil
 
@@ -107,6 +139,7 @@ local function BuildUsedIn()
     for recipeID, rec in pairs(type(c) == "table" and type(c.recipes) == "table" and c.recipes or {}) do
       for _, reg in ipairs(type(rec) == "table" and type(rec.r) == "table" and rec.r or {}) do
         if type(reg) == "table" then
+          -- reg.alts: the slot's other quality tiers (saved recipe data), not alt characters.
           local ids = { reg[1] }
           for _, id in ipairs(type(reg.alts) == "table" and reg.alts or {}) do ids[#ids + 1] = id end
           for _, id in ipairs(ids) do
@@ -136,6 +169,7 @@ local function QueueRow(itemID)
   end
   for _, row in ipairs(queueRows) do
     if row.itemID == itemID then return row end
+    -- row.alts: quality tiers of the same reagent slot.
     for _, id in ipairs(type(row.alts) == "table" and row.alts or {}) do
       if id == itemID then return row end
     end
@@ -146,43 +180,32 @@ end
 local function ReagentLines(itemID, out)
   if not usedIn then BuildUsedIn() end
   local n = usedIn[itemID]
-  if n and n > 0 then
-    out[#out + 1] = { text = format(L["Used in %d of your recipes"], n), r = LINE_RGB[1], g = LINE_RGB[2], b = LINE_RGB[3] }
-  end
+  if n and n > 0 then Line(out, format(L["Used in %d of your recipes"], n), LINE_RGB) end
   local row = QueueRow(itemID)
   if row and (row.need or 0) > 0 then
-    out[#out + 1] = { text = format(L["Your queue needs %d (you have %d)"], row.need, row.have or 0),
-      r = LINE_RGB[1], g = LINE_RGB[2], b = LINE_RGB[3] }
+    local have = row.have or 0
+    Line(out, format(L["Your queue needs %d (you have %d)"], row.need, have), have >= row.need and GREEN or ORANGE)
   end
-  local total, list = 0, {}
-  if NS.Inventory and NS.Inventory.AltCounts then total, list = NS.Inventory.AltCounts(itemID) end
-  if total > 0 then
-    local parts = {}
-    for i = 1, math.min(3, #list) do parts[#parts + 1] = format("%s %d", NS.ShortName(list[i].name), list[i].n) end
-    out[#out + 1] = { text = format(L["On alts: %s"], table.concat(parts, ", ")), r = LINE_RGB[1], g = LINE_RGB[2], b = LINE_RGB[3] }
+  local Inv = NS.Inventory
+  if not (Inv and Inv.AltCounts and Inv.IsReagentLike and Inv.IsReagentLike(itemID)) then return end
+  local total, list = Inv.AltCounts(itemID)
+  if total <= 0 then return end
+  Line(out, format(L["+%d on alts"], total), LINE_RGB)
+  for i = 1, math.min(MAX_ALTS, #list) do
+    local rgb = ClassRGB(list[i].class)
+    out[#out + 1] = { text = "  " .. NS.ShortName(list[i].name), r = rgb[1], g = rgb[2], b = rgb[3],
+      right = tostring(list[i].n), rr = WHITE[1], rg = WHITE[2], rb = WHITE[3] }
   end
+  if #list > MAX_ALTS then Line(out, "  " .. format(L["and %d more"], #list - MAX_ALTS), GREY) end
 end
 
 -- Recipe items -----------------------------------------------------------------
 
 local function IsRecipeItem(itemID)
-  local classID
-  if C_Item and C_Item.GetItemInfoInstant then
-    local ok, _, _, _, _, _, c = pcall(C_Item.GetItemInfoInstant, itemID)
-    if ok then classID = c end
-  elseif GetItemInfoInstant then
-    local ok, _, _, _, _, _, c = pcall(GetItemInfoInstant, itemID)
-    if ok then classID = c end
-  end
-  if classID == nil then
-    local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
-    if getInfo then
-      local ok, _, _, _, _, _, _, _, _, _, _, _, c = pcall(getInfo, itemID)
-      if ok then classID = c end
-    end
-  end
-  local recipeClass = Enum and Enum.ItemClass and Enum.ItemClass.Recipe or 9
-  return classID == recipeClass
+  local recipeClass = Enum and Enum.ItemClass and Enum.ItemClass.Recipe
+  if type(recipeClass) ~= "number" then recipeClass = 9 end
+  local class = NS.Inventory and NS.Inventory.ItemClass and NS.Inventory.ItemClass(itemID)
+  return class == recipeClass
 end
 
 -- A client format string ("Requires %s (%d)", also "%1$s") as an anchored Lua pattern; the
@@ -215,6 +238,7 @@ local function FormatToPattern(fmt)
 end
 
 local minSkillPattern, minSkillOrder = nil, nil
+local repPattern = nil
 
 -- A tooltip line's left text: a data line ({leftText=}, or older clients' unsurfaced
 -- {args={ {field=, stringVal=} }}) or a plain string.
@@ -250,82 +274,132 @@ local function RequiredSkill(lines)
   return nil
 end
 
--- [lower-case recipe or output item name] = { [charKey] = true } over my characters.
-local knownBy = nil
+-- The tooltip has a reputation requirement ("Requires Timbermaw Hold - Honored").
+local function NeedsReputation(lines)
+  if repPattern == nil then
+    repPattern = type(ITEM_REQ_REPUTATION) == "string" and FormatToPattern(ITEM_REQ_REPUTATION) or false
+  end
+  if not repPattern or type(lines) ~= "table" then return false end
+  for _, line in ipairs(lines) do
+    local text = LeftText(line)
+    if text and text:match(repPattern) then return true end
+  end
+  return false
+end
+
+-- Names compared loosely: lower case, punctuation dropped, spaces collapsed, so a recipe item's
+-- "Transmute Arcanite" (from "Recipe: Transmute Arcanite") matches the spell "Transmute: Arcanite".
+local function Norm(s)
+  if type(s) ~= "string" or (issecretvalue and issecretvalue(s)) then return nil end
+  s = s:lower():gsub("%p", " "):gsub("%s+", " ")
+  s = s:match("^%s*(.-)%s*$")
+  return s ~= "" and s or nil
+end
+
+-- [normalized recipe or output item name] / [recipeID] = { [charKey] = true } over my characters.
+local knownBy, knownByID = nil, nil
 
 local function BuildKnownBy()
-  knownBy = {}
+  knownBy, knownByID = {}, {}
   local itemName = NS.Inventory and NS.Inventory.ItemName
+  local function note(map, k, key)
+    if k == nil then return end
+    map[k] = map[k] or {}
+    map[k][key] = true
+  end
   for key, c in pairs(Chars()) do
-    for _, rec in pairs(type(c) == "table" and type(c.recipes) == "table" and c.recipes or {}) do
+    for recipeID, rec in pairs(type(c) == "table" and type(c.recipes) == "table" and c.recipes or {}) do
       if type(rec) == "table" then
-        local names = { rec.n, type(rec.o) == "number" and itemName and itemName(rec.o) or nil }
-        for i = 1, 2 do
-          local n = names[i]
-          if type(n) == "string" and n ~= "" then
-            n = n:lower()
-            knownBy[n] = knownBy[n] or {}
-            knownBy[n][key] = true
-          end
-        end
+        note(knownByID, recipeID, key)
+        note(knownBy, Norm(rec.n), key)
+        note(knownBy, Norm(type(rec.o) == "number" and itemName and itemName(rec.o) or nil), key)
       end
     end
   end
 end
 
+-- The spell a recipe item teaches, when the client names it: name, spellID.
+local function ItemSpell(itemID)
+  local get = (C_Item and C_Item.GetItemSpell) or GetItemSpell
+  if not get then return nil end
+  local ok, name, spellID = pcall(get, itemID)
+  if not ok or (issecretvalue and (issecretvalue(name) or issecretvalue(spellID))) then return nil end
+  return type(name) == "string" and name or nil, type(spellID) == "number" and spellID or nil
+end
+
 local function ProfRank(c, profName)
   local want = profName:lower()
   for _, pr in pairs(type(c) == "table" and type(c.profs) == "table" and c.profs or {}) do
-    if type(pr) == "table" and type(pr[1]) == "string" and pr[1]:lower() == want then
+    if type(pr) == "table" and not pr.gone and type(pr[1]) == "string" and pr[1]:lower() == want then
       return tonumber(pr[2]) or 0
     end
   end
   return nil
 end
 
+-- Up to three lines over my other reachable characters (Blizzard already tells the current one
+-- "Already known" or its requirement): Known by (grey), Can learn (green), Needs more skill (orange).
 local function RecipeLines(itemID, lines, out)
-  if not IsRecipeItem(itemID) then return end
   local name = NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(itemID)
   if not name and type(lines) == "table" and lines[1] then
     name = LeftText(lines[1])
   end
+  local spellName, spellID = ItemSpell(itemID)
   local taught = type(name) == "string" and name:match("^.-:%s*(.+)$")
-  if not taught then return end
-  taught = taught:lower()
+  if not (spellName or spellID or taught) then return end
   if not knownBy then BuildKnownBy() end
-  local known = knownBy[taught] or {}
+  local known = {}
+  local function merge(set)
+    for key in pairs(set or {}) do known[key] = true end
+  end
+  if spellID then merge(knownByID[spellID]) end
+  local k1, k2 = Norm(spellName), Norm(taught)
+  if k1 then merge(knownBy[k1]) end
+  if k2 then merge(knownBy[k2]) end
   local profName, required = RequiredSkill(lines)
-  local rows = {}
+  local reachable = NS.Inventory and NS.Inventory.Reachable
+  local knownList, learn, short = {}, {}, {}
   for key, c in pairs(Chars()) do
-    local short = NS.ShortName(key)
-    if known[key] then
-      rows[#rows + 1] = { order = 1, name = short, text = format(L["Known by %s"], short), rgb = GREEN }
-    elseif profName then
-      local rank = ProfRank(c, profName)
-      if rank and rank >= required then
-        rows[#rows + 1] = { order = 2, name = short, text = format(L["Learnable by %s"], short), rgb = GREEN }
-      elseif rank then
-        rows[#rows + 1] = { order = 3, name = short, text = format(L["%s needs %d"], short, required), rgb = GREY }
+    if key ~= NS.Me and type(c) == "table" and (not reachable or reachable(key, c)) then
+      local who = NS.ShortName(key)
+      if known[key] then
+        knownList[#knownList + 1] = who
+      elseif profName then
+        local rank = ProfRank(c, profName)
+        if rank and rank >= required then
+          learn[#learn + 1] = who
+        elseif rank then
+          short[#short + 1] = { name = who, rank = rank }
+        end
       end
     end
   end
-  table.sort(rows, function(a, b)
-    if a.order ~= b.order then return a.order < b.order end
+  table.sort(knownList)
+  table.sort(learn)
+  table.sort(short, function(a, b)
+    if a.rank ~= b.rank then return a.rank > b.rank end
     return a.name < b.name
   end)
-  for i = 1, math.min(MAX_RECIPE_LINES, #rows) do
-    local r = rows[i]
-    out[#out + 1] = { text = r.text, r = r.rgb[1], g = r.rgb[2], b = r.rgb[3] }
+  if #knownList > 0 then Line(out, format(L["Known by: %s"], Names(knownList)), GREY) end
+  if #learn > 0 then
+    local fmt = NeedsReputation(lines) and L["Can learn: %s (needs reputation)"] or L["Can learn: %s"]
+    Line(out, format(fmt, Names(learn)), GREEN)
+  end
+  if #short > 0 then
+    local parts = {}
+    for i, s in ipairs(short) do parts[i] = format("%s (%d/%d)", s.name, s.rank, required) end
+    Line(out, format(L["Needs more skill: %s"], Names(parts)), ORANGE)
   end
 end
 
--- Lines to add to an item tooltip: { {text=, r=, g=, b=}, ... } (possibly empty). lines: the
--- tooltip's own text (data lines or strings), used to read a recipe item's skill requirement.
+-- Lines to add to an item tooltip: { {text=, r=, g=, b=, right=?, rr=, rg=, rb=}, ... } (possibly
+-- empty; right= makes a double line). lines: the tooltip's own text (data lines or strings), used
+-- to read a recipe item's skill and reputation requirements. A recipe item's lines come first.
 function Tooltips.ItemLines(itemID, lines)
   local out = {}
   if type(itemID) ~= "number" then return out end
+  if OptionOn("recipeTooltips") and IsRecipeItem(itemID) then RecipeLines(itemID, lines, out) end
   if OptionOn("reagentTooltips") then ReagentLines(itemID, out) end
-  if OptionOn("recipeTooltips") then RecipeLines(itemID, lines, out) end
   return out
 end
 
@@ -346,10 +420,22 @@ local function AddMyLines(tt, itemID, lines)
   if not (tt and tt.AddLine and type(itemID) == "number") then return end
   local ok, add = pcall(Tooltips.ItemLines, itemID, lines)
   if not ok then return end
-  for _, l in ipairs(add) do tt:AddLine(l.text, l.r, l.g, l.b, true) end
+  for _, l in ipairs(add) do
+    if l.right and tt.AddDoubleLine then
+      tt:AddDoubleLine(l.text, l.right, l.r, l.g, l.b, l.rr, l.rg, l.rb)
+    else
+      tt:AddLine(l.text, l.r, l.g, l.b, true)
+    end
+  end
 end
 
-local function MineDirty() usedIn, knownBy, queueRows = nil, nil, nil end
+-- Only the tooltips a player reads: the mouseover one and a clicked link's. Comparison
+-- (ShoppingTooltip1/2), embedded and other addons' scanning tooltips are different frames.
+local function Mine(tt)
+  return tt ~= nil and ((GameTooltip and tt == GameTooltip) or (ItemRefTooltip and tt == ItemRefTooltip)) or false
+end
+
+local function MineDirty() usedIn, knownBy, knownByID, queueRows = nil, nil, nil, nil end
 local function QueueDirty() queueRows = nil end
 Tooltips.FormatToPattern = FormatToPattern
 
@@ -361,6 +447,7 @@ local function Hook()
   local T = Enum and Enum.TooltipDataType
   if TDP and TDP.AddTooltipPostCall and T and T.Item then
     TDP.AddTooltipPostCall(T.Item, function(tt, data)
+      if not Mine(tt) then return end
       if type(data) == "table" and (not issecretvalue or not issecretvalue(data.id)) then
         AddItemLine(tt, data.id)
         AddMyLines(tt, data.id, data.lines)
@@ -375,16 +462,20 @@ local function Hook()
     end
     return
   end
+  local function OnItem(tt)
+    local ok, _, link = pcall(tt.GetItem, tt)
+    if not ok or (issecretvalue and issecretvalue(link)) then return end
+    local itemID = type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
+    AddItemLine(tt, itemID)
+    AddMyLines(tt, itemID, TextLines(tt))
+  end
+  for _, tt in ipairs({ GameTooltip or false, ItemRefTooltip or false }) do
+    if tt and tt.HookScript then pcall(tt.HookScript, tt, "OnTooltipSetItem", OnItem) end
+  end
   if GameTooltip and GameTooltip.HookScript then
-    pcall(GameTooltip.HookScript, GameTooltip, "OnTooltipSetItem", function(tt)
-      local _, link = tt:GetItem()
-      local itemID = type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
-      AddItemLine(tt, itemID)
-      AddMyLines(tt, itemID, TextLines(tt))
-    end)
     pcall(GameTooltip.HookScript, GameTooltip, "OnTooltipSetUnit", function(tt)
-      local _, unit = tt:GetUnit()
-      AddUnitLine(tt, unit)
+      local ok, _, unit = pcall(tt.GetUnit, tt)
+      if ok and (not issecretvalue or not issecretvalue(unit)) then AddUnitLine(tt, unit) end
     end)
   end
 end
@@ -395,7 +486,7 @@ if NS.RegisterCallback then
   NS.RegisterCallback(Tooltips, "PEERS_UPDATED", Dirty)
   NS.RegisterCallback(Tooltips, "IGNORE_UPDATED", Dirty)
   NS.RegisterCallback(Tooltips, "RECIPES_UPDATED", MineDirty)
-  NS.RegisterCallback(Tooltips, "ITEM_NAMES_UPDATED", function() knownBy = nil end)
+  NS.RegisterCallback(Tooltips, "ITEM_NAMES_UPDATED", function() knownBy, knownByID = nil, nil end)
   NS.RegisterCallback(Tooltips, "QUEUE_UPDATED", QueueDirty)
   NS.RegisterCallback(Tooltips, "INVENTORY_UPDATED", QueueDirty)
 end

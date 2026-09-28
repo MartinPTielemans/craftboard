@@ -1,8 +1,14 @@
 -- CraftBoard Cooldowns: crafts with a cooldown (transmutes, Mooncloth...) on my characters, and
 -- the ones peers announce. My characters: CraftBoardDB.chars[key].cd = { [recipeID] = ready-at
--- time (0 = ready) }, read from the spell cooldown on login, after a cast and on cooldown updates,
--- and from the profession window while it is open. The current character's entries go out in
--- the hello (seconds until ready, so peers' clocks don't matter); peers' land in Comm.Peers().cd.
+-- time (0 = ready) }, read from the spell cooldown on login, after a cast and on cooldown updates
+-- (not in combat), and from the profession window while it is open. The current character's
+-- cooldown crafts are cached (rebuilt after RECIPES_UPDATED) so those reads don't walk every
+-- recipe. The current character's entries go out in the hello (seconds until ready, so peers'
+-- clocks don't matter); peers' are kept by Comm (Comm.PeerCooldowns, else CraftBoardDB.peers
+-- [name].cd).
+-- Transmutes on one character that are ready, or end within a minute of each other, share a
+-- cooldown: they are one group (Cooldowns.Group), shown as one line under the client's word
+-- for "Transmute" in /cb cd, the notices and the minimap tooltip.
 -- Ready notice: one quiet chat line when a cooldown on one of my characters runs out (checked
 -- every minute and on updates; ones that ran out while offline in one line after login), said
 -- once per cooldown (chars[key].cdSeen[recipeID] = the ready-at time announced). Option
@@ -13,13 +19,15 @@ local Cooldowns = {}
 NS.Cooldowns = Cooldowns
 
 local L = NS.L
-local format, floor, max = string.format, math.floor, math.max
+local format, floor, max, abs = string.format, math.floor, math.max, math.abs
 local TSUI = C_TradeSkillUI
+local TOGETHER = 60   -- s: transmutes whose cooldowns end this close share one line
 
 -- Crafts known to have a cooldown even while it is ready (so the ready state is shared too).
 -- Any recipe whose cooldown was once seen running is remembered on its record (cdr = true).
+local MOONCLOTH = 18560
 local KNOWN = {
-  [18560] = true,   -- Mooncloth
+  [MOONCLOTH] = true,
   [17187] = true,   -- Transmute: Arcanite
   [11479] = true,   -- Transmute: Iron to Gold
   [11480] = true,   -- Transmute: Mithril to Truesilver
@@ -27,6 +35,8 @@ local KNOWN = {
   [17563] = true, [17564] = true, [17565] = true, [17566] = true,
   [25146] = true,   -- Transmute: Elemental Fire
 }
+
+local mine, mineDirty = {}, true   -- current character's cooldown crafts: { [recipeID] = true }
 
 -- The client's own word for "Transmute", from Transmute: Arcanite's localized name (the part
 -- before the colon), so other transmutes are recognised on any client language.
@@ -42,7 +52,10 @@ local function TransmutePrefix()
     if ok then name = n end
   end
   local prefix = type(name) == "string" and name:match("^([^:]+):")
-  if prefix then transmutePrefix = prefix end
+  if prefix then
+    transmutePrefix = prefix
+    mineDirty = true   -- localized transmutes may have been missed before
+  end
   return prefix or "Transmute"
 end
 
@@ -52,17 +65,37 @@ local function MyChar()
   return type(c) == "table" and c or nil
 end
 
+local function InCombat()
+  return InCombatLockdown and InCombatLockdown() and true or false
+end
+
+local function IsTransmuteName(name)
+  if type(name) ~= "string" then return false end
+  local prefix = TransmutePrefix()
+  return name:sub(1, #prefix) == prefix or name:find("^Transmute") ~= nil
+end
+
 -- A recipe with a cooldown: known list, remembered on the record, or a transmute.
 function Cooldowns.Is(recipeID, rec)
   if KNOWN[recipeID] then return true end
   if type(rec) == "table" then
     if rec.cdr then return true end
-    if type(rec.n) == "string" then
-      local prefix = TransmutePrefix()
-      if rec.n:sub(1, #prefix) == prefix or rec.n:find("^Transmute") then return true end
-    end
+    if IsTransmuteName(rec.n) then return true end
   end
   return false
+end
+
+-- The current character's cooldown crafts, rebuilt when marked stale. nil without a character.
+local function MySet()
+  local c = MyChar()
+  if not (c and type(c.recipes) == "table") then return nil end
+  if mineDirty then
+    mine, mineDirty = {}, false
+    for id, rec in pairs(c.recipes) do
+      if type(id) == "number" and Cooldowns.Is(id, rec) then mine[id] = true end
+    end
+  end
+  return mine
 end
 
 -- Seconds left on a spell's cooldown (0 when ready), ignoring the global cooldown; nil if the
@@ -76,31 +109,37 @@ local function SpellRemaining(spellID)
     local ok, s, d = pcall(GetSpellCooldown, spellID)
     if ok then start, duration = s, d end
   end
+  if issecretvalue and (issecretvalue(start) or issecretvalue(duration)) then return nil end
   if type(start) ~= "number" or type(duration) ~= "number" or not GetTime then return nil end
   if start <= 0 or duration <= 2 then return 0 end
   return max(0, start + duration - GetTime())
 end
 
+local skipped = false   -- an update was skipped in combat: read again once it ends
+
 -- Re-read every cooldown craft of the current character. Returns true when something changed.
 function Cooldowns.Update()
+  if InCombat() then
+    skipped = true
+    return false
+  end
   local c = MyChar()
-  if not (c and type(c.recipes) == "table") then return false end
+  local set = MySet()
+  if not set then return false end
   c.cd = type(c.cd) == "table" and c.cd or {}
   local now, changed = time(), false
-  for id, rec in pairs(c.recipes) do
-    if type(id) == "number" and Cooldowns.Is(id, rec) then
-      local left = SpellRemaining(id)
-      if left then
-        local at = left > 0 and now + floor(left) or 0
-        -- A cooldown that ran out keeps its ready-at time (in the past, so still "ready"
-        -- everywhere) for the ready notice; 0 only when none was known.
-        local old = c.cd[id]
-        if at == 0 and type(old) == "number" and old > 0 and old <= now + 60 then at = old end
-        -- Tolerate a minute of drift so repeated reads don't count as changes.
-        if not c.cd[id] or math.abs((c.cd[id] or 0) - at) > 60 then
-          c.cd[id] = at
-          changed = true
-        end
+  for id in pairs(set) do
+    local left = SpellRemaining(id)
+    if left then
+      local at = left > 0 and now + floor(left) or 0
+      -- A cooldown that ran out keeps its ready-at time (in the past, so still "ready"
+      -- everywhere) for the ready notice; 0 only when none was known.
+      local old = c.cd[id]
+      if at == 0 and type(old) == "number" and old > 0 and old <= now + 60 then at = old end
+      -- Tolerate a minute of drift so repeated reads don't count as changes.
+      if not c.cd[id] or abs((c.cd[id] or 0) - at) > 60 then
+        c.cd[id] = at
+        changed = true
       end
     end
   end
@@ -119,25 +158,77 @@ function Cooldowns.FromTradeSkill()
   if TSUI.IsTradeSkillLinked and TSUI.IsTradeSkillLinked() then return end
   local marked = false
   for id, rec in pairs(c.recipes) do
-    if type(rec) == "table" then
+    if type(rec) == "table" and not rec.cdr then
       local ok, cd = pcall(TSUI.GetRecipeCooldown, id)
-      if ok and type(cd) == "number" and cd > 0 and not rec.cdr then
+      if ok and type(cd) == "number" and cd > 0 then
         rec.cdr, marked = true, true
       end
     end
   end
+  if marked then mineDirty = true end
   if Cooldowns.Update() == false and marked then NS.Fire("COOLDOWNS_UPDATED") end
 end
 
--- For the hello: { [recipeID] = seconds until ready } for the current character, at most n.
+local function RecipeName(c, id)
+  local rec = type(c.recipes) == "table" and c.recipes[id]
+  return type(rec) == "table" and rec.n or (NS.Recipes and NS.Recipes.NameOf and NS.Recipes.NameOf(id)) or tostring(id)
+end
+
+-- Groups a list of { key=, recipeID=, name=, at= } (character by character, as Ready sorts it):
+-- transmutes on one character that are both ready, or both running and ending within a minute
+-- of each other, are one group. Returns { {key=, name=, at=, ids={recipeID, ...}}, ... } in the
+-- list's order; name is the transmute word for a group of several, at its earliest ready-at.
+function Cooldowns.Group(list, now)
+  now = now or time()
+  local out = {}
+  for _, r in ipairs(list) do
+    local at = type(r.at) == "number" and r.at or 0
+    local g
+    if IsTransmuteName(r.name) or (KNOWN[r.recipeID] and r.recipeID ~= MOONCLOTH) then
+      local ready = at <= now
+      for _, o in ipairs(out) do
+        if o.transmute and o.key == r.key and (o.at <= now) == ready and (ready or abs(o.at - at) <= TOGETHER) then
+          g = o
+          break
+        end
+      end
+      if g then
+        g.ids[#g.ids + 1] = r.recipeID
+        g.name = TransmutePrefix()
+        if at < g.at then g.at = at end
+      else
+        out[#out + 1] = { key = r.key, name = r.name, at = at, ids = { r.recipeID }, transmute = true }
+      end
+    else
+      out[#out + 1] = { key = r.key, name = r.name, at = at, ids = { r.recipeID } }
+    end
+  end
+  return out
+end
+
+-- For the hello: { [recipeID] = seconds until ready } for the current character, at most n
+-- groups: every recipe of a group goes out (peers show each transmute's state), but a group
+-- counts once, so shared transmutes don't crowd out other cooldowns.
 function Cooldowns.ForHello(n)
   local c = MyChar()
   if not (c and type(c.cd) == "table") then return nil end
-  local out, count, now = {}, 0, time()
+  local now, list = time(), {}
   for id, at in pairs(c.cd) do
-    if count >= n then break end
-    out[id] = max(0, (at or 0) - now)
-    count = count + 1
+    if type(id) == "number" and type(at) == "number" then
+      list[#list + 1] = { key = NS.Me, recipeID = id, name = RecipeName(c, id), at = at }
+    end
+  end
+  table.sort(list, function(a, b)
+    if a.at ~= b.at then return a.at < b.at end
+    return a.recipeID < b.recipeID
+  end)
+  local out, count = {}, 0
+  for i, g in ipairs(Cooldowns.Group(list, now)) do
+    if i > n then break end
+    for _, id in ipairs(g.ids) do
+      out[id] = max(0, c.cd[id] - now)
+      count = count + 1
+    end
   end
   return count > 0 and out or nil
 end
@@ -145,19 +236,20 @@ end
 -- Seconds until the crafter's cooldown for recipeID is ready (0 = ready), or nil when unknown
 -- (not a cooldown craft, or a peer on an older version).
 function Cooldowns.Remaining(name, recipeID)
-  local now = time()
   local db = type(CraftBoardDB) == "table" and CraftBoardDB
   local c = db and type(db.chars) == "table" and db.chars[name]
+  local cd
   if type(c) == "table" then
-    local at = type(c.cd) == "table" and c.cd[recipeID]
-    if at == nil then return nil end
-    return max(0, at - now)
+    cd = c.cd
+  elseif NS.Comm and NS.Comm.PeerCooldowns then
+    cd = NS.Comm.PeerCooldowns(name)
+  else
+    local p = db and type(db.peers) == "table" and db.peers[name]
+    cd = type(p) == "table" and p.cd
   end
-  local peers = NS.Comm and NS.Comm.Peers and NS.Comm.Peers()
-  local p = peers and peers[name]
-  local at = p and type(p.cd) == "table" and p.cd[recipeID]
-  if at == nil then return nil end
-  return max(0, at - now)
+  local at = type(cd) == "table" and cd[recipeID]
+  if type(at) ~= "number" then return nil end
+  return max(0, at - time())
 end
 
 -- "ready" / "4h" / "2d" for a remaining time.
@@ -169,45 +261,17 @@ function Cooldowns.Text(left)
   return format(L["%dd"], floor(left / 86400))
 end
 
--- /cb cd: every cooldown craft on my characters.
-function Cooldowns.Print()
-  local db = type(CraftBoardDB) == "table" and CraftBoardDB
-  local chars = db and type(db.chars) == "table" and db.chars or {}
-  local keys = {}
-  for key in pairs(chars) do keys[#keys + 1] = key end
-  table.sort(keys)
-  local any = false
-  for _, key in ipairs(keys) do
-    local c = chars[key]
-    if type(c) == "table" and type(c.cd) == "table" then
-      for id, at in pairs(c.cd) do
-        any = true
-        local rec = type(c.recipes) == "table" and c.recipes[id]
-        local name = type(rec) == "table" and rec.n or (NS.Recipes and NS.Recipes.NameOf(id)) or tostring(id)
-        NS.Print(format(L["%s: %s \226\128\148 %s"], NS.ShortName(key), name, Cooldowns.Text(max(0, at - time()))))
-      end
-    end
-  end
-  if not any then NS.Print(L["No crafting cooldowns recorded. Open the profession window once."]) end
-end
-
--- Ready notice ----------------------------------------------------------------------
-
-local function RecipeName(c, id)
-  local rec = type(c.recipes) == "table" and c.recipes[id]
-  return type(rec) == "table" and rec.n or (NS.Recipes and NS.Recipes.NameOf and NS.Recipes.NameOf(id)) or tostring(id)
-end
-
--- Cooldowns on my characters that have run out: { {key=, recipeID=, name=, at=}, ... }, sorted
--- by character then recipe name. at is 0 when the ready time isn't known.
-function Cooldowns.Ready()
+-- Every cooldown on my characters (onlyReady: the ones that have run out): { {key=, recipeID=,
+-- name=, at=}, ... }, sorted by character then recipe name. at is 0 when the ready time isn't
+-- known.
+local function Collect(onlyReady)
   local db = type(CraftBoardDB) == "table" and CraftBoardDB
   local chars = db and type(db.chars) == "table" and db.chars or {}
   local out, now = {}, time()
   for key, c in pairs(chars) do
     if type(c) == "table" and type(c.cd) == "table" then
       for id, at in pairs(c.cd) do
-        if type(at) == "number" and at <= now then
+        if type(at) == "number" and (not onlyReady or at <= now) then
           out[#out + 1] = { key = key, recipeID = id, name = RecipeName(c, id), at = at }
         end
       end
@@ -218,6 +282,29 @@ function Cooldowns.Ready()
     return tostring(a.name) < tostring(b.name)
   end)
   return out
+end
+
+-- /cb cd: every cooldown craft on my characters, one line per group.
+function Cooldowns.Print()
+  local now, any = time(), false
+  for _, g in ipairs(Cooldowns.Group(Collect(false), now)) do
+    any = true
+    NS.Print(format(L["%s: %s \226\128\148 %s"], NS.ShortName(g.key), tostring(g.name), Cooldowns.Text(max(0, g.at - now))))
+  end
+  if not any then NS.Print(L["No crafting cooldowns recorded. Open the profession window once."]) end
+end
+
+-- Ready notice ----------------------------------------------------------------------
+
+-- Cooldowns on my characters that have run out: { {key=, recipeID=, name=, at=}, ... }, sorted
+-- by character then recipe name. at is 0 when the ready time isn't known.
+function Cooldowns.Ready()
+  return Collect(true)
+end
+
+-- The same, grouped (Cooldowns.Group): { {key=, name=, at=, ids=}, ... }.
+function Cooldowns.ReadyGroups()
+  return Cooldowns.Group(Collect(true))
 end
 
 local function NoticeOn()
@@ -251,19 +338,19 @@ end
 
 local loggedIn = false   -- updates before the login line don't announce one by one
 
--- combined: one "Ready: ..." line when several ran out at once (after login).
+-- combined: one "Ready: ..." line when several groups ran out at once (after login).
 function Cooldowns.Notice(combined)
   if not (loggedIn and NoticeOn()) then return end
-  local list = Unannounced()
-  if #list == 0 then return end
-  if combined and #list > 1 then
+  local groups = Cooldowns.Group(Unannounced())
+  if #groups == 0 then return end
+  if combined and #groups > 1 then
     local parts = {}
-    for i, r in ipairs(list) do parts[i] = r.name .. " (" .. NS.ShortName(r.key) .. ")" end
+    for i, g in ipairs(groups) do parts[i] = tostring(g.name) .. " (" .. NS.ShortName(g.key) .. ")" end
     NS.Print(format(L["Ready: %s"], table.concat(parts, ", ")))
     return
   end
-  for _, r in ipairs(list) do
-    NS.Print(format(L["%s is ready on %s."], r.name, NS.ShortName(r.key)))
+  for _, g in ipairs(groups) do
+    NS.Print(format(L["%s is ready on %s."], tostring(g.name), NS.ShortName(g.key)))
   end
 end
 
@@ -279,6 +366,18 @@ local function Soon(delay)
   end)
 end
 
+-- The profession window fires TRADE_SKILL_LIST_UPDATE in bursts: one read a second after the
+-- last of them starts.
+local tradePending = false
+local function TradeSkillSoon()
+  if tradePending then return end
+  tradePending = true
+  C_Timer.After(1, function()
+    tradePending = false
+    Cooldowns.FromTradeSkill()
+  end)
+end
+
 NS.Register("PLAYER_LOGIN", function()
   Soon(5)
   -- Cooldowns that ran out while I was offline: one line once login chatter has settled, then
@@ -291,15 +390,29 @@ NS.Register("PLAYER_LOGIN", function()
 end)
 if NS.RegisterCallback then
   NS.RegisterCallback(Cooldowns, "COOLDOWNS_UPDATED", function() Cooldowns.Notice(false) end)
+  NS.RegisterCallback(Cooldowns, "RECIPES_UPDATED", function() mineDirty = true end)
 end
-NS.Register("SPELL_UPDATE_COOLDOWN", function() Soon(2) end)
+-- Fires constantly in combat and for every spell: only read when I have a cooldown craft, and
+-- once combat is over.
+NS.Register("SPELL_UPDATE_COOLDOWN", function()
+  local set = MySet()
+  if not (set and next(set) ~= nil) then return end
+  if InCombat() then
+    skipped = true
+    return
+  end
+  Soon(2)
+end)
+NS.Register("PLAYER_REGEN_ENABLED", function()
+  if skipped then
+    skipped = false
+    Soon(2)
+  end
+end)
 NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
   if issecretvalue and (issecretvalue(unit) or issecretvalue(spellID)) then return end
   if unit ~= "player" or type(spellID) ~= "number" then return end
-  local c = MyChar()
-  local rec = c and type(c.recipes) == "table" and c.recipes[spellID]
-  if rec and Cooldowns.Is(spellID, rec) then Soon(1) end
+  local set = MySet()
+  if set and set[spellID] then Soon(1) end
 end)
-NS.Register("TRADE_SKILL_LIST_UPDATE", function()
-  C_Timer.After(1, Cooldowns.FromTradeSkill)
-end)
+NS.Register("TRADE_SKILL_LIST_UPDATE", TradeSkillSoon)

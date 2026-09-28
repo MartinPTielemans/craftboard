@@ -57,37 +57,45 @@ CurseForge app and WowUp under the Forever game version.
 - **Fair ordering.** Online crafters are listed first, then shuffled each session. There are no
   ratings, featured spots or anything you can pay for.
 - **Private by default.** Chat lines are kept in memory for 30 minutes and never saved or shared.
+  "Crafted for you" counts stay on your computer.
 - **Non-combat.** Unaffected by Forever's combat addon restrictions.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `/cb` | Open or close the board |
+| `/cb` | Open or close CraftBoard |
+| `/cb find [text]`, `/cb requests`, `/cb plan` | Open a tab (Find searches for the text) |
 | `/cb busy` | Toggle busy |
 | `/cb cd` | List crafting cooldowns on your characters |
-| `/cb scan` | Rescan the open profession window |
+| `/cb chars`, `/cb forget <name>` | List your characters CraftBoard remembers; forget a deleted one |
+| `/cb scan` | Record the open profession window again |
 | `/cb options` | Open the settings |
 | `/cb welcome` | Show the welcome window again |
 | `/cb debug` | Show sync status and known crafters |
 | `/cb chatdebug` | Show what the chat watcher is picking up |
 
-The minimap button opens the board on left-click and the settings on right-click.
+The minimap button opens CraftBoard on left-click and the settings on right-click; its tooltip
+sums up requests you can craft, your queue, ready cooldowns and ranks you can train.
 Shift-right-click toggles busy. Settings live under Options > AddOns > CraftBoard.
 
 ## Status
 
-Beta. Everything is tested in-game on Forever, but the board only gets useful as more players on
-a realm install it. Bug reports and ideas are welcome in
+1.0 is in testing. Recipes, Find and the board have been played on Forever since 0.9; the board
+gets more useful as more players on a realm install it. Bug reports and ideas are welcome in
 [issues](https://github.com/MartinPTielemans/craftboard/issues). A BugSack report and the output
 of `/cb debug` help the most.
 
 ## Development
 
-- `CraftBoard/` is the addon. Modules: Core, Locales, Options, Launcher, Recipes, Inventory, Comm,
-  ChatWatch, UI, Onboarding, Welcome, Hooks, Embed, Debug. The design is in `docs/SPEC.md`.
+- `CraftBoard/` is the addon. Modules: Core, Locales (+ deDE, frFR, esES), Options, Launcher,
+  Recipes, Inventory, Cooldowns, Skills, Queue, Craft, Comm, ChatWatch, Trade, Merchant, UI,
+  Tooltips, Onboarding, Welcome, Hooks, Embed, Debug. The design is in `docs/SPEC.md`.
 - `tools/link.sh` symlinks the addon into the Forever AddOns folder for live testing.
-- `tools/check.sh` parses every Lua file and checks that all locale keys are used and defined.
+- `tools/check.sh` parses every Lua file, checks that all locale keys are used, defined and
+  translated with matching placeholders, and runs `tools/smoke.lua` (every file loaded against
+  stubbed WoW APIs, with checks on chat detection, names, the queue, cooldowns and more) in
+  every locale.
 - `tools/package.sh` builds a release zip locally. Tagged releases are built and uploaded by the
   GitHub workflow; see `docs/RELEASING.md`.
 - `docs/IDEAS.md` collects requested features and the decisions made on them.

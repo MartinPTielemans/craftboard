@@ -32,4 +32,9 @@ rm -f "$used" "$listed"
 # Translations: keys must be enUS keys with the same placeholders (reports untranslated ones).
 out=$(lua tools/check-locales.lua) || fail=1
 echo "$out" | grep -v "^    untranslated: "
+
+# Smoke test: every file loads against stubbed WoW APIs and the testable behaviour holds, in every locale.
+for loc in enUS deDE frFR esES esMX; do
+  lua tools/smoke.lua $loc || fail=1
+done
 exit $fail

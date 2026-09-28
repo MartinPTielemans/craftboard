@@ -289,8 +289,15 @@ local function Difficulty(info)
   return nil
 end
 
+-- Skill points one craft gives (GetRecipeInfo's numSkillUps), stored only when more than one.
+local function SkillUps(info)
+  local n = type(info) == "table" and info.numSkillUps
+  if type(n) == "number" and n > 1 and n < 100 then return math.floor(n) end
+  return nil
+end
+
 local function ReadRecipe(recipeID, info, profID, prev)
-  local rec = { p = profID, n = info.name, r = {}, d = Difficulty(info) }
+  local rec = { p = profID, n = info.name, r = {}, d = Difficulty(info), su = SkillUps(info) }
   if type(info.categoryID) == "number" then rec.c = info.categoryID end
   local _, isEnchant = AcceptType(info.recipeType)
   if isEnchant then rec.e = true end
@@ -406,11 +413,17 @@ function Recipes.Scan(force)
       end
     end
     if type(info) == "table" and info.learned then
-      -- Colours move with the skill while the learned set stays the same: keep them current.
+      -- Colours (and the skill points they give) move with the skill while the learned set
+      -- stays the same: keep them current.
       local old = c.recipes[recipeID]
       local d = Difficulty(info)
       if type(old) == "table" and d ~= nil and old.d ~= d then
         old.d = d
+        catChanged = true
+      end
+      local su = SkillUps(info)
+      if type(old) == "table" and old.su ~= su then
+        old.su = su
         catChanged = true
       end
       learnedIDs[#learnedIDs + 1] = recipeID
@@ -423,13 +436,28 @@ function Recipes.Scan(force)
 
   local changed = catChanged
   local prof = { profName, rank, maxRank }
-  if not ProfsEqual(c.profs[profID], prof) then
+  -- Updated in place: the local-only fields below (and Skills.lua's) stay.
+  local p = c.profs[profID]
+  if type(p) ~= "table" then
     c.profs[profID] = prof
+    p = prof
+    changed = true
+  elseif not ProfsEqual(p, prof) then
+    p[1], p[2], p[3] = profName, rank, maxRank
     changed = true
   end
   -- Icon for the UI portrait; local only (Comm sends name/rank/max).
   local icon = Recipes.ProfessionIcon(profID)
-  if icon then c.profs[profID].icon = icon end
+  if icon then p.icon = icon end
+  if #learnedIDs > 0 then
+    -- The rank the colours (rec.d) were just read at (local only, never sent), and the
+    -- recipes this profession learned since its last scan are in now.
+    if type(rank) == "number" then p.sr = rank end
+    if p.newRecipes then
+      p.newRecipes = nil
+      changed = true
+    end
+  end
 
   if not force and #learnedIDs > 0 and lastSig[profID] == sig then
     if changed then NS.Fire("RECIPES_UPDATED") end
@@ -488,6 +516,68 @@ local function QueueScan()
 end
 NS.Register("TRADE_SKILL_SHOW", QueueScan)
 NS.Register("TRADE_SKILL_LIST_UPDATE", QueueScan)
+
+-- Skill line(s) a newly learned recipe may belong to: the client's answer (the line and its
+-- parent profession), then what my records or the catalogue say. Empty when nothing tells.
+local function LinesOfRecipe(recipeID)
+  local out = {}
+  if TSUI and TSUI.GetTradeSkillLineForRecipe then
+    local ok, line, _, parent = pcall(TSUI.GetTradeSkillLineForRecipe, recipeID)
+    if ok then
+      if type(parent) == "number" then out[#out + 1] = parent end
+      if type(line) == "number" then out[#out + 1] = line end
+    end
+  end
+  if TSUI and TSUI.GetProfessionInfoByRecipeID then
+    local ok, info = pcall(TSUI.GetProfessionInfoByRecipeID, recipeID)
+    if ok and type(info) == "table" then
+      if type(info.parentProfessionID) == "number" then out[#out + 1] = info.parentProfessionID end
+      if type(info.professionID) == "number" then out[#out + 1] = info.professionID end
+    end
+  end
+  local rec = Recipes.Record(recipeID)
+  if type(rec) == "table" and rec.p ~= nil then out[#out + 1] = rec.p end
+  local cat = Catalogue()
+  local e = cat and cat[recipeID]
+  if type(e) == "table" and e.p ~= nil then out[#out + 1] = e.p end
+  return out
+end
+
+-- A recipe learned (trainer, recipe item): its profession's record is behind until the next
+-- scan. c.profs[profID].newRecipes = true (every profession when the recipe's can't be told)
+-- until then, and that scan reads every recipe again.
+local function OnRecipeLearned(recipeID)
+  local c = MyChar()
+  if not c or type(recipeID) ~= "number" then return end
+  if issecretvalue and issecretvalue(recipeID) then return end
+  local marked = false
+  for _, id in ipairs(LinesOfRecipe(recipeID)) do
+    local p = c.profs[id]
+    if type(p) == "table" then
+      p.newRecipes, lastSig[id], marked = true, nil, true
+      break
+    end
+  end
+  if not marked then
+    for id, p in pairs(c.profs) do
+      if type(p) == "table" and not p.gone then p.newRecipes, lastSig[id] = true, nil end
+    end
+  end
+  NS.Fire("RECIPES_UPDATED")
+end
+
+-- NEW_RECIPE_LEARNED may not exist on every client: registered on a frame of our own, pcall'd
+-- (NS.Register would raise for an unknown event).
+do
+  local f = CreateFrame and CreateFrame("Frame")
+  if f and pcall(f.RegisterEvent, f, "NEW_RECIPE_LEARNED") then
+    f:SetScript("OnEvent", function(_, event, recipeID)
+      if event ~= "NEW_RECIPE_LEARNED" then return end
+      local ok, err = pcall(OnRecipeLearned, recipeID)
+      if not ok and NS.debug and NS.Print then NS.Print("recipe learned: " .. tostring(err)) end
+    end)
+  end
+end
 
 function Recipes.Mine()
   local c = MyChar()
@@ -609,9 +699,14 @@ end
 -- characters; within a group the order is shuffled once per session so no name is always at
 -- the top. Nothing else ranks a crafter.
 local sessionSalt = math.random(1, 1e6)
+-- Memoized per name for the session: sorting every recipe's crafters was Search's main cost.
+local shuffleKeys = {}
 local function shuffleKey(name)
-  local h = sessionSalt
+  local h = shuffleKeys[name]
+  if h then return h end
+  h = sessionSalt
   for i = 1, #name do h = (h * 31 + name:byte(i)) % 2147483647 end
+  shuffleKeys[name] = h
   return h
 end
 local function crafterLess(a, b)

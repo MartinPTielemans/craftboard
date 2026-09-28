@@ -17,10 +17,19 @@ for line in block:gmatch("[^\n]+") do
   if s then enUS[load("return " .. s)()] = true end
 end
 
+-- The placeholders a string fills, in argument order. Positional ones ("%2$s", which the client's
+-- string.format understands) are put back in argument order, so a translation may reorder them.
 local function specs(s)
-  local out = {}
-  for spec in s:gmatch("%%[%-%d%.]*[sdif%%]") do
-    if spec ~= "%%" then out[#out + 1] = spec end
+  local out, positional = {}, {}
+  for spec in s:gmatch("%%[%-%d%.%$]*[sdif%%]") do
+    if spec ~= "%%" then
+      local n, rest = spec:match("^%%(%d+)%$(.*)$")
+      if n then positional[#positional + 1] = { tonumber(n), "%" .. rest } else out[#out + 1] = spec end
+    end
+  end
+  if #positional > 0 then
+    table.sort(positional, function(a, b) return a[1] < b[1] end)
+    for _, p in ipairs(positional) do out[#out + 1] = p[2] end
   end
   return table.concat(out, " ")
 end

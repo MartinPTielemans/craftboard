@@ -1,7 +1,9 @@
 -- CraftBoard Options: settings panel in the Blizzard settings UI.
 -- Modern clients: vertical layout category (Settings.RegisterAddOnSetting / RegisterProxySetting,
--- 11.0.2+ signatures, same as BugSack on Forever). Otherwise a plain frame, registered as a canvas
--- category if the Settings API exists, else with the legacy InterfaceOptions_AddCategory.
+-- 11.0.2+ signatures, same as BugSack on Forever), in sections (Sharing, Chat, Crafting notices,
+-- Tooltips, Window) where the client has section headers, "Include guild chat" nested under
+-- "Watch chat". Otherwise a plain frame with the same sections, registered as a canvas category
+-- if the Settings API exists, else with the legacy InterfaceOptions_AddCategory.
 local ADDON, NS = ...
 
 local Options = {}
@@ -11,20 +13,57 @@ local L = NS.L
 local format = string.format
 local CATEGORY_NAME = "CraftBoard"
 local PANEL_NAME = "CraftBoardOptionsPanel"   -- the plain-frame fallback's global name
+local FORGET_POPUP = "CRAFTBOARD_FORGET"
 
 local registered = false
 local categoryID                                -- modern / canvas path
 local legacyPanel                               -- InterfaceOptions path
 
--- Clears every known peer and every board post, then lets Comm/UI refresh.
+-- A post's sender is one of my characters (the one I'm playing, or another CraftBoard knows).
+local function IsMine(from)
+  if type(from) ~= "string" then return false end
+  if NS.IsMe and NS.IsMe(from) then return true end
+  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars
+  return chars and type(chars[from]) == "table" or false
+end
+
+-- Clears every known crafter and every request from other players (my own requests stay), then
+-- lets Comm/UI refresh.
 function Options.ForgetPeers()
   if type(CraftBoardDB) ~= "table" then return end
   CraftBoardDB.peers = {}
-  CraftBoardDB.posts = {}
+  local kept = {}
+  for id, p in pairs(type(CraftBoardDB.posts) == "table" and CraftBoardDB.posts or {}) do
+    if type(p) == "table" and IsMine(p.from) then kept[id] = p end
+  end
+  CraftBoardDB.posts = kept
   NS.Fire("PEERS_UPDATED")
   NS.Fire("POSTS_UPDATED")
-  NS.Print(L["Forgot all peer data."])
+  NS.Print(L["Forgot other players' data."])
 end
+
+-- The settings button: asks first where the client has StaticPopup (defined on first use).
+local function ConfirmForget()
+  if type(StaticPopupDialogs) ~= "table" or type(StaticPopup_Show) ~= "function" then
+    Options.ForgetPeers()
+    return
+  end
+  if not StaticPopupDialogs[FORGET_POPUP] then
+    StaticPopupDialogs[FORGET_POPUP] = {
+      text = L["Forget every crafter and request CraftBoard has seen from other players? Your own requests stay."],
+      button1 = L["Forget"],
+      button2 = CANCEL,
+      OnAccept = function() Options.ForgetPeers() end,
+      timeout = 0,
+      whileDead = true,
+      hideOnEscape = true,
+      preferredIndex = 3,
+    }
+  end
+  if not pcall(StaticPopup_Show, FORGET_POPUP) then Options.ForgetPeers() end
+end
+
+local FORGET_TIP = L["Forgets every crafter and request CraftBoard has seen from other players. They reappear as they come online."]
 
 local function GetRealmChannel()
   return type(CraftBoardDB) == "table" and CraftBoardDB.realmChannel and true or false
@@ -39,6 +78,8 @@ local function SetRealmChannel(v)
   end
 end
 
+local REALM_TIP = L["Announce your recipes and see other players' on the hidden realm-wide channel (CraftBoardF)."]
+
 local function GetGuildShare()
   return not (type(CraftBoardDB) == "table" and CraftBoardDB.guildShare == false)
 end
@@ -46,6 +87,8 @@ end
 local function SetGuildShare(v)
   if type(CraftBoardDB) == "table" then CraftBoardDB.guildShare = v and true or false end
 end
+
+local GUILD_TIP = L["Announce your recipes and requests to guildmates who use CraftBoard."]
 
 -- Minimap button (Launcher.lua via LibDBIcon): stored inverted in CraftBoardDB.minimap.hide.
 local function GetMinimap()
@@ -79,7 +122,7 @@ local function SetEmbed(v)
   end
 end
 
-local EMBED_TIP = L["CraftBoard opens as a tab of the Professions window. Off: it always opens in its own window."]
+local EMBED_TIP = L["CraftBoard opens as a tab of the Professions window. Off, in combat, or on a character without a profession, it opens in its own window."]
 
 -- Chat watcher (ChatWatch.lua): CraftBoardDB.chatWatch (default on), .chatWatchGuild (default off).
 local function GetChatWatch()
@@ -108,10 +151,11 @@ local function SetChatGuild(v)
   end
 end
 
-local CHAT_TIP = L["Lists players asking for a crafter in Trade, General, LookingForGroup, say and yell under \"Seen in chat\" on the Requests tab. Nothing is sent or saved."]
+local CHAT_TIP = L["Lists players asking for a crafter in Trade, General, LookingForGroup, say and yell under \"Seen in chat\" on the Requests tab. Nothing is sent. Works best with English shorthand (LF, WTB)."]
 local CHAT_GUILD_TIP = L["Also watch guild chat for crafting requests."]
 
--- Auto-busy (Comm.lua): CraftBoardDB.autoBusy, default on.
+-- Auto-busy (Comm.lua): CraftBoardDB.autoBusy, default on. Addon messages can't be sent in
+-- combat, so only dungeons and raids reach other players.
 local function GetAutoBusy()
   return not (type(CraftBoardDB) == "table" and CraftBoardDB.autoBusy == false)
 end
@@ -125,7 +169,7 @@ local function SetAutoBusy(v)
   end
 end
 
-local AUTO_BUSY_TIP = L["While you are in a dungeon or raid, or in combat, other CraftBoard users see you as busy and the board won't whisper you. /cb busy marks you busy by hand."]
+local AUTO_BUSY_TIP = L["While you are in a dungeon or raid, other CraftBoard users see you as busy and can't whisper you from the board. /cb busy marks you busy by hand."]
 
 -- Plain on/off options stored on CraftBoardDB, default on (only an explicit false is off).
 local function Flag(key)
@@ -148,15 +192,17 @@ local GetTrainerNotice, SetTrainerNotice = Flag("trainerNotice")
 local GetReagentTips, SetReagentTips = Flag("reagentTooltips")
 local GetRecipeTips, SetRecipeTips = Flag("recipeTooltips")
 local COOLDOWN_NOTICE_TIP = L["One quiet chat line when a crafting cooldown on one of your characters is ready again."]
-local TRAINER_NOTICE_TIP = L["One quiet chat line when a profession is ready for its next rank (Journeyman, Expert, Artisan)."]
+local TRAINER_NOTICE_TIP = L["One quiet chat line when a profession is ready for its next rank (Journeyman, Expert, Artisan), and when your skill reaches recipes your trainer had waiting."]
 local REAGENT_TIPS_TIP = L["Item tooltips show how many of your recipes use a reagent, what your queue needs, and how many your other characters hold."]
 local RECIPE_TIPS_TIP = L["Recipe tooltips show which of your characters know the recipe, can learn it, or need more skill."]
 
+-- "Show tips again": the first tip is on the Find tab, so CraftBoard opens there.
 local function ResetTips()
   if NS.Onboarding and NS.Onboarding.Reset then
     NS.Onboarding.Reset()
-  elseif type(CraftBoardDB) == "table" then
-    CraftBoardDB.tips = {}
+  else
+    if type(CraftBoardDB) == "table" then CraftBoardDB.tips = {} end
+    if NS.UI and NS.UI.ShowTab then NS.UI.ShowTab(1) end
   end
 end
 
@@ -168,8 +214,8 @@ end
 
 local WELCOME_TIP = L["Shows the CraftBoard welcome window again."]
 
--- Advertise channel: where Find's Advertise button posts its one line ("General" by default,
--- "Trade" (cities only), or "Off").
+-- Advertise channel: where Find's Advertise button posts its one line ("Trade" (cities only) by
+-- default, "General", or "Off").
 local ADVERTISE = { "Trade", "General", "Off" }
 local ADVERTISE_LABEL = { General = L["General"], Trade = L["Trade"], Off = L["Off"] }
 
@@ -185,7 +231,7 @@ function Options.SetAdvertiseChannel(v)
   if NS.UI and NS.UI.Refresh then NS.UI.Refresh() end
 end
 
--- General -> Trade -> Off -> General; returns the new choice.
+-- Trade -> General -> Off -> Trade; returns the new choice.
 local function CycleAdvertise()
   local cur = Options.AdvertiseChannel()
   local nextV = ADVERTISE[1]
@@ -198,6 +244,37 @@ end
 
 local ADVERTISE_TIP = L["Where the Advertise button in Find posts one line for players without CraftBoard. Trade chat exists in cities only. Nothing is ever sent without a click."]
 
+-- The checkboxes by section, in panel order: { variable, label, get, set, tooltip, default };
+-- "advertise" marks where the advertise channel control goes, nested = indented under the one
+-- before it (and off while that one is off).
+local SECTIONS = {
+  { L["Sharing"], {
+    { "CRAFTBOARD_REALM_CHANNEL", L["Share recipes on the realm channel"], GetRealmChannel, SetRealmChannel, REALM_TIP },
+    { "CRAFTBOARD_GUILD_SHARE", L["Share recipes with my guild"], GetGuildShare, SetGuildShare, GUILD_TIP, guild = true },
+    { "CRAFTBOARD_AUTO_BUSY", L["Busy in dungeons and raids"], GetAutoBusy, SetAutoBusy, AUTO_BUSY_TIP },
+    { "CRAFTBOARD_BACK_ONLINE", L["Tell me when a requester comes online"], GetBackOnline, SetBackOnline, BACK_ONLINE_TIP },
+    "advertise",
+  } },
+  { L["Chat"], {
+    { "CRAFTBOARD_CHAT_WATCH", L["Watch chat for crafting requests"], GetChatWatch, SetChatWatch, CHAT_TIP },
+    { "CRAFTBOARD_CHAT_WATCH_GUILD", L["Include guild chat"], GetChatGuild, SetChatGuild, CHAT_GUILD_TIP, default = false, nested = true },
+  } },
+  { L["Crafting notices"], {
+    { "CRAFTBOARD_COOLDOWN_NOTICE", L["Tell me when a crafting cooldown is ready"], GetCooldownNotice, SetCooldownNotice, COOLDOWN_NOTICE_TIP },
+    { "CRAFTBOARD_TRAINER_NOTICE", L["Tell me when I can train a new rank"], GetTrainerNotice, SetTrainerNotice, TRAINER_NOTICE_TIP },
+  } },
+  { L["Tooltips"], {
+    { "CRAFTBOARD_REAGENT_TOOLTIPS", L["Show reagent info in item tooltips"], GetReagentTips, SetReagentTips, REAGENT_TIPS_TIP },
+    { "CRAFTBOARD_RECIPE_TOOLTIPS", L["Show recipe info in item tooltips"], GetRecipeTips, SetRecipeTips, RECIPE_TIPS_TIP },
+    { "CRAFTBOARD_GROUP_TOOLTIPS", L["Show group crafters in tooltips"], GetGroupTips, SetGroupTips, GROUP_TIPS_TIP },
+  } },
+  { L["Window"], {
+    { "CRAFTBOARD_EMBED", L["Open CraftBoard inside the Professions window"], GetEmbed, SetEmbed, EMBED_TIP },
+    { "CRAFTBOARD_MINIMAP_BUTTON", L["Show minimap button"], GetMinimap, SetMinimap, MINIMAP_TIP },
+    { "CRAFTBOARD_GAMEPAD", L["Gamepad controls"], GetGamepad, SetGamepad, GAMEPAD_TIP },
+  } },
+}
+
 -- Modern: vertical layout ------------------------------------------------------
 
 local function HasVerticalAPI()
@@ -207,55 +284,15 @@ local function HasVerticalAPI()
     and CreateSettingsButtonInitializer and true or false
 end
 
-local function RegisterVertical()
-  local S = Settings
-  local bool = S.VarType and S.VarType.Boolean or "boolean"
-  local createCheckbox = S.CreateCheckbox or S.CreateCheckBox
-  local category, layout = S.RegisterVerticalLayoutCategory(CATEGORY_NAME)
+-- A section header where the client has them (else the checkboxes just follow each other).
+local function AddHeader(layout, text)
+  if type(CreateSettingsListSectionHeaderInitializer) ~= "function" then return end
+  local ok, init = pcall(CreateSettingsListSectionHeaderInitializer, text)
+  if ok and init then layout:AddInitializer(init) end
+end
 
-  local realm = S.RegisterProxySetting(category, "CRAFTBOARD_REALM_CHANNEL", bool,
-    L["Share recipes on the realm channel"], true, GetRealmChannel, SetRealmChannel)
-  createCheckbox(category, realm,
-    L["Announce your recipes and see other players' on the hidden realm-wide channel (CraftBoardF)."])
-
-  local guild = S.RegisterAddOnSetting(category, "CRAFTBOARD_GUILD_SHARE", "guildShare", CraftBoardDB, bool,
-    L["Share recipes with my guild"], true)
-  createCheckbox(category, guild, L["Announce your recipes and board posts to guildmates who use CraftBoard."])
-
-  local minimap = S.RegisterProxySetting(category, "CRAFTBOARD_MINIMAP_BUTTON", bool,
-    L["Show minimap button"], true, GetMinimap, SetMinimap)
-  createCheckbox(category, minimap, MINIMAP_TIP)
-
-  local embed = S.RegisterProxySetting(category, "CRAFTBOARD_EMBED", bool,
-    L["Open CraftBoard inside the Professions window"], true, GetEmbed, SetEmbed)
-  createCheckbox(category, embed, EMBED_TIP)
-
-  local chat = S.RegisterProxySetting(category, "CRAFTBOARD_CHAT_WATCH", bool,
-    L["Watch chat for crafting requests"], true, GetChatWatch, SetChatWatch)
-  createCheckbox(category, chat, CHAT_TIP)
-
-  local chatGuild = S.RegisterProxySetting(category, "CRAFTBOARD_CHAT_WATCH_GUILD", bool,
-    L["Include guild chat"], false, GetChatGuild, SetChatGuild)
-  createCheckbox(category, chatGuild, CHAT_GUILD_TIP)
-
-  local autoBusy = S.RegisterProxySetting(category, "CRAFTBOARD_AUTO_BUSY", bool,
-    L["Automatically mark me busy in dungeons and combat"], true, GetAutoBusy, SetAutoBusy)
-  createCheckbox(category, autoBusy, AUTO_BUSY_TIP)
-
-  for _, o in ipairs({
-    { "CRAFTBOARD_BACK_ONLINE", L["Tell me when a player I can help comes back online"], GetBackOnline, SetBackOnline, BACK_ONLINE_TIP },
-    { "CRAFTBOARD_GROUP_TOOLTIPS", L["Show group crafters in tooltips"], GetGroupTips, SetGroupTips, GROUP_TIPS_TIP },
-    { "CRAFTBOARD_GAMEPAD", L["Gamepad controls in the CraftBoard window"], GetGamepad, SetGamepad, GAMEPAD_TIP },
-    { "CRAFTBOARD_COOLDOWN_NOTICE", L["Tell me when a crafting cooldown is ready"], GetCooldownNotice, SetCooldownNotice, COOLDOWN_NOTICE_TIP },
-    { "CRAFTBOARD_TRAINER_NOTICE", L["Tell me when I can train the next profession rank"], GetTrainerNotice, SetTrainerNotice, TRAINER_NOTICE_TIP },
-    { "CRAFTBOARD_REAGENT_TOOLTIPS", L["Show reagent info in item tooltips"], GetReagentTips, SetReagentTips, REAGENT_TIPS_TIP },
-    { "CRAFTBOARD_RECIPE_TOOLTIPS", L["Show which of my characters can learn recipes"], GetRecipeTips, SetRecipeTips, RECIPE_TIPS_TIP },
-  }) do
-    local setting = S.RegisterProxySetting(category, o[1], bool, o[2], true, o[3], o[4])
-    createCheckbox(category, setting, o[5])
-  end
-
-  -- Advertise channel: a dropdown where the API has one, else a button that cycles.
+local function AddAdvertise(S, category, layout)
+  -- A dropdown where the API has one, else a button that cycles.
   local dropdown = S.CreateDropdown and S.CreateControlTextContainer and pcall(function()
     local str = S.VarType and S.VarType.String or "string"
     local adv = S.RegisterProxySetting(category, "CRAFTBOARD_ADVERTISE_CHANNEL", str,
@@ -272,12 +309,43 @@ local function RegisterVertical()
       NS.Print(format(L["Advertise channel: %s"], ADVERTISE_LABEL[CycleAdvertise()]))
     end, ADVERTISE_TIP, true))
   end
+end
 
-  local forget = CreateSettingsButtonInitializer(L["Forget all peer data"], L["Forget"], Options.ForgetPeers,
-    L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."],
-    true)
-  layout:AddInitializer(forget)
+local function RegisterVertical()
+  local S = Settings
+  local bool = S.VarType and S.VarType.Boolean or "boolean"
+  local createCheckbox = S.CreateCheckbox or S.CreateCheckBox
+  local category, layout = S.RegisterVerticalLayoutCategory(CATEGORY_NAME)
 
+  for _, section in ipairs(SECTIONS) do
+    AddHeader(layout, section[1])
+    local prev
+    for _, o in ipairs(section[2]) do
+      if o == "advertise" then
+        AddAdvertise(S, category, layout)
+      else
+        local default = o.default ~= false
+        local setting
+        if o.guild then
+          -- Stored straight on CraftBoardDB.guildShare.
+          setting = S.RegisterAddOnSetting(category, o[1], "guildShare", CraftBoardDB, bool, o[2], default)
+        else
+          setting = S.RegisterProxySetting(category, o[1], bool, o[2], default, o[3], o[4])
+        end
+        local init = createCheckbox(category, setting, o[5])
+        -- Nested under the previous checkbox, which enables it.
+        if o.nested and prev and type(init) == "table" and init.SetParentInitializer then
+          local parentGet = prev.get
+          pcall(init.SetParentInitializer, init, prev.init, function() return parentGet() end)
+        end
+        prev = { init = init, get = o[3] }
+      end
+    end
+  end
+
+  AddHeader(layout, L["Data and help"])
+  layout:AddInitializer(CreateSettingsButtonInitializer(L["Forget other players' data"], L["Forget"], ConfirmForget,
+    FORGET_TIP, true))
   layout:AddInitializer(CreateSettingsButtonInitializer(L["Show tips again"], L["Reset"], ResetTips, TIPS_TIP, true))
   layout:AddInitializer(CreateSettingsButtonInitializer(L["Show welcome"], L["Show"], ShowWelcome, WELCOME_TIP, true))
 
@@ -299,6 +367,8 @@ local function HideTip()
   if GameTooltip then GameTooltip:Hide() end
 end
 
+local ROW, HEADER = 24, 26   -- px per checkbox / per section header
+
 local function BuildPanel()
   local p = CreateFrame("Frame", PANEL_NAME)
   p.name = CATEGORY_NAME
@@ -308,92 +378,90 @@ local function BuildPanel()
   title:SetPoint("TOPLEFT", 16, -16)
   title:SetText(CATEGORY_NAME)
 
-  local checks = {}
-  local function Check(label, tip, y, get, set)
+  local y = -44
+  local checks, syncs = {}, {}
+  local function Header(text)
+    local h = p:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    h:SetPoint("TOPLEFT", 18, y - 6)
+    h:SetText(text)
+    y = y - HEADER
+  end
+  local function Button(text, width, x, tip, onClick)
+    local b = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    b:SetSize(width, 22)
+    b:SetPoint("TOPLEFT", x, y - 2)
+    b:SetText(text)
+    b.label, b.tip = text, tip
+    b:SetScript("OnClick", onClick)
+    b:SetScript("OnEnter", ShowTip)
+    b:SetScript("OnLeave", HideTip)
+    return b
+  end
+  local function Check(o, indent)
     local cb = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-    cb:SetPoint("TOPLEFT", 16, y)
+    cb:SetSize(ROW, ROW)
+    cb:SetPoint("TOPLEFT", 16 + indent, y)
     local text = cb.Text or cb.text
     if type(text) ~= "table" then
       text = cb:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
       text:SetPoint("LEFT", cb, "RIGHT", 2, 0)
     end
-    text:SetText(label)
-    cb.label, cb.tip, cb.get = label, tip, get
-    cb:SetScript("OnClick", function(self) set(self:GetChecked() and true or false) end)
+    text:SetText(o[2])
+    cb.cbText = text
+    cb.label, cb.tip, cb.get = o[2], o[5], o[3]
+    local set = o[4]
+    cb:SetScript("OnClick", function(self)
+      set(self:GetChecked() and true or false)
+      for i = 1, #syncs do syncs[i]() end
+    end)
     cb:SetScript("OnEnter", ShowTip)
     cb:SetScript("OnLeave", HideTip)
     checks[#checks + 1] = cb
+    y = y - ROW
     return cb
   end
 
-  Check(L["Share recipes on the realm channel"],
-    L["Announce your recipes and see other players' on the hidden realm-wide channel (CraftBoardF)."],
-    -48, GetRealmChannel, SetRealmChannel)
-  Check(L["Share recipes with my guild"],
-    L["Announce your recipes and board posts to guildmates who use CraftBoard."],
-    -76, GetGuildShare, SetGuildShare)
-  Check(L["Show minimap button"], MINIMAP_TIP, -104, GetMinimap, SetMinimap)
-  Check(L["Open CraftBoard inside the Professions window"], EMBED_TIP, -132, GetEmbed, SetEmbed)
-  Check(L["Watch chat for crafting requests"], CHAT_TIP, -160, GetChatWatch, SetChatWatch)
-  Check(L["Include guild chat"], CHAT_GUILD_TIP, -188, GetChatGuild, SetChatGuild)
-  Check(L["Automatically mark me busy in dungeons and combat"], AUTO_BUSY_TIP, -216, GetAutoBusy, SetAutoBusy)
-  Check(L["Tell me when a player I can help comes back online"], BACK_ONLINE_TIP, -244, GetBackOnline, SetBackOnline)
-  Check(L["Show group crafters in tooltips"], GROUP_TIPS_TIP, -272, GetGroupTips, SetGroupTips)
-  Check(L["Gamepad controls in the CraftBoard window"], GAMEPAD_TIP, -300, GetGamepad, SetGamepad)
-  Check(L["Tell me when a crafting cooldown is ready"], COOLDOWN_NOTICE_TIP, -328, GetCooldownNotice, SetCooldownNotice)
-  Check(L["Tell me when I can train the next profession rank"], TRAINER_NOTICE_TIP, -356, GetTrainerNotice, SetTrainerNotice)
-  Check(L["Show reagent info in item tooltips"], REAGENT_TIPS_TIP, -384, GetReagentTips, SetReagentTips)
-  Check(L["Show which of my characters can learn recipes"], RECIPE_TIPS_TIP, -412, GetRecipeTips, SetRecipeTips)
-
-  local advertise = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
-  advertise:SetSize(220, 22)
-  advertise:SetPoint("TOPLEFT", 20, -450)
-  advertise.label = L["Advertise channel"]
-  advertise.tip = ADVERTISE_TIP
-  local function syncAdvertise()
-    advertise:SetText(format(L["Advertise channel: %s"], ADVERTISE_LABEL[Options.AdvertiseChannel()]))
+  local syncAdvertise
+  for _, section in ipairs(SECTIONS) do
+    Header(section[1])
+    local prev
+    for _, o in ipairs(section[2]) do
+      if o == "advertise" then
+        local advertise = Button("", 220, 20, ADVERTISE_TIP, function()
+          CycleAdvertise()
+          syncAdvertise()
+        end)
+        advertise.label = L["Advertise channel"]
+        syncAdvertise = function()
+          advertise:SetText(format(L["Advertise channel: %s"], ADVERTISE_LABEL[Options.AdvertiseChannel()]))
+        end
+        syncAdvertise()
+        y = y - 28
+      else
+        local cb = Check(o, o.nested and 18 or 0)
+        -- Nested: only clickable while the checkbox above it is on.
+        if o.nested and prev then
+          local parentGet = prev.get
+          syncs[#syncs + 1] = function()
+            local on = parentGet() and true or false
+            cb:SetEnabled(on)
+            if cb.cbText and cb.cbText.SetAlpha then cb.cbText:SetAlpha(on and 1 or 0.5) end
+          end
+        end
+        prev = cb
+      end
+    end
   end
-  advertise:SetScript("OnClick", function()
-    CycleAdvertise()
-    syncAdvertise()
-  end)
-  advertise:SetScript("OnEnter", ShowTip)
-  advertise:SetScript("OnLeave", HideTip)
-  syncAdvertise()
 
-  local forget = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
-  forget:SetSize(180, 22)
-  forget:SetPoint("TOPLEFT", 20, -482)
-  forget:SetText(L["Forget all peer data"])
-  forget.label = L["Forget all peer data"]
-  forget.tip = L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."]
-  forget:SetScript("OnClick", function() Options.ForgetPeers() end)
-  forget:SetScript("OnEnter", ShowTip)
-  forget:SetScript("OnLeave", HideTip)
-
-  local tips = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
-  tips:SetSize(180, 22)
-  tips:SetPoint("TOPLEFT", 20, -514)
-  tips:SetText(L["Show tips again"])
-  tips.label = L["Show tips again"]
-  tips.tip = TIPS_TIP
-  tips:SetScript("OnClick", ResetTips)
-  tips:SetScript("OnEnter", ShowTip)
-  tips:SetScript("OnLeave", HideTip)
-
-  local welcome = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
-  welcome:SetSize(180, 22)
-  welcome:SetPoint("LEFT", tips, "RIGHT", 8, 0)
-  welcome:SetText(L["Show welcome"])
-  welcome.label = L["Show welcome"]
-  welcome.tip = WELCOME_TIP
-  welcome:SetScript("OnClick", ShowWelcome)
-  welcome:SetScript("OnEnter", ShowTip)
-  welcome:SetScript("OnLeave", HideTip)
+  Header(L["Data and help"])
+  Button(L["Forget other players' data"], 200, 20, FORGET_TIP, ConfirmForget)
+  Button(L["Show tips again"], 150, 228, TIPS_TIP, ResetTips)
+  Button(L["Show welcome"], 150, 386, WELCOME_TIP, ShowWelcome)
 
   p:SetScript("OnShow", function()
     for i = 1, #checks do checks[i]:SetChecked(checks[i].get()) end
-    syncAdvertise()
+    for i = 1, #syncs do syncs[i]() end
+    if syncAdvertise then syncAdvertise() end
   end)
   return p
 end

@@ -1,12 +1,15 @@
 -- CraftBoard Comm: sync layer over addon messages (GUILD + hidden realm CHANNEL).
 -- Wire format: one type char followed by LibSerialize -> CompressDeflate -> EncodeForWoWAddonChannel.
 --   H hello   {v=1, profs={[profID]={n=,r=,m=}}, n=#recipes, h=hash, b=true when busy,
---              l=true on the first hello after login, cd={[recipeID]=seconds until ready}}  GUILD/CHANNEL
+--              l=true on the first hello after a login (not a /reload),
+--              cd={[recipeID]=seconds until ready}}                     GUILD/CHANNEL
 --             (b, l and cd are optional: older clients read only the fields they know)
 --   Q query   {v=1}                                                     WHISPER to hello sender
 --   R recipes {v=1, h=hash, profs=..., list={ {id, name, outputItemID, profID}, ... }}  WHISPER
+--             (GUILD/CHANNEL once when several peers query at once; only those who asked take it)
 --   P post    {v=1, id=, item=, qty=, note=, t=, pa=parent post id}     GUILD/CHANNEL
---             (pa is optional: a linked order for an intermediate of the parent request)
+--             (pa is optional: a linked order for an intermediate of the parent request; note
+--             may be "", as linked orders send it, and never carries prices)
 --   X retract {v=1, id=}                                                GUILD/CHANNEL
 local ADDON, NS = ...
 
@@ -47,8 +50,11 @@ local INBOUND_WINDOW = 60
 local INBOUND_MAX = 40            -- messages per sender per window before we ignore them
 local BUSY_DEBOUNCE = 5           -- a busy change is announced this long after it happens
 local BUSY_MIN_GAP = 15           -- per distribution, for hellos sent only to announce busy
-local MAX_CD = 16                 -- cooldown entries carried by a hello
+local MAX_CD = 32                 -- cooldown entries in a hello (grouped transmutes send every ID)
 local MAX_CD_SECONDS = 14 * 86400
+local R_BATCH = 3                 -- this many queries within R_BATCH_WINDOW: one broadcast R
+local R_BATCH_WINDOW = 10
+local R_BATCH_DELAY = 2           -- a broadcast R waits this long for more queries
 
 local LibSerialize = LibStub and LibStub("LibSerialize", true)
 local LibDeflate = LibStub and LibStub("LibDeflate", true)
@@ -73,11 +79,17 @@ local postCounter = 0
 local rosterCache, rosterAt = nil, 0
 local started = false
 local busyNow = false     -- effective busy (manual, or auto in a dungeon / in combat)
-local inCombat = false    -- PLAYER_REGEN_DISABLED .. PLAYER_REGEN_ENABLED
 local sentBusy = {}       -- [dist] = busy flag carried by the last hello sent there
 local busyPending = false -- a busy hello is scheduled
-local loginHello = {}     -- [dist] = true once the login hello (l=true) went out there
+local loginHello = {}     -- [dist] = true once the login hello (l=true) went out there (or after a /reload)
 local backAlerted = {}    -- [peer] = time of the last back-online notice
+local rawNew, rawOld, rawAt = {}, {}, 0 -- exact copies seen: [peer .. message] = time, two generations
+local heardOn = {}        -- [peer] = "GUILD" / "CHANNEL": where their last broadcast reached us
+local queryTimes = {}     -- arrival times of the queries answered in the last R_BATCH_WINDOW
+local batch = nil         -- [peer] = dist, queriers waiting for a broadcast R
+local batchAt = nil       -- time of the last broadcast R
+local peersFirePending = false
+local friends, friendsFirst = nil, nil -- friend list: [Name-Realm] = online; first-name-only entries
 -- Retractions not yet sent everywhere: CraftBoardDB.pendingX[post id] = { dists = {[dist]=true},
 -- t= } (saved, so a reload or disconnect before the retry doesn't lose them). Retracted post ids:
 -- CraftBoardDB.retracted[id] = time, so a linked order for a retracted request is dropped even
@@ -113,6 +125,20 @@ local function Fire(event)
   if NS.callbacks and NS.callbacks.Fire then
     pcall(NS.callbacks.Fire, NS.callbacks, event)
   end
+end
+
+-- PEERS_UPDATED once for a burst (peers coming online at login, a channel toggle).
+local function FirePeersSoon()
+  if peersFirePending then return end
+  if not (C_Timer and C_Timer.After) then
+    Fire("PEERS_UPDATED")
+    return
+  end
+  peersFirePending = true
+  C_Timer.After(1, function()
+    peersFirePending = false
+    Fire("PEERS_UPDATED")
+  end)
 end
 
 local function DB()
@@ -170,6 +196,21 @@ local function CleanString(s, maxLen)
   if type(s) ~= "string" then return nil end
   s = NS.StripCodes(s):gsub("|", ""):gsub("%c", "")
   if #s > maxLen then s = s:sub(1, maxLen) end
+  return s
+end
+
+-- Prices off a post note ("5g", "50 s", "1.5g", "10 gold", "gold", the number in "tip 5"),
+-- trimmed: the board carries no gold amounts. "will tip" stays.
+local function StripPrices(s)
+  s = " " .. s .. " "
+  s = s:gsub("(%f[%a][tT][iI][pP][sS]?)%s*:?%s*%d+[%.,]?%d*%s*[gGsS]%f[%A]", "%1 ")
+    :gsub("(%f[%a][tT][iI][pP][sS]?)%s*:?%s*%d+[%.,]?%d*", "%1 ")
+    :gsub("%d+[%.,]?%d*%s*[gG][oO][lL][dD]%f[%A]", " ")
+    :gsub("%f[%a][gG][oO][lL][dD]%f[%A]", " ")
+    :gsub("%d+[%.,]?%d*%s*[gGsS]%f[%A]", " ")
+    :gsub("%(%s*%)", " ")
+  s = s:gsub("%s+", " "):gsub(" ([,;:%.!%?])", "%1")
+    :gsub("^[%s,;:%-%+/&]+", ""):gsub("[%s,;:%-%+/&]+$", "")
   return s
 end
 
@@ -282,6 +323,7 @@ local function JoinRealmChannel(attempt)
   C_Timer.After(2, function()
     if ResolveChannel() then
       HideChannelFromChat()
+      FirePeersSoon()
       -- Login hello may have gone out to GUILD only because the channel wasn't ready yet.
       if started then SendHello("CHANNEL") end
     elseif attempt < 5 then
@@ -347,8 +389,8 @@ local function MyProfs()
   local profs = type(c) == "table" and c.profs
   if type(profs) == "table" then
     for id, p in pairs(profs) do
-      if type(id) == "number" and type(p) == "table" then
-        -- Recipes stores profs positionally: { name, rank, max }.
+      -- Recipes stores profs positionally: { name, rank, max }; unlearned ones (gone) aren't sent.
+      if type(id) == "number" and type(p) == "table" and not p.gone then
         out[id] = { n = p.name or p[1], r = p.rank or p[2], m = p.max or p[3] }
       end
     end
@@ -459,7 +501,8 @@ end
 
 -- R must fit MAX_DECODED on the receiver: first try with names, then without
 -- (receivers can still resolve the output item's name), then truncate.
-local function SendRecipes(to)
+-- dist: "WHISPER" (to = the querier) or, for a batch of queriers, "GUILD" / "CHANNEL".
+local function SendRecipes(dist, to)
   local payload = { v = VERSION, h = MyHash(), profs = MyProfs(), list = BuildRecipeList(true) }
   local text, size = Encode(payload)
   if text and size > MAX_DECODED then
@@ -472,11 +515,15 @@ local function SendRecipes(to)
     end
   end
   if not text or not commObj.SendCommMessage then return false end
-  return pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, "WHISPER", to, "BULK")
+  if dist == "CHANNEL" then to = channelId end
+  local ok = pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK")
+  return ok
 end
 
 -- Peers -----------------------------------------------------------------
 
+-- Any message marks the peer as seen now. One who wasn't seen within ONLINE_WINDOW just came
+-- online: PEERS_UPDATED, so "N crafters online" and the green names follow.
 local function Touch(full)
   local db = DB()
   if not db then return nil end
@@ -487,7 +534,9 @@ local function Touch(full)
   end
   if type(p.recipes) ~= "table" then p.recipes = {} end
   if type(p.profs) ~= "table" then p.profs = {} end
-  p.seen = time()
+  local now = time()
+  if not (type(p.seen) == "number" and now - p.seen < ONLINE_WINDOW) then FirePeersSoon() end
+  p.seen = now
   return p
 end
 
@@ -541,11 +590,72 @@ local function GuildRoster()
   return rosterCache
 end
 
+-- The friend list, read once per FRIENDLIST_UPDATE: friends[Name-Realm] = online, and
+-- friendsFirst for entries listed by first name only (they match "First Surname" on the same
+-- realm, NS.SamePlayer's rule).
+local function Friends()
+  if friends then return friends, friendsFirst end
+  friends, friendsFirst = {}, {}
+  local FL = C_FriendList
+  if not (FL and FL.GetNumFriends and FL.GetFriendInfoByIndex) then return friends, friendsFirst end
+  local okN, n = pcall(FL.GetNumFriends)
+  if not okN or type(n) ~= "number" then return friends, friendsFirst end
+  for i = 1, min(n, 1000) do
+    local ok, info = pcall(FL.GetFriendInfoByIndex, i)
+    local name = ok and type(info) == "table" and info.name
+    if type(name) == "string" and not (issecretvalue and issecretvalue(name)) then
+      local full = FullName(name)
+      if full then
+        local on = info.connected and true or false
+        friends[full] = on
+        if not full:find(" ", 1, true) then friendsFirst[full] = on end
+      end
+    end
+  end
+  return friends, friendsFirst
+end
+
+if NS.Register then
+  NS.Register("FRIENDLIST_UPDATE", function() friends, friendsFirst = nil, nil end)
+end
+
+-- true / false when the friend list knows the player, else nil.
 local function FriendOnline(full)
-  if not (C_FriendList and C_FriendList.GetFriendInfo) then return nil end
-  local ok, info = pcall(C_FriendList.GetFriendInfo, ShortName(full))
-  if ok and type(info) == "table" then return info.connected and true or false end
-  return nil
+  local all, firstOnly = Friends()
+  local on = all[full]
+  if on == nil then
+    local first, realm = full:match("^(%S+) [^%-]*%-(.+)$")
+    if first then on = firstOnly[first .. "-" .. realm] end
+  end
+  return on
+end
+
+-- Online: heard from within ONLINE_WINDOW, overridden by the guild roster, else the friend
+-- list, when they know the answer.
+local function OnlineOf(full, p, roster, now)
+  local r = roster[full]
+  if r ~= nil then return r end
+  local f = FriendOnline(full)
+  if f ~= nil then return f end
+  return type(p) == "table" and type(p.seen) == "number" and now - p.seen < ONLINE_WINDOW or false
+end
+
+-- One player's online state (a board post's author, a crafter), as Comm.Peers() would say it.
+function Comm.IsOnline(name)
+  local full = FullName(name)
+  if not full then return false end
+  if IsMe(full) then return true end
+  local db = DB()
+  return OnlineOf(full, db and db.peers[full], GuildRoster(), time()) and true or false
+end
+
+-- A peer's cooldowns as stored ([recipeID] = time ready; read only), nil if unknown or ignored.
+-- Cheaper than Comm.Peers() for one crafter.
+function Comm.PeerCooldowns(name)
+  local db, full = DB(), FullName(name)
+  if not (db and full) or (NS.IsIgnored and NS.IsIgnored(full)) then return nil end
+  local p = db.peers[full]
+  return type(p) == "table" and type(p.cd) == "table" and p.cd or nil
 end
 
 -- Returns a copy of the stored peers with `online` derived from last message time,
@@ -558,14 +668,7 @@ function Comm.Peers()
   local roster = GuildRoster()
   for name, p in pairs(db.peers) do
     if type(p) == "table" and not (NS.IsIgnored and NS.IsIgnored(name)) then
-      local online = type(p.seen) == "number" and now - p.seen < ONLINE_WINDOW
-      local r = roster[name]
-      if r ~= nil then
-        online = r
-      else
-        local f = FriendOnline(name)
-        if f ~= nil then online = f end
-      end
+      local online = OnlineOf(name, p, roster, now)
       out[name] = {
         recipes = p.recipes or {},
         profs = p.profs or {},
@@ -638,8 +741,34 @@ function Comm.Requests()
   return PostList()
 end
 
+-- My open posts (expired ones pruned first).
+local function MyOpenPosts()
+  PrunePosts()
+  local db, me = DB(), MyKey()
+  local open = 0
+  if not (db and me) then return open end
+  for _, p in pairs(db.posts) do
+    if type(p) == "table" and p.from == me then open = open + 1 end
+  end
+  return open
+end
+
+-- How many more posts I can make now (peers keep at most MAX_POSTS_PER_SENDER per sender): a
+-- request with linked orders needs 1 + #linked.
+function Comm.OpenSlots()
+  return math.max(0, MAX_POSTS_PER_SENDER - MyOpenPosts())
+end
+
+-- A note without prices, trimmed, at most MAX_NOTE characters ("" when nothing is left).
+local function PostNote(note)
+  local s = StripPrices(CleanString(note, 255) or "")
+  if #s > MAX_NOTE then s = s:sub(1, MAX_NOTE):gsub("%s+$", "") end
+  return s
+end
+
 -- parent: id of one of my posts this one is an intermediate for (a linked order). Linked
--- orders posted with their parent in the same click skip the few-seconds gap.
+-- orders posted with their parent in the same click skip the few-seconds gap. note may be
+-- nil or "" (linked orders have none); prices are taken out of it.
 function Comm.PostRequest(itemID, qty, note, parent)
   local db, me = DB(), MyKey()
   itemID = PosInt(tonumber(itemID), 1e8)
@@ -651,10 +780,7 @@ function Comm.PostRequest(itemID, qty, note, parent)
     Print(L["Please wait a few seconds before posting again."])
     return nil
   end
-  local open = 0
-  for _, p in pairs(db.posts) do
-    if type(p) == "table" and p.from == me then open = open + 1 end
-  end
+  local open = MyOpenPosts()
   if open >= MAX_POSTS_PER_SENDER then
     Print(format(L["You already have %d open requests. Retract one first."], open))
     return nil
@@ -662,7 +788,7 @@ function Comm.PostRequest(itemID, qty, note, parent)
   lastPost = now
   postCounter = postCounter + 1
   local id = me .. ":" .. now .. ":" .. postCounter
-  note = CleanString(note, MAX_NOTE) or ""
+  note = PostNote(note)
   db.posts[id] = { id = id, from = me, item = itemID, qty = qty, note = note, t = now, mine = true, pa = parent }
   Broadcast("P", { v = VERSION, id = id, item = itemID, qty = qty, note = note, t = now, pa = parent })
   Fire("POSTS_UPDATED")
@@ -793,7 +919,7 @@ function Comm.Request(itemID, qty, toName)
     label = select(2, GetItemInfo(itemID))
   end
   if not label and C_Item and C_Item.GetItemNameByID then label = C_Item.GetItemNameByID(itemID) end
-  label = label or format(L["item %d"], itemID)
+  label = label or format(L["Item %d"], itemID)
   local msg = format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty, label)
   return Comm.Whisper(target, msg)
 end
@@ -808,25 +934,53 @@ local function BackOnlineOn()
   return not (type(CraftBoardDB) == "table" and CraftBoardDB.backOnline == false)
 end
 
+-- My recipe for an item: recipeID, record, charKey, current (Inventory.MyRecipeFor).
+local function MyRecipeFor(itemID)
+  local find = NS.Inventory and NS.Inventory.MyRecipeFor
+  if not find then return nil end
+  return find(itemID)
+end
+
+-- A clickable name in a chat line ("[Name]", whisper / menu on click).
+local function PlayerLink(full)
+  return format("|Hplayer:%s|h[%s]|h", full, ShortName(full))
+end
+
 function Comm.NoteBackOnline(full)
   if not BackOnlineOn() or (NS.IsIgnored and NS.IsIgnored(full)) then return end
   local now = time()
   if backAlerted[full] and now - backAlerted[full] < BACK_GAP then return end
   local db = DB()
   if not db then return end
-  local best, offered
+  local best, offered, alt
   for id, p in pairs(db.posts) do
     if type(p) == "table" and p.from == full then
       local mine = Comm.Offered(id)
-      local can = NS.CanCraftItem and NS.CanCraftItem(p.item)
-      if (mine or can) and (not best or (p.t or 0) > (best.t or 0)) then best, offered = p, mine end
+      local recipeID, _, charKey, current = MyRecipeFor(p.item)
+      if (mine or recipeID) and (not best or (p.t or 0) > (best.t or 0)) then
+        best, offered = p, mine
+        alt = recipeID and not current and charKey or nil
+      end
     end
   end
   if not best then return end
   backAlerted[full] = now
-  local label = NS.ItemLabel and NS.ItemLabel(best.item) or format(L["item %d"], best.item)
-  Print(format(offered and L["%s is back online (you offered on their %dx %s)."]
-    or L["%s is back online (you can craft their %dx %s)."], ShortName(full), best.qty or 1, label))
+  local label = NS.ItemLabel and NS.ItemLabel(best.item) or format(L["Item %d"], best.item)
+  local who, qty = PlayerLink(full), best.qty or 1
+  local msg
+  if offered then
+    msg = qty > 1 and format(L["%s is back online (you offered on their %dx %s)."], who, qty, label)
+      or format(L["%s is back online (you offered on their %s)."], who, label)
+  elseif alt then
+    -- Only one of my other characters knows the recipe.
+    local altName = NS.ShortName and NS.ShortName(alt) or alt
+    msg = qty > 1 and format(L["%s is back online (your alt %s can craft their %dx %s)."], who, altName, qty, label)
+      or format(L["%s is back online (your alt %s can craft their %s)."], who, altName, label)
+  else
+    msg = qty > 1 and format(L["%s is back online (you can craft their %dx %s)."], who, qty, label)
+      or format(L["%s is back online (you can craft their %s)."], who, label)
+  end
+  Print(msg)
   Fire("PEERS_UPDATED")
 end
 
@@ -841,6 +995,19 @@ local function RateOk(full)
   end
   b.c = b.c + 1
   return b.c <= INBOUND_MAX
+end
+
+-- Exact copies of a message within DEDUPE_WINDOW (a guildmate in the realm channel sends
+-- everything on both), dropped before the rate limit counts them. Two generations of
+-- DEDUPE_WINDOW seconds each keep the table small.
+local function RawDuplicate(full, message)
+  local now = time()
+  if now - rawAt >= DEDUPE_WINDOW then rawOld, rawNew, rawAt = rawNew, {}, now end
+  local k = full .. "\t" .. message
+  local t = rawNew[k] or rawOld[k]
+  if t and now - t <= DEDUPE_WINDOW then return true end
+  rawNew[k] = now
+  return false
 end
 
 -- Guildmates who are also in the realm channel get every broadcast twice.
@@ -923,13 +1090,50 @@ function handlers.H(full, data)
   Send("Q", { v = VERSION }, "WHISPER", ShortName(full), "NORMAL")
 end
 
+-- One R on each distribution the waiting queriers heard me on; anyone it can't reach gets
+-- their whisper after all.
+local function FlushBatch()
+  local b = batch
+  batch = nil
+  if not b then return end
+  batchAt = time()
+  local sent = {}
+  for _, dist in pairs(b) do
+    if sent[dist] == nil then
+      sent[dist] = CanSend() and DistAvailable(dist) and SendRecipes(dist) or false
+    end
+  end
+  for peer, dist in pairs(b) do
+    if not sent[dist] then SendRecipes("WHISPER", ShortName(peer)) end
+  end
+end
+
+-- Answers a query with my recipe list. When several peers ask at once (my hash changes with
+-- every recipe learned, and each peer who hears the hello asks), R_BATCH queries within
+-- R_BATCH_WINDOW seconds start a batch: after R_BATCH_DELAY one R goes to the guild / realm
+-- channel instead of a whisper each (at most one batch per ANSWER_GAP). Peers that didn't ask
+-- ignore it (handlers.R).
 function handlers.Q(full)
   Touch(full)
   local now = time()
   if answered[full] and now - answered[full] < ANSWER_GAP then return end
   if not CanSend() then return end
   answered[full] = now
-  SendRecipes(ShortName(full))
+  for i = #queryTimes, 1, -1 do
+    if now - queryTimes[i] > R_BATCH_WINDOW then table.remove(queryTimes, i) end
+  end
+  queryTimes[#queryTimes + 1] = now
+  local dist = heardOn[full]
+  if dist and C_Timer and C_Timer.After and (batch or (#queryTimes >= R_BATCH
+    and not (batchAt and now - batchAt < ANSWER_GAP))) then
+    if not batch then
+      batch = {}
+      C_Timer.After(R_BATCH_DELAY, FlushBatch)
+    end
+    batch[full] = dist
+    return
+  end
+  SendRecipes("WHISPER", ShortName(full))
 end
 
 function handlers.R(full, data)
@@ -980,6 +1184,7 @@ function handlers.P(full, data)
   local item = PosInt(data.item, 1e8)
   local qty = PosInt(data.qty, 1000)
   if not (id and id ~= "" and item and qty) then return end
+  -- The note is optional (linked orders send "").
   if data.note ~= nil and type(data.note) ~= "string" then return end
   if Duplicate(full, "P", id) then return end
   Touch(full)
@@ -1009,7 +1214,8 @@ function handlers.P(full, data)
   local st = type(data.t) == "number" and data.t or now
   db.posts[id] = {
     id = id, from = full, item = item, qty = qty,
-    note = CleanString(data.note, MAX_NOTE) or "",
+    -- Prices off here too: older or other clients may still send them.
+    note = PostNote(data.note),
     t = (st <= now and now - st < POST_TTL) and st or now,
     pa = pa,
   }
@@ -1055,7 +1261,7 @@ local ALLOWED = {
   P = { GUILD = true, CHANNEL = true },
   X = { GUILD = true, CHANNEL = true },
   Q = { WHISPER = true },
-  R = { WHISPER = true },
+  R = { WHISPER = true, GUILD = true, CHANNEL = true },
 }
 
 function commObj:OnCommReceived(prefix, message, distribution, from)
@@ -1066,6 +1272,12 @@ function commObj:OnCommReceived(prefix, message, distribution, from)
   local kind = message:sub(1, 1)
   local allowed = ALLOWED[kind]
   if not allowed or not allowed[distribution] then return end
+  -- A recipe list I didn't ask for (a batch answer to other peers) isn't even decoded.
+  if kind == "R" and not (queried[full] and time() - queried[full] <= QUERY_TTL) then return end
+  if distribution ~= "WHISPER" then
+    if RawDuplicate(full, message) then return end
+    heardOn[full] = distribution
+  end
   if not RateOk(full) then return end
   local data = Decode(message:sub(2))
   if not data then return end
@@ -1153,9 +1365,10 @@ local function InDungeon()
   return ok and inside and (kind == "party" or kind == "raid") and true or false
 end
 
--- Busy because of where I am / what I'm doing, regardless of the option.
+-- Busy because of where I am, regardless of the option. Only dungeons and raids: addon messages
+-- are held back in combat, so a busy flag raised by combat would reach nobody before it ends.
 local function AutoReason()
-  return InDungeon() or inCombat
+  return InDungeon()
 end
 
 local function ComputeBusy()
@@ -1173,9 +1386,13 @@ local function UpdateBusy(notify)
   if changed or notify then Fire("BUSY_UPDATED") end
 end
 
-local function OnEnteringWorld()
+-- isInitialLogin: a real login. After a /reload the back-online flag (l) must not go out
+-- again, so both distributions count as already announced.
+local function OnEnteringWorld(_, isInitialLogin)
+  if not started and isInitialLogin ~= true then
+    loginHello.GUILD, loginHello.CHANNEL = true, true
+  end
   Start()
-  inCombat = (UnitAffectingCombat and UnitAffectingCombat("player")) and true or false
   UpdateBusy()
   -- Channel joins fail during the first seconds of loading; re-checked on every zone-in.
   C_Timer.After(5, function() JoinRealmChannel(1) end)
@@ -1184,12 +1401,10 @@ end
 if NS.Register then
   NS.Register("PLAYER_ENTERING_WORLD", OnEnteringWorld)
   NS.Register("ZONE_CHANGED_NEW_AREA", function() UpdateBusy() end)
-  NS.Register("PLAYER_REGEN_DISABLED", function() inCombat = true; UpdateBusy() end)
-  NS.Register("PLAYER_REGEN_ENABLED", function() inCombat = false; UpdateBusy() end)
 else
   local f = CreateFrame("Frame")
   f:RegisterEvent("PLAYER_ENTERING_WORLD")
-  f:SetScript("OnEvent", OnEnteringWorld)
+  f:SetScript("OnEvent", function(_, event, ...) OnEnteringWorld(event, ...) end)
 end
 
 -- Public ----------------------------------------------------------------
@@ -1202,6 +1417,7 @@ end
 function Comm.SetRealmChannel(on)
   local db = DB()
   if not db then return end
+  if (db.realmChannel and true or false) ~= (on and true or false) then FirePeersSoon() end
   db.realmChannel = on and true or false
   if on then
     JoinRealmChannel(1)
@@ -1251,9 +1467,9 @@ function Comm.ToggleBusy(quiet)
   if quiet then return end
   local busy, manual = Comm.BusyState()
   if manual then
-    Print(L["You are busy: other CraftBoard users see it and the board won't whisper you."])
+    Print(L["You are busy: other CraftBoard users see it and can't whisper you from the board."])
   elseif busy then
-    Print(L["Manual busy off, but you are still busy automatically (dungeon or combat)."])
+    Print(L["Manual busy off, but you are still busy automatically in this dungeon or raid."])
   else
     Print(L["You are available for whispers from the board."])
   end

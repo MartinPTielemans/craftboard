@@ -25,12 +25,19 @@
 --     Blizzard's tab column only gets our one CraftBoard tab;
 --   * ESC closes ProfessionsFrame as usual (it is Blizzard's UI panel); our page hides with it.
 -- Opening ProfessionsFrame for /cb, the minimap button and the key binding uses the same opener
--- as the tips (ToggleProfessionsBook on this client), outside combat only, and only when
--- Blizzard_Professions is already loaded; otherwise the standalone window opens.
+-- as the tips (ToggleProfessionsBook on this client), outside combat only and for characters with
+-- a profession. Blizzard_Professions is loaded first when it isn't yet (C_AddOns.LoadAddOn, else
+-- UIParentLoadAddOn, which Blizzard's own openers use), from the player's click or key, as the
+-- welcome window's opener already did; nothing of it is called or written afterwards, only
+-- post-hooked as above. Otherwise (combat, no profession, the option off, or a client where the
+-- tab can't be built) the standalone window opens. With ProfessionsFrame already open, our tab is
+-- selected even in combat: that shows only our own frames.
+-- Our side tab carries the Requests count like the standalone window's Requests tab (a number in
+-- the icon's corner, a tooltip line), kept current from BADGE_UPDATED.
 local ADDON, NS = ...
 
 local L = NS.L
-local max, min = math.max, math.min
+local format, max, min = string.format, math.max, math.min
 
 local Embed = {}
 NS.Embed = Embed
@@ -43,8 +50,9 @@ local TITLE_H = 24               -- title bar + close button: left to Blizzard's
 local GUARD = 0.3                -- s after selecting in which Blizzard page changes don't deselect
 local SIDETAB = "common-sidetab"
 
-local pf, page, tab, ctl, titleFrame
+local pf, page, tab, ctl, titleFrame, badge
 local built, failed = false, false
+local badgeCount = 0             -- other players' requests I can craft (UI.RequestCount)
 local blizzTabs = {}             -- Blizzard's side tabs, top to bottom
 local hooked = {}                -- [frame] = true once its scripts are hooked
 local dimmed = {}                -- Blizzard selected-tab textures faded while our page is up
@@ -62,6 +70,21 @@ local function IsLoaded(name)
   if C_AddOns and C_AddOns.IsAddOnLoaded then return C_AddOns.IsAddOnLoaded(name) and true or false end
   if IsAddOnLoaded then return IsAddOnLoaded(name) and true or false end
   return false
+end
+
+-- Loads Blizzard_Professions (load-on-demand) if it isn't yet; ADDON_LOADED builds our tab.
+-- Out of combat only. True when it is loaded.
+local function LoadProfessions()
+  if IsLoaded("Blizzard_Professions") then return true end
+  if InCombatLockdown and InCombatLockdown() then return false end
+  if C_AddOns and C_AddOns.LoadAddOn then
+    pcall(C_AddOns.LoadAddOn, "Blizzard_Professions")
+  elseif UIParentLoadAddOn then
+    pcall(UIParentLoadAddOn, "Blizzard_Professions")
+  elseif LoadAddOn then
+    pcall(LoadAddOn, "Blizzard_Professions")
+  end
+  return IsLoaded("Blizzard_Professions")
 end
 
 local function Kit()
@@ -388,11 +411,39 @@ local function BuildPage(kit)
   ctl = NS.UI.BuildContent(page, { topTabs = true })
 end
 
+-- Requests count on our tab: the number in the icon's corner (like UI's side-tab badge). n:
+-- the count BADGE_UPDATED carries, else it is asked for.
+local function UpdateBadge(n)
+  if not badge then return end
+  if type(n) ~= "number" then
+    local ok, v = pcall(function() return NS.UI and NS.UI.RequestCount and NS.UI.RequestCount() end)
+    n = ok and v
+  end
+  badgeCount = type(n) == "number" and n or 0
+  badge:SetText(badgeCount > 0 and badgeCount or "")
+end
+
 local function BuildTab(kit)
   tab = kit.SideTab(pf, TAB_NAME, kit.portrait, L["CraftBoard"])
   tab:SetScript("OnClick", function()
     if not page:IsShown() then Embed.Select() end
   end)
+  badge = tab:CreateFontString(nil, "OVERLAY", kit.Font and kit.Font("NumberFontNormal", "GameFontHighlightSmall")
+    or "GameFontHighlightSmall")
+  if badge.SetDrawLayer then badge:SetDrawLayer("OVERLAY", 7) end
+  badge:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -9, 7)
+  -- SideTab's tooltip (the name) plus the count; its OnLeave hides it.
+  tab:SetScript("OnEnter", function(self)
+    if not GameTooltip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(L["CraftBoard"])
+    if badgeCount > 0 then
+      GameTooltip:AddLine(format(badgeCount == 1 and L["%d request you can craft"] or L["%d requests you can craft"],
+        badgeCount), 1, 1, 1)
+    end
+    GameTooltip:Show()
+  end)
+  UpdateBadge()
 end
 
 local function HookFrame()
@@ -400,6 +451,7 @@ local function HookFrame()
     if not built then return end
     PlaceTab()
     HookAll()
+    UpdateBadge()
   end)
   pf:HookScript("OnHide", function()
     if built and page:IsShown() then page:Hide() end
@@ -481,20 +533,26 @@ function Embed.Select()
 end
 
 -- Opens CraftBoard inside the Professions window: selects our tab, opening ProfessionsFrame first
--- when it is closed. Needs the option on, no combat, and (unless allowLoad) Blizzard_Professions
--- already loaded and at least one profession. allowLoad (Welcome's button) may run the opener to
--- load and open the Professions window, then selects our tab if it could be built. True when
--- something was opened; false means "use the standalone window".
+-- when it is closed (loading Blizzard_Professions if needed). Needs the option on; opening the
+-- window also needs no combat and (unless allowLoad) at least one profession. allowLoad
+-- (Welcome's button) runs the opener even without a profession (the book then says where to
+-- learn one) and counts that as opened. True when something was opened; false means "use the
+-- standalone window".
 function Embed.Open(allowLoad)
-  if not Embed.IsEnabled() or InCombat() then return false end
-  if not built and not allowLoad then return false end
-  if built and not allowLoad and not HasProfession() then return false end
-  if not (built and pf:IsShown()) then
-    local opener = Opener()
-    if not opener or not pcall(opener) then return false end
-    if not built then Build() end
-    if not (built and pf:IsShown()) then return allowLoad and true or false end
+  if not Embed.IsEnabled() then return false end
+  if built and pf:IsShown() then
+    if HasProfession() then Embed.Select() end
+    return true
   end
+  -- Opening Blizzard's window.
+  if InCombat() then return false end
+  if not allowLoad and not HasProfession() then return false end
+  if not built and LoadProfessions() then Build() end
+  if not built and not allowLoad then return false end
+  local opener = Opener()
+  if not opener or not pcall(opener) then return false end
+  if not built then Build() end
+  if not (built and pf:IsShown()) then return allowLoad and true or false end
   if HasProfession() then Embed.Select() end
   return true
 end
@@ -523,5 +581,9 @@ NS.Register("PLAYER_LOGIN", function()
 end)
 
 NS.Register("TRADE_SKILL_SHOW", AutoDeselect)
+
+if NS.RegisterCallback then
+  NS.RegisterCallback(Embed, "BADGE_UPDATED", function(_, n) UpdateBadge(n) end)
+end
 
 if IsLoaded("Blizzard_Professions") then Build() end

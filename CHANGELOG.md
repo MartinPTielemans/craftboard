@@ -56,8 +56,40 @@ CraftBoard 1.0: from a crafting-order board to a crafting companion for Forever.
 
 ### Changed
 - Players on your ignore list no longer appear as crafters, board requests or chat asks.
+- Requests: requests from players who are offline are dimmed, listed last and left out of the
+  count; Offer only appears for requests you can craft; a player who both posts and asks in chat
+  is listed once; your alts' requests show under My requests (retract them on that alt). The list
+  no longer moves while the mouse is over it. Offering shows "Offered" for ten minutes.
+- Chat detection: "can anyone make [X]?", "who can craft [X]?", "need enchanter", "5x [item]" and
+  "bring mats" are understood; crafter adverts, guild recruitment, LFG lines and item links for
+  things nobody crafts are no longer taken for requests; "nvm, found one" removes the ask.
+- Plan: a "Best next" pick per profession, Blizzard's skill-up marks, honest estimates for yellow
+  and green recipes, notices at the cap and when colors are out of date, and a bar for every
+  profession (gathering ones too). The Craft button opens the profession window when it is
+  closed and says "Crafting..." while a batch runs; a picked recipe stays picked under filters.
+- Craft checks cooldowns, required tools and the reagents in your bags (not the bank).
+- Queue: shows what is made ("2/5", "made · Bob"); reagent totals and Buy missing count only
+  what is still to make and skip crafts whose player brings the reagents.
+- Tooltips: alt counts only on reagents, per alt; recipe tooltips group "Known by", "Can learn"
+  and "Needs more skill"; only characters on your realm and faction count as alts.
+- Buy missing reagents: stays clear of the Buyback tab, checks money and bag space, and reports
+  what actually arrived.
+- The one-click enchant button works with the Enchanting window open (crafting through the API)
+  or closed (a macro), and says why it is disabled.
+- Trainer reminders know book and quest ranks for Cooking, First Aid and Fishing; trainers'
+  waiting recipes are remembered. Transmutes that share a cooldown are one notice.
+- Settings are grouped into sections; "Forget other players' data" asks first and keeps your own
+  requests. The welcome window shows once more for the 1.0 changes.
+- Auto-busy covers dungeons and raids only (addon messages can't go out in combat).
+- /cb find, /cb requests, /cb plan, /cb chars and /cb forget; /cb opens the Professions-window tab
+  even before a profession window was opened this session.
+- Whispers from Find and Requests now open the chat box with the text typed in, for you to send.
+  Only Offer and Advertise send straight away, and their tooltips say so.
 
 ### Fixed
+- Chat watching kept the last 40 Trade lines in your saved variables; they are deleted now and
+  only kept when you turn on `/cb chatdebug log`.
+- "Back online" notices no longer fire after a /reload.
 - Forever names: `UnitName` returns the surname there, not the realm. Your character is now
   keyed "First Surname" (saved data and your open posts move over on first login), party
   members and trade partners are read the same way, and a player who shares your first name is

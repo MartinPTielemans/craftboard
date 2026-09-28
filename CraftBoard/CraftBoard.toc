@@ -1,6 +1,10 @@
 ## Interface: 16001
 ## Title: CraftBoard
 ## Notes: Crafting companion for Forever: plan your leveling, craft and queue, find crafters.
+## Notes-deDE: Handwerksbegleiter für Forever: Berufe gezielt steigern, herstellen und vormerken, Handwerker finden.
+## Notes-frFR: Compagnon d'artisanat pour Forever : planifier sa progression, fabriquer, trouver des artisans.
+## Notes-esES: Compañero de profesiones para Forever: planifica tu progreso, fabrica y encuentra artesanos.
+## Notes-esMX: Compañero de profesiones para Forever: planifica tu progreso, fabrica y encuentra artesanos.
 ## Author: mpt
 ## Version: 0.9.4
 ## SavedVariables: CraftBoardDB
