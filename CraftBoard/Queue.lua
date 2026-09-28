@@ -59,6 +59,15 @@ function Queue.SetQty(x, qty)
   NS.Fire("QUEUE_UPDATED")
 end
 
+-- Whether the player it's for brings the reagents (they said so again, or took it back).
+function Queue.SetMats(x, mats)
+  if type(x) ~= "table" then return end
+  mats = mats and true or nil
+  if x.mats == mats then return end
+  x.mats = mats
+  NS.Fire("QUEUE_UPDATED")
+end
+
 -- Adds items to an existing entry (planning more of the same craft).
 function Queue.Grow(x, qty)
   if type(x) ~= "table" then return end

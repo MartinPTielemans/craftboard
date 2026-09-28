@@ -282,11 +282,20 @@ local function CraftWindowFor(rec)
 end
 
 -- Why the button is disabled, or nil when their slot 7 holds an item without an enchant yet.
-local function WaitReason()
+-- The enchant's reagents in my bags (what the cast can use), or nil when unknown.
+local function BagCheck(recipeID)
+  local rec = recipeID and Mine()[recipeID]
+  return rec and NS.Inventory and NS.Inventory.CanCraft and NS.Inventory.CanCraft(rec, nil, true) or nil
+end
+
+local function WaitReason(recipeID)
   if not ItemIDOf(SlotLink(GetTradeTargetItemLink, ENCHANT_SLOT)) then
     return L["Waiting for their item in \"Will not be traded\"."]
   end
   if EnchantOf(GetTradeTargetItemInfo) then return L["Enchant applied \226\128\148 accept the trade."] end
+  -- The client refuses the cast without them: the button waits (the tooltip lists what's short).
+  local cc = BagCheck(recipeID)
+  if cc and not cc.ready then return L["Missing reagents in your bags."] end
   return nil
 end
 
@@ -296,8 +305,7 @@ local function ShowTooltip(self)
   GameTooltip:SetText(self.cbName or L["Enchant"])
   if self.cbWhy then GameTooltip:AddLine(self.cbWhy, 1, 0.82, 0, true) end
   GameTooltip:AddLine(L["Casts the enchant on the item in their \"Will not be traded\" slot. Both of you still accept the trade."], 1, 1, 1, true)
-  local rec = self.cbRecipe and Mine()[self.cbRecipe]
-  local cc = rec and NS.Inventory and NS.Inventory.CanCraft and NS.Inventory.CanCraft(rec)
+  local cc = BagCheck(self.cbRecipe)
   if cc and #cc.missing > 0 then
     local parts = {}
     for _, r in ipairs(cc.missing) do
@@ -411,7 +419,7 @@ function Trade.UpdateButton()
   end
   RegisterClicks(b)
   SetLabel(b, id)
-  local why = WaitReason()
+  local why = WaitReason(id)
   b.cbWhy = why
   b:SetEnabled(why == nil)
   b:Show()

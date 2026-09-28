@@ -43,7 +43,8 @@ CraftBoard 1.0: from a crafting-order board to a crafting companion for Forever.
 - Cooldown sharing: transmutes, Mooncloth and other crafting cooldowns show as "ready" or time
   left next to crafters in Find; `/cb cd` lists your characters' cooldowns.
 - One-click enchant: when your trade partner asked for an enchant you know (queued, or seen in
-  chat), a button under the trade window casts it on their item in "Will not be traded".
+  chat), a button under the trade window casts it on their item in "Will not be traded". It
+  waits while the enchant's reagents aren't in your bags.
 - Private "crafted for you" counts, read from completed trades and shown on crafter and request
   tooltips. Never sent anywhere.
 - "Back online" notice: one quiet chat line when a player whose request you can craft, or offered
@@ -63,7 +64,7 @@ CraftBoard 1.0: from a crafting-order board to a crafting companion for Forever.
 - Chat detection: "can anyone make [X]?", "who can craft [X]?", "need enchanter", "5x [item]" and
   "bring mats" are understood; crafter adverts, guild recruitment, LFG lines and item links for
   things nobody crafts are no longer taken for requests; "nvm, found one" removes the ask.
-- Plan: a "Best next" pick per profession, Blizzard's skill-up marks, honest estimates for yellow
+- Plan: a "Best next" pick per profession (from what your bags allow), Blizzard's skill-up marks, honest estimates for yellow
   and green recipes, notices at the cap and when colors are out of date, and a bar for every
   profession (gathering ones too). The Craft button opens the profession window when it is
   closed and says "Crafting..." while a batch runs; a picked recipe stays picked under filters.

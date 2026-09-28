@@ -3343,7 +3343,7 @@ function R.ChatDetail(e)
     and NS.Inventory.CanCraft(rec, s.qty or 1) or nil
   if s.mats then
     lines[#lines + 1] = GREEN .. L["They bring the reagents."] .. "|r"
-  elseif cc and cc.ready and s.current then
+  elseif cc and cc.ready and s.current and NS.Inventory.CanCraft(rec, s.qty or 1, true).ready then
     lines[#lines + 1] = GREEN .. L["You have the reagents."] .. "|r"
   end
   if (s.asks or 1) > 1 then
@@ -3795,7 +3795,7 @@ local function Annotate()
       -- Ready: the current char knows it and has the reagents for the whole request; grey
       -- check: only an alt knows it.
       if e.can and know.current and canCraft then
-        e.ready = canCraft(know.rec, qty).ready and true or false
+        e.ready = canCraft(know.rec, qty, true).ready and true or false
       elseif e.can then
         e.readyAlt = true
       end
@@ -3836,16 +3836,20 @@ local function Annotate()
         status = R.First(s.from) .. DOT .. Age(s.t), dim = now - (s.t or now) > OLD_AGE,
       }
       if not e.ready and s.knownOn then
-        if rec and type(rec.r) == "table" and #rec.r > 0 and canCraft and canCraft(rec, s.qty or 1).ready then
+        if rec and type(rec.r) == "table" and #rec.r > 0 and canCraft and canCraft(rec, s.qty or 1, true).ready then
           e.ready = true
         else
           e.readyAlt = true
         end
       end
       e.can = e.ready or e.readyAlt or false
-      -- Asked again with another quantity ("LF 5x" after "LF 1x"): the queued craft follows.
-      local x = Q and s.qty and Q.Get(e.id)
-      if x and x.who and not x.madeItems then Q.SetQty(x, s.qty) end
+      -- Asked again with another quantity ("LF 5x" after "LF 1x"), or they said they bring the
+      -- reagents (or no longer do): the queued craft follows.
+      local x = Q and Q.Get and Q.Get(e.id)
+      if x and x.who then
+        if s.qty and not x.madeItems then Q.SetQty(x, s.qty) end
+        if Q.SetMats then Q.SetMats(x, s.mats) end
+      end
       -- The count leaves out profession-only asks ("LF ench"): only asks for a recipe I know.
       e.counts = e.can and s.recipeID ~= nil and not e.dim
       add(e)
@@ -3873,7 +3877,8 @@ local function Annotate()
       name = name, label = x.qty > 1 and (format(L["%dx"], x.qty) .. " " .. name) or name,
       icon = RecipeIcon(x.recipeID, x.item), status = status,
       lname = strlower(name), lfrom = strlower(x.who and Short(x.who) or ""),
-      ready = left == 0 or (rec and canCraft and canCraft(rec, left * max(1, rec.y or 1)).ready) or false,
+      -- Craftable now: the bags, as the Craft button counts them (the card plans with the bank too).
+      ready = left == 0 or (rec and canCraft and canCraft(rec, left * max(1, rec.y or 1), true).ready) or false,
     }
     queued[#queued + 1] = e
   end
@@ -4115,17 +4120,18 @@ function P.Index()
   return byProf
 end
 
--- "Best next": among recipes that still give points, what the bags allow first, then points per
--- craft, then how many crafts that covers, then fewest reagents per point. No prices involved.
+-- "Best next": among recipes that still give points and that the bags allow now, points per
+-- craft, then how many crafts that covers, then fewest reagents per point. None when nothing is
+-- craftable (it would promise a craft the button can't make). No prices involved.
 function P.Best(list, pr)
   local best, bestKey
   for _, e in ipairs(list) do
-    local per = e.diff.per and e.diff.per > 0 and PerCraft(e.rec, e.diff) or nil
+    local per = e.ready and e.diff.per and e.diff.per > 0 and PerCraft(e.rec, e.diff) or nil
     if per then
       local mats = 0
       for _, r in ipairs(type(e.rec.r) == "table" and e.rec.r or {}) do mats = mats + (r[2] or 0) end
       local crafts = P.CraftsTo(pr, e.rec, e.diff) or 1
-      local key = { e.ready and 1 or 0, per, min(e.times or 0, crafts), -(mats / per) }
+      local key = { per, min(e.times or 0, crafts), -(mats / per) }
       local better = not bestKey
       if bestKey then
         for i = 1, #key do

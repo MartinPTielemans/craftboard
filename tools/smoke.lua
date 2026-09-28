@@ -289,6 +289,13 @@ local entries = Q.Entries()
 check(#entries == 1 and entries[1].qty == 1, "delivery carries over to the next row")
 Q.Delivered("Bob-Forever", 2304, nil, 1)
 eq(#Q.Entries(), 0, "fully delivered queue is empty")
+-- They take back "have mats": the queued craft needs the reagents again.
+do
+  local m = Q.Add({ recipeID = 2152, item = 2304, qty = 1, who = "Bob-Forever", src = "mats", mats = true })
+  Q.SetMats(m, false)
+  check(m.mats == nil and Q.Totals(true)[1] ~= nil, "a queued craft follows a change of mats")
+  Q.Remove(m.id)
+end
 local arrows = { p = 202, o = 999, y = 200, r = { { 2318, 1 } } }
 eq(NS.Inventory.CanCraft(arrows, 200).reagents[1].need, 1, "yield: 200 items is one craft")
 eq(NS.Inventory.CanCraft(arrows, 201).reagents[1].need, 2, "yield rounds up")
