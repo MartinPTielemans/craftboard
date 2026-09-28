@@ -1829,7 +1829,8 @@ end
 
 -- Intermediates (multi-crafter chains) -------------------------------------------
 -- A reagent that is itself crafted: who on the board makes it. "Made by Bob, Carl (+2)" for
--- the reagent slot's tooltip; OthersMake: other players make it and none of my characters.
+-- the reagent slot's tooltip; LinkedItem: what other players make for the slot and none of my
+-- characters does.
 
 local Chain = {}
 
@@ -1850,9 +1851,21 @@ function Chain.MakersText(itemID)
   return text
 end
 
-function Chain.OthersMake(itemID)
-  local u = universeByItem[itemID]
-  return u ~= nil and u.peersN > 0 and not u.me and not u.alt
+-- What a linked order for a short reagent slot asks for: of the tiers the slot accepts (r.alts;
+-- its own item first), the first other players make, when none of my characters makes any of
+-- them. nil: no linked order.
+function Chain.LinkedItem(r)
+  local ids = { r.itemID }
+  for _, id in ipairs(type(r.alts) == "table" and r.alts or {}) do
+    if id ~= r.itemID then ids[#ids + 1] = id end
+  end
+  local pick
+  for _, id in ipairs(ids) do
+    local u = universeByItem[id]
+    if u and (u.me or u.alt) then return nil end
+    if not pick and u and u.peersN > 0 then pick = id end
+  end
+  return pick
 end
 
 -- Short reagents of a craft that other players make and my characters don't:
@@ -1860,7 +1873,8 @@ end
 function Chain.LinkedNeeds(missing)
   local out = {}
   for _, r in ipairs(missing or {}) do
-    if Chain.OthersMake(r.itemID) then out[#out + 1] = { itemID = r.itemID, qty = r.need - r.have } end
+    local id = Chain.LinkedItem(r)
+    if id then out[#out + 1] = { itemID = id, qty = r.need - r.have } end
   end
   return out
 end

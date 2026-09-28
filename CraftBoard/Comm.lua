@@ -1384,7 +1384,9 @@ end
 -- every recipe learned, and each peer who hears the hello asks), R_BATCH queries within
 -- R_BATCH_WINDOW seconds start a batch: after R_BATCH_DELAY one R goes to the guild / realm
 -- channel instead of a whisper each (at most one batch per ANSWER_GAP). Peers that didn't ask
--- ignore it (handlers.R).
+-- ignore it (handlers.R). Only peers on this version join a batch: before it, R was read by
+-- whisper only (their hello's pg=1 came with reading broadcast lists), so older ones are
+-- whispered as ever.
 function handlers.Q(full)
   Touch(full)
   local now = time()
@@ -1395,7 +1397,7 @@ function handlers.Q(full)
     if now - queryTimes[i] > R_BATCH_WINDOW then table.remove(queryTimes, i) end
   end
   queryTimes[#queryTimes + 1] = now
-  local dist = heardOn[full]
+  local dist = ReadsPages(full) and heardOn[full]
   if dist and C_Timer and C_Timer.After and (batch or (#queryTimes >= R_BATCH
     and not (batchAt and now - batchAt < ANSWER_GAP))) then
     if not batch then
