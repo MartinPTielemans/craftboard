@@ -613,9 +613,20 @@ function SetDetailBackground(t, profID)
 end
 end
 
--- Profession icon: stored by the scan on one of my chars, else asked from the client.
+-- Profession icon: Blizzard's standard icon for the Classic professions (the client doesn't
+-- always hand one over: First Aid came back blank), else stored by the scan on one of my chars,
+-- else asked from the client.
+local PROF_ICONS = {
+  [129] = "Interface\\Icons\\Spell_Holy_SealOfSacrifice", [164] = "Interface\\Icons\\Trade_BlackSmithing",
+  [165] = "Interface\\Icons\\Trade_LeatherWorking", [171] = "Interface\\Icons\\Trade_Alchemy",
+  [182] = "Interface\\Icons\\Trade_Herbalism", [185] = "Interface\\Icons\\INV_Misc_Food_15",
+  [186] = "Interface\\Icons\\Trade_Mining", [197] = "Interface\\Icons\\Trade_Tailoring",
+  [202] = "Interface\\Icons\\Trade_Engineering", [333] = "Interface\\Icons\\Trade_Engraving",
+  [356] = "Interface\\Icons\\Trade_Fishing", [393] = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01",
+}
 local function ProfIcon(profID)
   if profID == nil then return nil end
+  if PROF_ICONS[profID] then return PROF_ICONS[profID] end
   if type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" then
     local function iconOf(c)
       local p = type(c) == "table" and type(c.profs) == "table" and c.profs[profID]
@@ -4392,11 +4403,14 @@ function UI.FilterPlan(keepScroll)
       end
     end
     local gain = NS.Skills and NS.Skills.SessionGain and NS.Skills.SessionGain(pr.profID) or 0
-    local label = pr.rank and pr.max and format(L["%s %d/%d"], pr.name, pr.rank, pr.max) or pr.name
+    -- The name on the bar; the rank goes in the right-hand slot (a long name plus "111/150" and a
+    -- recipe count don't fit in one bar).
+    local label = pr.name
     if gain > 0 then label = label .. " " .. format(L["(+%d)"], gain) end
+    local rankText = pr.rank and pr.max and format(L["%d/%d"], pr.rank, pr.max) or count
     -- Professions with nothing to show while searching or filtering stay out of the way.
     if count > 0 or not (searching or onlyReady) then
-      items[#items + 1] = { kind = "prof", key = pkey, name = label, prof = pr.profID, count = count, depth = 0, collapsed = not pOpen }
+      items[#items + 1] = { kind = "prof", key = pkey, name = label, prof = pr.profID, count = rankText, depth = 0, collapsed = not pOpen }
     end
     if pOpen and count == 0 and not (searching or onlyReady) then
       local why = GATHERING[pr.profID] and L["Gathering: nothing to craft."]
