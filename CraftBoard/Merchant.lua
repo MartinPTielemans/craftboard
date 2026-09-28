@@ -100,6 +100,24 @@ local function MoneyText(copper)
   return format("%dg %ds %dc", math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100)
 end
 
+-- A bag slot's item: id, count (C_Container's table, else the older multi-value global).
+local function SlotItem(bag, slot)
+  if C_Container and C_Container.GetContainerItemInfo then
+    local ok, info = pcall(C_Container.GetContainerItemInfo, bag, slot)
+    if ok and type(info) == "table" and type(info.itemID) == "number" then
+      return info.itemID, tonumber(info.stackCount) or 1
+    end
+    return nil
+  end
+  if GetContainerItemInfo then
+    local ok, _, count, _, _, _, _, link, _, _, id = pcall(GetContainerItemInfo, bag, slot)
+    if not ok then return nil end
+    if type(id) ~= "number" then id = type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil end
+    if id then return id, tonumber(count) or 1 end
+  end
+  return nil
+end
+
 -- Room in my bags: free slots of the general-purpose bags (bag family 0), and room left on partial
 -- stacks of the items in `want` ({ [itemID] = true }): free, { [itemID] = items }. free is nil
 -- when the client can't tell (then bag space doesn't limit the plan).
@@ -107,7 +125,6 @@ local function BagRoom(want)
   local freeFn = (C_Container and C_Container.GetContainerNumFreeSlots) or GetContainerNumFreeSlots
   if not freeFn then return nil, {} end
   local slotsFn = (C_Container and C_Container.GetContainerNumSlots) or GetContainerNumSlots
-  local infoFn = C_Container and C_Container.GetContainerItemInfo
   local free, room, known, special = 0, {}, false, {}
   -- The reagent bag (mainline-type clients) holds exactly what this buys: its free slots and
   -- partial stacks count as well.
@@ -131,11 +148,9 @@ local function BagRoom(want)
     local ok2, slots = false, nil
     if slotsFn then ok2, slots = pcall(slotsFn, bag) end
     for slot = 1, ok2 and tonumber(slots) or 0 do
-      local ok3, info = false, nil
-      if infoFn then ok3, info = pcall(infoFn, bag, slot) end
-      local id = ok3 and type(info) == "table" and info.itemID
-      if type(id) == "number" and want[id] then
-        local left = StackSize(id) - (tonumber(info.stackCount) or 1)
+      local id, count = SlotItem(bag, slot)
+      if id and want[id] then
+        local left = StackSize(id) - count
         if left > 0 then room[id] = (room[id] or 0) + left end
       end
     end

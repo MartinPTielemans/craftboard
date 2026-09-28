@@ -2853,9 +2853,12 @@ function R.OfferText(item)
   return format(L["[CraftBoard] I can craft %s for you."], ItemLink(item) or ItemName(item))
 end
 
--- Offer: sends the whisper right away (it only ever goes to a request I can craft).
+-- Offer: sends the whisper right away (it only ever goes to a request I can craft), once per
+-- OFFER_GAP whichever way it is asked for (button, menu, gamepad).
 function R.Offer(e)
   if not (e and e.post and not e.mine and e.can) then return end
+  local ago = R.OfferedAgo(e)
+  if ago and ago < OFFER_GAP then return end
   if NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, R.OfferText(e.post.item)) then
     if NS.Comm.MarkOffered then NS.Comm.MarkOffered(e.post.id) end
     UI.RefreshRequestDetail()
@@ -3010,7 +3013,8 @@ function R.Actions(e)
     -- An alt's request can only be retracted on that alt (its author sends the retraction).
     if not e.altPost then add(L["Retract"], R.Retract) end
   elseif e.post then
-    if e.can and e.online then add(L["Offer"], R.Offer, true) end
+    local ago = R.OfferedAgo(e)
+    if e.can and e.online and not (ago and ago < OFFER_GAP) then add(L["Offer"], R.Offer, true) end
     add(format(L["Whisper %s"], Short(e.post.from)), R.WhisperPost, true)
     if R.CanQueue(e) then add(L["Queue"], R.AddToQueue, true) end
   end
@@ -3020,14 +3024,13 @@ end
 function R.ShowMenu(owner, e)
   local actions = R.Actions(e)
   if #actions == 0 then return end
+  -- Without the menu API the right-click does nothing (the card's buttons do the same things).
   if MenuUtil and MenuUtil.CreateContextMenu then
     reqs.menuOpen = true
     pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
       if root.CreateTitle then root:CreateTitle(e.name) end
       for _, a in ipairs(actions) do root:CreateButton(a.text, a.fn) end
     end)
-  elseif e.chat then
-    R.HideChat(e)
   end
 end
 
@@ -3056,7 +3059,7 @@ function R.RowFactory()
           GameTooltip:AddLine(format(it.queue and L["for %s"] or L["Requested by %s"], Short(who)), MUTED[1], MUTED[2], MUTED[3])
         end
       end
-      if GameTooltip and GameTooltip:IsShown() and #R.Actions(it) > 0 then
+      if GameTooltip and GameTooltip:IsShown() and MenuUtil and MenuUtil.CreateContextMenu and #R.Actions(it) > 0 then
         GameTooltip:AddLine(L["Right-click for actions"], MUTED[1], MUTED[2], MUTED[3])
         GameTooltip:Show()
       end

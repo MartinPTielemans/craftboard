@@ -1322,6 +1322,10 @@ function handlers.H(full, data)
     end
     p.cd = cd
     if changed then Fire("PEERS_UPDATED") end
+  elseif p.cd ~= nil then
+    -- A hello without cd (an older build): their cooldowns are unknown again, not ready forever.
+    p.cd = nil
+    Fire("PEERS_UPDATED")
   end
   -- Their posts follow the login hello: check once they have had time to arrive (the second
   -- check only speaks if the first found nothing; NoteBackOnline rate-limits itself).

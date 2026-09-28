@@ -289,6 +289,23 @@ local entries = Q.Entries()
 check(#entries == 1 and entries[1].qty == 1, "delivery carries over to the next row")
 Q.Delivered("Bob-Forever", 2304, nil, 1)
 eq(#Q.Entries(), 0, "fully delivered queue is empty")
+-- Queue totals: slots accepting the same tiers add up; a stack two rows could use counts once.
+do
+  local count = NS.Inventory.Count
+  NS.Inventory.Count = function(id) return id == 5001 and 4 or 0 end
+  local t = NS.Inventory.Totals({
+    { record = { r = { { 5001, 3, alts = { 5002 } } } }, qty = 1 },
+    { record = { r = { { 5002, 3, alts = { 5001 } } } }, qty = 1 },
+  })
+  check(#t == 1 and t[1].need == 6 and t[1].have == 4, "the same tiers in any order are one row")
+  t = NS.Inventory.Totals({
+    { record = { r = { { 5001, 3 } } }, qty = 1 },
+    { record = { r = { { 5001, 3, alts = { 5002 } } } }, qty = 1 },
+  })
+  check(#t == 2 and t[1].have == 4 and t[2].have == 1, "overlapping tiers share the stack")
+  NS.Inventory.Count = count
+end
+
 -- Queued from a chat ask, then posted to the board: the queued craft moves to the post.
 do
   local c = Q.Add({ recipeID = 2152, item = 2304, qty = 1, who = "Bob-Forever", src = "chat:Bob-Forever:Light Armor Kit" })

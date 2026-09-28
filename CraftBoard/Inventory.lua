@@ -570,8 +570,12 @@ end
 -- Every reagent of a craft list with have/need, needs summed over the list:
 -- list { {record=, qty= (output items)}, ... } -> { {itemID=, need=, have=, alts=}, ... } in first-seen order.
 -- (alts: the reagent slot's other quality tiers, as in SlotCount.)
+-- Reagent slots that accept the same items (one item, or the same quality tiers in any order)
+-- add up into one row: { itemID=, need=, have=, alts= (the other accepted items) }. What the
+-- bags and bank hold is shared out between rows, the row accepting fewest items first, so a stack
+-- two rows could use (overlapping tiers) isn't counted for both.
 function Inventory.Totals(list)
-  local need, order, alts = {}, {}, {}
+  local rows, byKey = {}, {}
   for _, e in ipairs(list or {}) do
     local rec = e.record
     local qty = Inventory.CraftsFor(rec, e.qty)
@@ -579,17 +583,50 @@ function Inventory.Totals(list)
       for _, reg in ipairs(rec.r) do
         local itemID, n = reg[1], reg[2]
         if itemID and n then
-          if not need[itemID] then order[#order + 1] = itemID end
-          need[itemID] = (need[itemID] or 0) + n * qty
-          if type(reg.alts) == "table" and not alts[itemID] then alts[itemID] = reg.alts end
+          local ids, seen = { itemID }, { [itemID] = true }
+          for _, id in ipairs(type(reg.alts) == "table" and reg.alts or {}) do
+            if type(id) == "number" and not seen[id] then ids[#ids + 1], seen[id] = id, true end
+          end
+          local sorted = {}
+          for i, id in ipairs(ids) do sorted[i] = id end
+          table.sort(sorted)
+          local key = table.concat(sorted, ",")
+          local row = byKey[key]
+          if not row then
+            row = { itemID = itemID, need = 0, ids = ids, n = #rows + 1 }
+            if #ids > 1 then
+              row.alts = {}
+              for i = 2, #ids do row.alts[#row.alts + 1] = ids[i] end
+            end
+            byKey[key] = row
+            rows[#rows + 1] = row
+          end
+          row.need = row.need + n * qty
         end
       end
     end
   end
-  local out = {}
-  for _, itemID in ipairs(order) do
-    out[#out + 1] = { itemID = itemID, need = need[itemID], have = Inventory.SlotCount(itemID, alts[itemID]),
-      alts = alts[itemID] }
+  local pool = {}
+  local order = {}
+  for i, r in ipairs(rows) do order[i] = r end
+  table.sort(order, function(a, b)
+    if #a.ids ~= #b.ids then return #a.ids < #b.ids end
+    return a.n < b.n
+  end)
+  for _, r in ipairs(order) do
+    local have = 0
+    for _, id in ipairs(r.ids) do
+      if pool[id] == nil then pool[id] = Inventory.Count(id) end
+      have = have + pool[id]
+    end
+    r.have = have
+    local take = math.min(r.need, have)
+    for _, id in ipairs(r.ids) do
+      local t = math.min(take, pool[id])
+      pool[id], take = pool[id] - t, take - t
+      if take <= 0 then break end
+    end
   end
-  return out
+  for _, r in ipairs(rows) do r.ids, r.n = nil, nil end
+  return rows
 end

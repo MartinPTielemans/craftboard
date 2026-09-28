@@ -204,7 +204,8 @@ function Skills.Update()
       e[2], e[3], changed = p.rank, p.max, true
     end
     if e.gone then e.gone, changed = nil, true end   -- learned again
-    if e[1] == nil then e[1] = p.name end
+    -- The book's name wins: the client's language may have changed since it was stored.
+    if e[1] ~= p.name then e[1], changed = p.name, true end
     if e.icon == nil and p.icon then e.icon = p.icon end
     present[key], names[p.name] = true, true
     slotKind[key] = p.primary and "primary" or "secondary"
