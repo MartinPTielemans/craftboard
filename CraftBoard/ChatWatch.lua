@@ -532,6 +532,22 @@ local function IsMe(full)
   return NS.IsMe(full)
 end
 
+-- The line with its reagent phrases taken out, to read whether it calls the ask off: "I no
+-- longer have mats" isn't "no longer" done, while "found someone, I no longer have mats" is.
+local function WithoutMats(s)
+  for _, list in ipairs({ NO_MATS, MATS }) do
+    for i = 1, #list do
+      local p = list[i]
+      local at = s:find(p, 1, true)
+      while at do
+        s = s:sub(1, at - 1) .. " " .. s:sub(at + #p)
+        at = s:find(p, 1, true)
+      end
+    end
+  end
+  return s
+end
+
 local function Opens(s, list)
   for i = 1, #list do
     if s:sub(1, #list[i]) == list[i] then return true end
@@ -552,10 +568,10 @@ function ChatWatch.Add(text, sender, channel, guild)
   local clean = ChatWatch.Clean(text)
   local s = Normalize(clean)
   -- "nvm found one" isn't a request; a line opening with it ("nvm, LF enchanter instead")
-  -- doesn't make a new row either. A line about reagents ("I no longer have mats") isn't done:
-  -- it only changes whether they bring them (below).
-  local saidMats = Mats(s)
-  if not saidMats and (Has(s, CANCEL) or (Has(s, DONE) and (not hit or Opens(s, DONE)))) then
+  -- doesn't make a new row either. Its reagent phrases aside: "I no longer have mats" only
+  -- changes whether they bring them (below).
+  local d = WithoutMats(s)
+  if Has(d, CANCEL) or (Has(d, DONE) and (not hit or Opens(d, DONE))) then
     if prev then
       seen[from] = nil
       FireSoon()

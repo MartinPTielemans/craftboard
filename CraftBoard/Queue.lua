@@ -166,11 +166,12 @@ function Queue.CraftsLeft(x, rec)
   return NS.Inventory and NS.Inventory.CraftsFor and NS.Inventory.CraftsFor(rec, left) or left
 end
 
--- Progress for the UI, in crafts: made, total.
+-- Progress for the UI, in crafts: made, total. Made is what CraftsLeft leaves of the total, so a
+-- row reads complete only when no craft is left (a varying yield can make items in odd counts).
 function Queue.Progress(x, rec)
   local y = math.max(1, type(rec) == "table" and rec.y or 1)
   local total = math.ceil((x.qty or 0) / y)
-  return math.min(total, math.ceil(Queue.MadeItems(x) / y)), total
+  return math.max(0, math.min(total, total - Queue.CraftsLeft(x, rec))), total
 end
 
 -- The queue has room for another entry.
@@ -183,6 +184,21 @@ end
 function Queue.Get(src)
   for _, x in ipairs(Queue.Entries()) do
     if x.src == src then return x end
+  end
+  return nil
+end
+
+-- A player posted to the board what I had queued from their chat ask: the queued craft moves to
+-- the post (src), so the post reads as queued and isn't queued twice. Returns the entry or nil.
+function Queue.Adopt(who, itemID, src)
+  if type(who) ~= "string" or type(itemID) ~= "number" or src == nil or Queue.Get(src) then return nil end
+  for _, x in ipairs(Queue.Entries()) do
+    if x.who and x.item == itemID and type(x.src) == "string" and x.src:sub(1, 5) == "chat:"
+      and NS.SamePlayer and NS.SamePlayer(x.who, who) then
+      x.src = src
+      NS.Fire("QUEUE_UPDATED")
+      return x
+    end
   end
   return nil
 end

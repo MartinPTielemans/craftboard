@@ -289,6 +289,13 @@ local entries = Q.Entries()
 check(#entries == 1 and entries[1].qty == 1, "delivery carries over to the next row")
 Q.Delivered("Bob-Forever", 2304, nil, 1)
 eq(#Q.Entries(), 0, "fully delivered queue is empty")
+-- Queued from a chat ask, then posted to the board: the queued craft moves to the post.
+do
+  local c = Q.Add({ recipeID = 2152, item = 2304, qty = 1, who = "Bob-Forever", src = "chat:Bob-Forever:Light Armor Kit" })
+  Q.Adopt("Bob-Forever", 2304, "post:bob:1")
+  check(Q.Has("post:bob:1") and not Q.Has("chat:Bob-Forever:Light Armor Kit"), "a posted chat ask keeps its queued craft")
+  Q.Remove(c.id)
+end
 -- They take back "have mats": the queued craft needs the reagents again.
 do
   local m = Q.Add({ recipeID = 2152, item = 2304, qty = 1, who = "Bob-Forever", src = "mats", mats = true })
@@ -393,6 +400,17 @@ do
   local row
   for _, e in ipairs(CW.Seen()) do if e.from == "Mats Person-Forever" then row = e end end
   check(row ~= nil and not row.mats, "a line about reagents keeps the ask and clears 'brings the reagents'")
+  CW.Add("found someone, I no longer have mats", "Mats Person", "Trade")
+  row = nil
+  for _, e in ipairs(CW.Seen()) do if e.from == "Mats Person-Forever" then row = e end end
+  check(row == nil, "a cancellation next to a reagent phrase still ends the ask")
+end
+
+-- Progress counts what CraftsLeft leaves: 3 of 4 items from a yield-2 recipe is 1 of 2 crafts.
+do
+  local x = { qty = 4, madeItems = 3, recipeID = 1 }
+  local made, total = NS.Queue.Progress(x, { y = 2, r = {} })
+  check(made == 1 and total == 2, "a varying yield leaves the row incomplete while a craft is left")
 end
 
 -- Every live retraction is kept (hellos take turns sending them), and an alt on the other
