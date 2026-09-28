@@ -304,6 +304,7 @@ me.recipes[2152].y = nil
 local total, list = NS.Inventory.AltCounts(2318)
 check(total == 12 and list[1] and list[1].name == "Bankalt-Forever", "alt counts")
 check(NS.Inventory.AltText(2318) ~= nil, "alt text")
+eq((NS.Inventory.AltCounts(9999, { 2318 })), 12, "alt counts add the slot's other quality tiers")
 
 -- Cooldowns
 me.recipes[17187] = { p = 171, n = "Transmute: Arcanite", o = 12360, r = {} }

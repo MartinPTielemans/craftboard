@@ -8,12 +8,13 @@ NS.Inventory = Inventory
 local L = NS.L
 
 -- Bags + bank + reagent bank.
-function Inventory.Count(itemID)
+-- bagsOnly: what a craft can use right now (the bags and reagent bag), not the bank.
+function Inventory.Count(itemID, bagsOnly)
   if type(itemID) ~= "number" then return 0 end
   if C_Item and C_Item.GetItemCount then
-    return C_Item.GetItemCount(itemID, true, false, true) or 0
+    return C_Item.GetItemCount(itemID, not bagsOnly, false, not bagsOnly) or 0
   elseif GetItemCount then
-    return GetItemCount(itemID, true) or 0
+    return GetItemCount(itemID, not bagsOnly) or 0
   end
   return 0
 end
@@ -21,11 +22,11 @@ end
 -- A reagent slot may accept several items (quality tiers): have = sum over all of them.
 -- alts is the optional list stored on a reagent entry ({ itemID, qty, alts = {...} }). The name is
 -- saved recipe data: here "alts" means the slot's other quality tiers, never alt characters.
-function Inventory.SlotCount(itemID, alts)
-  local n = Inventory.Count(itemID)
+function Inventory.SlotCount(itemID, alts, bagsOnly)
+  local n = Inventory.Count(itemID, bagsOnly)
   if type(alts) == "table" then
     for _, id in ipairs(alts) do
-      if id ~= itemID then n = n + Inventory.Count(id) end
+      if id ~= itemID then n = n + Inventory.Count(id, bagsOnly) end
     end
   end
   return n
@@ -48,7 +49,8 @@ end
 
 -- count: how many of the output item are wanted (default 1), turned into crafts by the yield.
 -- {ready=bool, reagents={ {itemID=,need=,have=} }, missing={ same, only short ones }, times=max crafts}
-function Inventory.CanCraft(recipe, count)
+-- bagsOnly: count the bags only (can it be crafted right now), not the bank (planning).
+function Inventory.CanCraft(recipe, count, bagsOnly)
   local rec = ResolveRecord(recipe)
   local times = Inventory.CraftsFor(rec, count)
   local result = { ready = false, reagents = {}, missing = {}, times = 0 }
@@ -57,7 +59,7 @@ function Inventory.CanCraft(recipe, count)
   for _, reg in ipairs(rec.r) do
     local itemID, qty = reg[1], reg[2]
     if itemID and qty and qty > 0 then
-      local have = Inventory.SlotCount(itemID, reg.alts)
+      local have = Inventory.SlotCount(itemID, reg.alts, bagsOnly)
       local row = { itemID = itemID, need = qty * times, have = have, alts = reg.alts }
       result.reagents[#result.reagents + 1] = row
       if have < row.need then result.missing[#result.missing + 1] = row end
@@ -400,12 +402,17 @@ end
 
 -- My OTHER characters (reachable ones) holding itemID: total,
 -- { {name="Name-Realm", n=, class="WARRIOR"?}, ... } (most first).
-function Inventory.AltCounts(itemID)
+-- tiers: the other items the same reagent slot accepts (quality tiers); their counts add up, as
+-- in SlotCount.
+function Inventory.AltCounts(itemID, tiers)
   local list, total = {}, 0
   if type(itemID) ~= "number" then return 0, list end
   for key, c in pairs(Chars()) do
     if key ~= NS.Me and type(c) == "table" and Inventory.Reachable(key, c) then
       local n = Held(c, itemID)
+      for _, id in ipairs(type(tiers) == "table" and tiers or {}) do
+        if id ~= itemID then n = n + Held(c, id) end
+      end
       if n > 0 then
         list[#list + 1] = { name = key, n = n, class = type(c.class) == "string" and c.class or nil }
         total = total + n
@@ -420,8 +427,8 @@ function Inventory.AltCounts(itemID)
 end
 
 -- "+12 on alts" for a reagent slot, or nil.
-function Inventory.AltText(itemID)
-  local total = Inventory.AltCounts(itemID)
+function Inventory.AltText(itemID, tiers)
+  local total = Inventory.AltCounts(itemID, tiers)
   if total <= 0 then return nil end
   return string.format(L["+%d on alts"], total)
 end

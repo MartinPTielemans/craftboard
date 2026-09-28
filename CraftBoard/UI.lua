@@ -1573,7 +1573,7 @@ local function FillReagentRow(row, r)
   row.icon:SetTexture(ItemIcon(r.itemID) or TEX.question)
   local text = format(L["%d/%d %s"], r.have, r.need, ItemName(r.itemID))
   -- What my other characters carry ("+12 on alts"), in grey, when it would help.
-  local alt = r.have < r.need and NS.Inventory and NS.Inventory.AltText and NS.Inventory.AltText(r.itemID)
+  local alt = r.have < r.need and NS.Inventory and NS.Inventory.AltText and NS.Inventory.AltText(r.itemID, r.alts)
   if alt then text = text .. "\n" .. GREY .. alt .. "|r" end
   row.name:SetText(text)
   if r.have >= r.need then
@@ -4412,7 +4412,8 @@ function UI.FilterPlan(keepScroll)
       local open = pOpen and (searching or not P.IsCollapsed(key, e.diff == DIFF[3]))
       -- Bags are only counted for rows that can show, or when the filter needs them.
       if ok and (open or onlyReady or e.diff ~= DIFF[3]) and canCraft then
-        local cc = canCraft(e.rec)
+        -- Ready means craftable now: the bags, not the bank (planning elsewhere counts both).
+        local cc = canCraft(e.rec, nil, true)
         e.ready, e.times = cc.ready and true or false, cc.times or 0
       else
         e.ready, e.times = false, 0

@@ -954,7 +954,9 @@ function SendRetract(id, dists, since, sentTo)
       wanted = InGuild() and (GuildShareOn() or sentTo.GUILD) and true or false
       reachable = InGuild()
     else
-      wanted = (RealmChannelOn() or (sentTo.CHANNEL and ResolveChannel() ~= nil)) and true or false
+      -- Sent there once: retracted there too, waiting (like any pending retraction, for the post's
+      -- lifetime) while the channel is left, and going out once it is joined again.
+      wanted = (RealmChannelOn() or sentTo.CHANNEL) and true or false
       reachable = ResolveChannel() ~= nil
     end
     if wanted then
