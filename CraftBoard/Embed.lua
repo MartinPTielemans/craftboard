@@ -581,8 +581,13 @@ end
 function Embed.Open(allowLoad)
   if not Embed.IsEnabled() then return false end
   if built and pf:IsShown() then
-    if HasProfession() then Embed.Select() end
-    return true
+    if HasProfession() then
+      Embed.Select()
+      return true
+    end
+    -- No profession on this character: our tab isn't offered, so the standalone window opens
+    -- instead (the welcome window's own flow still counts as handled).
+    return allowLoad and true or false
   end
   -- Opening Blizzard's window.
   if InCombat() then return false end

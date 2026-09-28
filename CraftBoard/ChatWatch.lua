@@ -69,7 +69,7 @@ local ASKING = { who = true, anyone = true, anybody = true, someone = true, some
 local SKIP = { " recruiting ", " recruit ", " raiders " }
 local SKIP_NO_PROF = { " lfm ", " lfg " }
 -- The asker brings the reagents (unless the line says they don't: NO_MATS, which wins).
-local NO_MATS = { " dont have ", " don t have ", " do not have ", " no mats ", " without mats ", " need mats ",
+local NO_MATS = { " no longer have ", " dont have any ", " don t have any ", " ran out of ", " out of mats ", " dont have ", " don t have ", " do not have ", " no mats ", " without mats ", " need mats ",
   " havent got ", " haven t got ", " not have ", " no have " }
 local MATS = { " have mats ", " have the mats ", " have all mats ", " have all the mats ", " my mats ", " with mats ",
   " with my mats ", " w mats ", " own mats ", " got mats ", " got all mats ", " mats ready ", " i have mats ",
@@ -548,8 +548,10 @@ function ChatWatch.Add(text, sender, channel, guild)
   local clean = ChatWatch.Clean(text)
   local s = Normalize(clean)
   -- "nvm found one" isn't a request; a line opening with it ("nvm, LF enchanter instead")
-  -- doesn't make a new row either.
-  if Has(s, DONE) and (not hit or Opens(s, DONE)) then
+  -- doesn't make a new row either. A line about reagents ("I no longer have mats") isn't done:
+  -- it only changes whether they bring them (below).
+  local saidMats = Mats(s)
+  if Has(s, DONE) and not saidMats and (not hit or Opens(s, DONE)) then
     if prev then
       seen[from] = nil
       FireSoon()

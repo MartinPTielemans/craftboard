@@ -358,6 +358,15 @@ do
   me.cd = saved
 end
 
+-- "I no longer have mats" only changes the reagents; the ask stays.
+do
+  CW.Add("LF |Hitem:2304::|h[Light Armor Kit]|h have mats", "Mats Person", "Trade")
+  CW.Add("I no longer have mats", "Mats Person", "Trade")
+  local row
+  for _, e in ipairs(CW.Seen()) do if e.from == "Mats Person-Forever" then row = e end end
+  check(row ~= nil and not row.mats, "a line about reagents keeps the ask and clears 'brings the reagents'")
+end
+
 -- Every live retraction is kept (hellos take turns sending them), and an alt on the other
 -- faction doesn't count as able to craft for someone here.
 do

@@ -50,6 +50,7 @@ local INBOUND_WINDOW = 60
 local INBOUND_MAX = 40            -- messages per sender per window before we ignore them
 local BUSY_DEBOUNCE = 5           -- a busy change is announced this long after it happens
 local BUSY_MIN_GAP = 15           -- per distribution, for hellos sent only to announce busy
+local MAX_PAGES = 8               -- pages of one recipe list (R)
 local MAX_CD = 32                 -- cooldown entries in a hello (grouped transmutes send every ID)
 local MAX_CD_SECONDS = 14 * 86400
 local R_BATCH = 3                 -- this many queries within R_BATCH_WINDOW: one broadcast R
@@ -61,7 +62,7 @@ local LibDeflate = LibStub and LibStub("LibDeflate", true)
 local AceComm = LibStub and LibStub("AceComm-3.0", true)
 
 local time, type, pairs, ipairs, tostring, tonumber = time, type, pairs, ipairs, tostring, tonumber
-local floor, random, min = math.floor, math.random, math.min
+local floor, random, min, max = math.floor, math.random, math.min, math.max
 local sort = table.sort
 
 -- Runtime state (not saved)
@@ -89,6 +90,7 @@ local rawNew, rawOld, rawAt = {}, {}, 0 -- exact copies seen: [peer .. message] 
 local heardOn = {}        -- [peer] = "GUILD" / "CHANNEL": where their last broadcast reached us
 local queryTimes = {}     -- arrival times of the queries answered in the last R_BATCH_WINDOW
 local batch = nil         -- [peer] = dist, queriers waiting for a broadcast R
+local pagesIn = {}        -- [peer] = { h=, pgs=, got={[pg]=true}, n=, recipes={}, count= }: a paged R arriving
 local batchAt = nil       -- time of the last broadcast R
 local peersFirePending = false
 local friends, friendsFirst = nil, nil -- friend list: [Name-Realm] = online; first-name-only entries
@@ -407,6 +409,7 @@ local function DistAvailable(dist)
 end
 
 local SendMyPosts -- forward
+local SendPost    -- forward
 
 -- My crafting cooldowns as the hello carries them, reduced to what peers act on: ready or not,
 -- and when it will be (to the quarter hour). A cast or a newly tracked cooldown changes it; the
@@ -525,22 +528,41 @@ end
 -- R must fit MAX_DECODED on the receiver: first try with names, then without
 -- (receivers can still resolve the output item's name), then truncate.
 -- dist: "WHISPER" (to = the querier) or, for a batch of queriers, "GUILD" / "CHANNEL".
+-- A list too big for one message goes out in pages (pg = 1..pgs, each within MAX_DECODED; names
+-- kept). The receiver stores the list, under this hash, only once every page is in: a partial
+-- list must never carry the full set's hash, or the missing recipes would never be asked for.
+-- A list that fits is sent exactly as before (no page fields), so older clients read it as ever.
 local function SendRecipes(dist, to)
-  local payload = { v = VERSION, h = MyHash(), profs = MyProfs(), list = BuildRecipeList(true) }
-  local text, size = Encode(payload)
-  if text and size > MAX_DECODED then
-    payload.list = BuildRecipeList(false)
-    text, size = Encode(payload)
-    while text and size > MAX_DECODED and #payload.list > 1 do
-      local keep = floor(#payload.list * 0.75)
-      for i = #payload.list, keep + 1, -1 do payload.list[i] = nil end
-      text, size = Encode(payload)
-    end
-  end
-  if not text or not commObj.SendCommMessage then return false end
+  if not commObj.SendCommMessage then return false end
   if dist == "CHANNEL" then to = channelId end
-  local ok = pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK")
-  return ok
+  local h, profs, list = MyHash(), MyProfs(), BuildRecipeList(true)
+  local text, size = Encode({ v = VERSION, h = h, profs = profs, list = list })
+  if not text then return false end
+  if size <= MAX_DECODED then
+    return (pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK"))
+  end
+  -- Pages: as many list entries as fit, the first page also carrying the professions.
+  local pages, i = {}, 1
+  local per = max(1, floor(#list * MAX_DECODED / size * 0.8))
+  while i <= #list do
+    local n = min(per, #list - i + 1)
+    local chunk, ptext, psize
+    repeat
+      chunk = {}
+      for k = i, i + n - 1 do chunk[#chunk + 1] = list[k] end
+      ptext, psize = Encode({ v = VERSION, h = h, profs = #pages == 0 and profs or nil, list = chunk })
+      if ptext and psize > MAX_DECODED and n > 1 then n = max(1, floor(n * 0.75)) else break end
+    until false
+    if not ptext then return false end
+    pages[#pages + 1] = chunk
+    i = i + n
+    if #pages > MAX_PAGES then return false end
+  end
+  for pg, chunk in ipairs(pages) do
+    local ptext = Encode({ v = VERSION, h = h, profs = pg == 1 and profs or nil, list = chunk, pg = pg, pgs = #pages })
+    if not (ptext and pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. ptext, dist, to, "BULK")) then return false end
+  end
+  return true
 end
 
 -- Peers -----------------------------------------------------------------
@@ -832,9 +854,41 @@ function Comm.PostRequest(itemID, qty, note, parent)
   local id = me .. ":" .. now .. ":" .. postCounter
   note = PostNote(note)
   db.posts[id] = { id = id, from = me, item = itemID, qty = qty, note = note, t = now, mine = true, pa = parent }
-  Broadcast("P", { v = VERSION, id = id, item = itemID, qty = qty, note = note, t = now, pa = parent })
+  SendPost(id)
   Fire("POSTS_UPDATED")
   return id
+end
+
+-- Broadcast P for one of my new posts on every wanted distribution (guild, realm channel). One
+-- that can't be sent to right now (combat, chat lockdown, channel not joined yet) is retried
+-- every 15 s while the post is still open, instead of waiting for the next hello's repeat.
+local pendingP = {}       -- [post id] = { [dist] = true } still to send
+local pendingPTimer = false
+
+function SendPost(id)
+  local db = DB()
+  local p = db and db.posts[id]
+  if type(p) ~= "table" or time() - (p.t or 0) >= POST_TTL then pendingP[id] = nil return end
+  local dists = pendingP[id] or { GUILD = true, CHANNEL = true }
+  local left
+  for dist in pairs(dists) do
+    local wanted = (dist == "GUILD" and InGuild() and GuildShareOn()) or (dist == "CHANNEL" and RealmChannelOn())
+    if wanted then
+      local sent = CanSend() and DistAvailable(dist) and Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty,
+        note = p.note, t = p.t, pa = p.pa }, dist, dist == "CHANNEL" and channelId or nil)
+      if not sent then
+        left = left or {}
+        left[dist] = true
+      end
+    end
+  end
+  pendingP[id] = left
+  if not left or pendingPTimer or not (C_Timer and C_Timer.After) then return end
+  pendingPTimer = true
+  C_Timer.After(15, function()
+    pendingPTimer = false
+    for pid in pairs(pendingP) do SendPost(pid) end
+  end)
 end
 
 -- Broadcast X for one of my posts on every distribution it may have reached (guild, realm
@@ -1212,7 +1266,20 @@ function handlers.R(full, data)
   local db = DB()
   local p = Touch(full)
   if not (db and p) then return end
-  local recipes, count = {}, 0
+  -- A paged list: collect pages under their hash until all are in (a different hash starts over).
+  local pgs, pg = PosInt(data.pgs, MAX_PAGES), PosInt(data.pg, MAX_PAGES)
+  local acc
+  if pgs and pgs > 1 then
+    if not (pg and pg <= pgs) then return end
+    acc = pagesIn[full]
+    if not acc or acc.h ~= h or acc.pgs ~= pgs then
+      acc = { h = h, pgs = pgs, got = {}, n = 0, recipes = {}, count = 0 }
+      pagesIn[full] = acc
+    end
+    if acc.got[pg] then return end
+    acc.got[pg], acc.n = true, acc.n + 1
+  end
+  local recipes, count = acc and acc.recipes or {}, acc and acc.count or 0
   for _, e in ipairs(data.list) do
     if count >= MAX_RECIPES then break end
     local id, name, o, prof
@@ -1237,10 +1304,15 @@ function handlers.R(full, data)
       end
     end
   end
-  p.recipes = recipes
-  p.hash = h
   local profs = CleanProfs(data.profs)
   if profs then p.profs = profs end
+  if acc then
+    acc.count = count
+    if acc.n < acc.pgs then return end    -- more pages to come; the query stays open for them
+    pagesIn[full] = nil
+  end
+  p.recipes = recipes
+  p.hash = h
   queried[full] = nil
   Fire("PEERS_UPDATED")
 end
