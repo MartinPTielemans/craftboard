@@ -5522,6 +5522,8 @@ if C_Timer and C_Timer.NewTicker then
       find.crafters:Render()
     elseif activeTab == 2 then
       UI.RefreshRequests(true)
+      -- The recount that refresh made reaches the tab labels, the embedded tab and the broker.
+      UI.UpdateBadge()
     end
   end)
 end

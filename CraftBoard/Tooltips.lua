@@ -163,39 +163,53 @@ end
 -- Queue totals, cached until the queue, the bags or the recipes change.
 local queueRows = nil
 
-local function QueueRow(itemID)
+-- The queue's reagent rows that take itemID (its own, or one of the quality tiers in row.alts):
+-- one row usually, several when slots accept overlapping tiers.
+local function QueueRows(itemID)
   if not queueRows then
     queueRows = NS.Queue and NS.Queue.Totals and NS.Queue.Totals() or {}
   end
+  local out = {}
   for _, row in ipairs(queueRows) do
-    if row.itemID == itemID then return row end
-    -- row.alts: quality tiers of the same reagent slot.
-    for _, id in ipairs(type(row.alts) == "table" and row.alts or {}) do
-      if id == itemID then return row end
+    local takes = row.itemID == itemID
+    for _, id in ipairs(not takes and type(row.alts) == "table" and row.alts or {}) do
+      if id == itemID then takes = true break end
     end
+    if takes then out[#out + 1] = row end
   end
-  return nil
+  return out
 end
 
 local function ReagentLines(itemID, out)
   if not usedIn then BuildUsedIn() end
   local n = usedIn[itemID]
   if n and n > 0 then Line(out, format(L["Used in %d of your recipes"], n), LINE_RGB) end
-  local row = QueueRow(itemID)
-  if row and (row.need or 0) > 0 then
-    local have = row.have or 0
-    Line(out, format(L["Your queue needs %d (you have %d)"], row.need, have), have >= row.need and GREEN or ORANGE)
+  local rows = QueueRows(itemID)
+  if #rows == 1 and (rows[1].need or 0) > 0 then
+    local have = rows[1].have or 0
+    Line(out, format(L["Your queue needs %d (you have %d)"], rows[1].need, have), have >= rows[1].need and GREEN or ORANGE)
+  elseif #rows > 1 then
+    -- Several slots take it: what they need together, and what they were given (green only when
+    -- every one of them is covered).
+    local need, have = 0, 0
+    for _, r in ipairs(rows) do
+      need, have = need + (r.need or 0), have + math.min(r.have or 0, r.need or 0)
+    end
+    if need > 0 then Line(out, format(L["Your queue needs %d (you have %d)"], need, have), have >= need and GREEN or ORANGE) end
   end
   local Inv = NS.Inventory
   if not (Inv and Inv.AltCounts and Inv.IsReagentLike and Inv.IsReagentLike(itemID)) then return end
-  -- A queued reagent slot that takes several quality tiers: alts' holdings of any of them, as
-  -- the queue line above counts.
-  local total, list
-  if row and type(row.alts) == "table" and #row.alts > 0 then
-    total, list = Inv.AltCounts(row.itemID, row.alts)
-  else
-    total, list = Inv.AltCounts(itemID)
+  -- Queued reagent slots that take several quality tiers: alts' holdings of any of them, as the
+  -- queue line above counts.
+  local tiers, seenID = {}, { [itemID] = true }
+  local function tier(id)
+    if type(id) == "number" and not seenID[id] then tiers[#tiers + 1], seenID[id] = id, true end
   end
+  for _, r in ipairs(rows) do
+    tier(r.itemID)
+    for _, id in ipairs(type(r.alts) == "table" and r.alts or {}) do tier(id) end
+  end
+  local total, list = Inv.AltCounts(itemID, tiers)
   if total <= 0 then return end
   Line(out, format(L["+%d on alts"], total), LINE_RGB)
   for i = 1, math.min(MAX_ALTS, #list) do

@@ -237,7 +237,8 @@ function Merchant.Plan()
       local price, stack, avail = ItemInfo(index)
       stack = math.max(1, stack)
       local bundles = math.ceil(want / stack)
-      if avail >= 0 then bundles = math.min(bundles, avail) end
+      -- Limited stock is counted in items; each purchase takes a bundle of them.
+      if avail >= 0 then bundles = math.min(bundles, math.floor(avail / stack)) end
       local afford = math.floor((money - total) / price)
       if afford < bundles then
         bundles = math.max(0, afford)

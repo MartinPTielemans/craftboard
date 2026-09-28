@@ -325,6 +325,10 @@ do
   GetMoney = function() return 100000 end
   local plan, _, info = NS.Merchant.Plan()
   check(#plan == 1 and plan[1].count == 5 and #info.notSold == 0, "a sold tier covers every slot it fits")
+  -- Limited stock (7 items) sold in bundles of 5: one bundle, not seven.
+  GetMerchantItemInfo = function() return "x", nil, 10, 5, 7, true, nil, false end
+  plan = NS.Merchant.Plan()
+  check(#plan == 1 and plan[1].count == 5, "limited stock caps the bundles by the items in stock")
   NS.Queue.Totals = totals
   GetMerchantNumItems, GetMerchantItemID, GetMerchantItemInfo, GetMoney = nil, nil, nil, nil
 end
