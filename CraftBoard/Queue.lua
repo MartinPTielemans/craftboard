@@ -182,12 +182,13 @@ end
 -- nobody (planned crafts from the Plan tab) are done when fully made; entries for a player
 -- wait for the trade (Queue.Delivered).
 -- plannedOnly: only entries for nobody (enchant casts, which trades complete for players).
-function Queue.Crafted(recipeID, rec, plannedOnly)
+-- items: what the cast made, when known (a varying-yield recipe); else the recipe's yield.
+function Queue.Crafted(recipeID, rec, plannedOnly, items)
   local q = List()
   if not q then return end
   for i, x in ipairs(q) do
     if x.recipeID == recipeID and Queue.CraftsLeft(x, rec) > 0 and not (plannedOnly and x.who) then
-      x.madeItems, x.made = Queue.MadeItems(x) + math.max(1, type(rec) == "table" and rec.y or 1), nil
+      x.madeItems, x.made = Queue.MadeItems(x) + (items or math.max(1, type(rec) == "table" and rec.y or 1)), nil
       if not x.who and Queue.CraftsLeft(x, rec) == 0 then table.remove(q, i) end
       NS.Fire("QUEUE_UPDATED")
       return

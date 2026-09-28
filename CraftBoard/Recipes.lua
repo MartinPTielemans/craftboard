@@ -308,6 +308,10 @@ local function ReadRecipe(recipeID, info, profID, prev)
     -- Items per craft (arrows, bullets...); only stored when more than one.
     local y = tonumber(schem.quantityMin)
     if y and y > 1 then rec.y = math.floor(y) end
+    -- Some recipes make a varying number (quantityMin..quantityMax): planning counts the minimum,
+    -- and Craft credits the queue with what a cast really made (rec.yMax marks those recipes).
+    local yMax = tonumber(schem.quantityMax)
+    if yMax and yMax > (y or 1) then rec.yMax = math.floor(yMax) end
     if not rec.n then rec.n = schem.name end
     if type(schem.reagentSlotSchematics) == "table" then
       for _, slot in ipairs(schem.reagentSlotSchematics) do

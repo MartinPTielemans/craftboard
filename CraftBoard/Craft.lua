@@ -185,6 +185,22 @@ local function Mine(unit, spellID)
   return MyRecord(spellID)
 end
 
+-- Recipes with a varying yield (rec.yMax): the count in my bags before a cast, then what it
+-- really made once the items land, beyond the minimum the queue was credited with.
+local yieldBefore, yieldCheck = {}, nil
+
+local function BagCount(itemID)
+  if C_Item and C_Item.GetItemCount then
+    local ok, n = pcall(C_Item.GetItemCount, itemID, false)
+    if ok and type(n) == "number" then return n end
+  end
+  if GetItemCount then
+    local ok, n = pcall(GetItemCount, itemID)
+    if ok and type(n) == "number" then return n end
+  end
+  return nil
+end
+
 -- Every successful cast of one of my recipes counts toward the queue and is remembered.
 NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
   local rec = Mine(unit, spellID)
@@ -209,14 +225,31 @@ NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
     if batch.left <= 0 then batch = nil end
   end
   if NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(spellID, rec) end
+  -- A varying yield: the queue got the minimum; the bags say what came out (next bag update).
+  if rec.yMax and yieldBefore[spellID] then
+    yieldCheck = { recipeID = spellID, rec = rec, before = yieldBefore[spellID] }
+    yieldBefore[spellID] = nil
+  end
   NS.Fire("CRAFT_UPDATED")
 end)
 
 NS.Register("UNIT_SPELLCAST_START", function(_, unit, _, spellID)
-  if Mine(unit, spellID) then
+  local rec = Mine(unit, spellID)
+  if rec then
     if batch then batch.t = time() end
+    if rec.yMax and type(rec.o) == "number" then yieldBefore[spellID] = BagCount(rec.o) end
     NS.Fire("CRAFT_UPDATED")
   end
+end)
+
+NS.Register("BAG_UPDATE_DELAYED", function()
+  local c = yieldCheck
+  if not c then return end
+  yieldCheck = nil
+  local now = BagCount(c.rec.o)
+  if not (now and c.before) then return end
+  local extra = (now - c.before) - math.max(1, c.rec.y or 1)
+  if extra > 0 and NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(c.recipeID, c.rec, nil, extra) end
 end)
 
 -- Moving, jumping or acting ends a batch early.

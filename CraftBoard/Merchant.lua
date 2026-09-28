@@ -108,7 +108,7 @@ local function BagRoom(want)
   if not freeFn then return nil, {} end
   local slotsFn = (C_Container and C_Container.GetContainerNumSlots) or GetContainerNumSlots
   local infoFn = C_Container and C_Container.GetContainerItemInfo
-  local free, room, known = 0, {}, false
+  local free, room, known, special = 0, {}, false, {}
   -- The reagent bag (mainline-type clients) holds exactly what this buys: its free slots and
   -- partial stacks count as well.
   local bags = {}
@@ -120,7 +120,13 @@ local function BagRoom(want)
     n = ok and tonumber(n)
     if n then
       known = true
-      if (tonumber(family) or 0) == 0 or bag == reagentBag then free = free + n end
+      family = tonumber(family) or 0
+      if family == 0 or bag == reagentBag then
+        free = free + n
+      elseif n > 0 then
+        -- A profession bag (herbs, enchanting, mining...): only for items of its family.
+        special[#special + 1] = { family = family, n = n }
+      end
     end
     local ok2, slots = false, nil
     if slotsFn then ok2, slots = pcall(slotsFn, bag) end
@@ -134,8 +140,8 @@ local function BagRoom(want)
       end
     end
   end
-  if not known then return nil, {} end
-  return free, room
+  if not known then return nil, {}, {} end
+  return free, room, special
 end
 
 -- What one click buys: plan { {index=, itemID=, count= (items), stack= (items per purchase), cost=}, ... },
@@ -158,7 +164,21 @@ function Merchant.Plan()
   end
   if #order == 0 or not GetMerchantNumItems then return plan, total, info end
   local money = Money()
-  local free, room = BagRoom(short)
+  local free, room, special = BagRoom(short)
+  local band = bit and bit.band
+  local familyOf = (C_Item and C_Item.GetItemFamily) or GetItemFamily
+  -- Free slots of the profession bags this item may go in (they are used first).
+  local function SpecialFor(itemID)
+    local out = {}
+    if not (band and familyOf) then return out end
+    local ok, fam = pcall(familyOf, itemID)
+    fam = ok and tonumber(fam) or 0
+    if fam == 0 then return out end
+    for _, b in ipairs(special or {}) do
+      if b.n > 0 and band(fam, b.family) ~= 0 then out[#out + 1] = b end
+    end
+    return out
+  end
   local listed = {}
   for index = 1, tonumber(GetMerchantNumItems()) or 0 do
     local itemID = ItemID(index)
@@ -176,8 +196,11 @@ function Merchant.Plan()
           info.poor[#info.poor + 1] = itemID
         end
         local size = StackSize(itemID, index)
+        local bags = free and SpecialFor(itemID) or {}
         if free then
-          local fits = math.floor(((room[itemID] or 0) + free * size) / stack)
+          local slots = free
+          for _, b in ipairs(bags) do slots = slots + b.n end
+          local fits = math.floor(((room[itemID] or 0) + slots * size) / stack)
           if fits < bundles then
             bundles = math.max(0, fits)
             info.full = true
@@ -185,7 +208,14 @@ function Merchant.Plan()
         end
         if bundles > 0 then
           local count = bundles * stack
-          if free then free = free - math.ceil(math.max(0, count - (room[itemID] or 0)) / size) end
+          if free then
+            local need = math.ceil(math.max(0, count - (room[itemID] or 0)) / size)
+            for _, b in ipairs(bags) do
+              local take = math.min(b.n, need)
+              b.n, need = b.n - take, need - take
+            end
+            free = free - need
+          end
           plan[#plan + 1] = { index = index, itemID = itemID, count = count, stack = stack, cost = bundles * price }
           total = total + bundles * price
         end
