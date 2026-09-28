@@ -6,7 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+CraftBoard 1.0: from a crafting-order board to a crafting companion for Forever.
+
 ### Added
+- Plan tab: your professions with their learned recipes by skill-up colour (orange, yellow,
+  green, grey), ready ones first. The card says how many crafts reach the next milestone, when you
+  can train the next rank, and which reagents the planned crafts need (with what your alts hold).
+  Queue adds the planned crafts to your queue; Craft makes them while that profession's window is
+  open, one click per batch.
+- Craft and Craft next on the queue: make a queued craft, or the next one your bags allow, from
+  the Requests tab while the profession window is open.
+- Mats across alts: CraftBoard remembers bags and bank per character; reagent slots show "+12 on
+  alts" and item tooltips say which alt holds how many.
+- Reagent tooltips: how many of your recipes use the item and what your queue needs of it.
+- Recipe tooltips: which of your characters know the recipe, can learn it, or need more skill.
+- Buy missing mats: at a merchant, one button buys the vendor reagents your queue still lacks.
+- Cooldown-ready notice and trainer reminders (one quiet chat line each; options).
+- The minimap button's tooltip sums it up: requests you can craft, the queue, ready cooldowns,
+  trainable ranks.
+- Welcome window rewritten for the wider focus.
 - Requests tab reworked: rows show what is wanted (item icon and name, "3x" for more than one)
   and who asked, in a muted "Bob · 8m". New group order: "You can craft" (board requests and chat
   asks one of your characters can make, ready ones first), "My queue", "Open requests", "Seen in

@@ -1,8 +1,9 @@
 -- CraftBoard Welcome: the first-run splash, in the main window's metal portrait frame.
--- Hero art (Media\welcome, 400x200 under the title bar), three steps (slot-framed icon, gold
--- title, grey line) and a button row: red "Open Professions" (or "Get started" when this client
--- has no way to open the profession book) and "Later". "Open Professions" lands on CraftBoard's
--- tab in the Professions window when that is on (Embed.lua).
+-- Hero art (Media\welcome, 400x200 under the title bar), four steps (slot-framed icon, gold
+-- title, grey line: record, level, craft, find and help) and a button row: red "Open
+-- Professions" (or "Get started" when this client has no way to open the profession book) and
+-- "Later". "Open Professions" lands on CraftBoard's tab in the Professions window when that is
+-- on (Embed.lua).
 -- Shown once, 3 s after the first login after install (CraftBoardDB.seenWelcome), never in
 -- combat (waits for PLAYER_REGEN_ENABLED). /cb welcome and the options button reopen it.
 local ADDON, NS = ...
@@ -26,12 +27,15 @@ local STEPS = {
   { icon = "Interface\\Icons\\INV_Misc_Book_09",
     title = L["Record your recipes"],
     body = L["Open each profession window once. CraftBoard records what you can craft."] },
+  { icon = "Interface\\Icons\\INV_Scroll_03", fallback = "Interface\\Icons\\INV_Misc_Note_01",
+    title = L["Level smarter"],
+    body = L["The Plan tab shows what to craft next and when to visit your trainer."] },
+  { icon = "Interface\\Icons\\Trade_BlackSmithing", fallback = "Interface\\Icons\\INV_Misc_Note_01",
+    title = L["Craft and queue"],
+    body = L["Queue crafts, then Craft next makes them one by one. Buy missing vendor reagents at a merchant."] },
   { icon = "Interface\\Icons\\INV_Misc_GroupLooking", fallback = "Interface\\Icons\\INV_Misc_Note_01",
-    title = L["Find crafters"],
-    body = L["Guildmates and realm players who run CraftBoard appear in Find."] },
-  { icon = "Interface\\Icons\\Ability_Warrior_BattleShout",
-    title = L["Ask and offer"],
-    body = L["Whisper a crafter, post a request, or announce in Trade."] },
+    title = L["Find crafters, help others"],
+    body = L["Find lists who can craft what you need; Requests and Seen in chat list who needs you."] },
 }
 
 local frame, openButton, laterButton
@@ -245,7 +249,7 @@ local function FirstRun()
   if type(CraftBoardDB) ~= "table" or CraftBoardDB.seenWelcome then return end
   if not Welcome.Show() then
     CraftBoardDB.seenWelcome = true
-    NS.Print(L["CraftBoard loaded. Minimap button, /cb, or set a key in Key Bindings."])
+    NS.Print(L["CraftBoard loaded. Open each profession once to record your recipes; the minimap button or /cb opens the window."])
   end
 end
 

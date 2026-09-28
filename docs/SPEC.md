@@ -59,6 +59,20 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
    Option "Open CraftBoard inside the Professions window" (default on). Hooks.lua's buttons
    are hidden while the tab exists.
 
+## 1.0 modules (2026-09-28)
+- `Skills.lua` — profession ranks from the profession book (`GetProfessions`), trainer reminders,
+  `Skills.Ranks()` / `Skills.NextRank(profID)`.
+- `Cooldowns.lua` — crafting cooldowns per character, shared in the hello, ready notice.
+- `Queue.lua` — crafts I'll make (`chars[Me].queue`), summed reagents, `made` counts from casts.
+- `Craft.lua` — Craft / Craft next through `C_TradeSkillUI.CraftRecipe` from a click, only with
+  that profession's window open on my own character.
+- `Trade.lua` — crafted-for-you counts, queue delivery, one-click enchant button.
+- `Merchant.lua` — "Buy missing mats" for the queue's vendor reagents.
+- `Tooltips.lua` — group crafters, reagent use / queue needs / alt counts, recipe items vs. my
+  characters.
+- Inventory keeps `chars[key].items` (bags + last seen bank) for counts on alts.
+- UI has a third tab, Plan (recipes by skill-up colour from `rec.d`, saved at each scan).
+
 ## Protocol (Comm.lua) — prefix `CBRD`, version byte first
 Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonChannel.
 - `H` hello: `{v=1, profs={[profID]=rank}, n=#recipes, h=hash, b=true?, l=true?, cd={[recipeID]=secs}?}`

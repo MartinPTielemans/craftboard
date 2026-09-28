@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: CraftBoard
-## Notes: Realm-wide crafting order board. Who can craft what, and what you can craft yourself.
+## Notes: Crafting companion for Forever: plan your leveling, craft and queue, find crafters.
 ## Author: mpt
 ## Version: 0.9.4
 ## SavedVariables: CraftBoardDB
@@ -28,10 +28,13 @@ Launcher.lua
 Recipes.lua
 Inventory.lua
 Cooldowns.lua
+Skills.lua
 Queue.lua
+Craft.lua
 Comm.lua
 ChatWatch.lua
 Trade.lua
+Merchant.lua
 UI.lua
 Tooltips.lua
 Onboarding.lua

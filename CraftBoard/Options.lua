@@ -141,6 +141,16 @@ local GetGamepad, SetGamepad = Flag("gamepad")
 local BACK_ONLINE_TIP = L["One quiet chat line when a player whose request you can craft, or offered on, logs back in. Nothing is sent."]
 local GROUP_TIPS_TIP = L["In a party or raid, item tooltips name the group members who can craft the item, and their tooltips list their professions."]
 local GAMEPAD_TIP = L["With gamepad mode on: D-pad up/down moves through the list, A whispers or offers, B closes, the shoulder buttons switch tabs."]
+-- Crafting helpers: cooldown / trainer notices (Cooldowns.lua, Skills.lua), item tooltip lines
+-- (Tooltips.lua).
+local GetCooldownNotice, SetCooldownNotice = Flag("cooldownNotice")
+local GetTrainerNotice, SetTrainerNotice = Flag("trainerNotice")
+local GetReagentTips, SetReagentTips = Flag("reagentTooltips")
+local GetRecipeTips, SetRecipeTips = Flag("recipeTooltips")
+local COOLDOWN_NOTICE_TIP = L["One quiet chat line when a crafting cooldown on one of your characters is ready again."]
+local TRAINER_NOTICE_TIP = L["One quiet chat line when a profession is ready for its next rank (Journeyman, Expert, Artisan)."]
+local REAGENT_TIPS_TIP = L["Item tooltips show how many of your recipes use a reagent, what your queue needs, and how many your other characters hold."]
+local RECIPE_TIPS_TIP = L["Recipe tooltips show which of your characters know the recipe, can learn it, or need more skill."]
 
 local function ResetTips()
   if NS.Onboarding and NS.Onboarding.Reset then
@@ -236,6 +246,10 @@ local function RegisterVertical()
     { "CRAFTBOARD_BACK_ONLINE", L["Tell me when a player I can help comes back online"], GetBackOnline, SetBackOnline, BACK_ONLINE_TIP },
     { "CRAFTBOARD_GROUP_TOOLTIPS", L["Show group crafters in tooltips"], GetGroupTips, SetGroupTips, GROUP_TIPS_TIP },
     { "CRAFTBOARD_GAMEPAD", L["Gamepad controls in the CraftBoard window"], GetGamepad, SetGamepad, GAMEPAD_TIP },
+    { "CRAFTBOARD_COOLDOWN_NOTICE", L["Tell me when a crafting cooldown is ready"], GetCooldownNotice, SetCooldownNotice, COOLDOWN_NOTICE_TIP },
+    { "CRAFTBOARD_TRAINER_NOTICE", L["Tell me when I can train the next profession rank"], GetTrainerNotice, SetTrainerNotice, TRAINER_NOTICE_TIP },
+    { "CRAFTBOARD_REAGENT_TOOLTIPS", L["Show reagent info in item tooltips"], GetReagentTips, SetReagentTips, REAGENT_TIPS_TIP },
+    { "CRAFTBOARD_RECIPE_TOOLTIPS", L["Show which of my characters can learn recipes"], GetRecipeTips, SetRecipeTips, RECIPE_TIPS_TIP },
   }) do
     local setting = S.RegisterProxySetting(category, o[1], bool, o[2], true, o[3], o[4])
     createCheckbox(category, setting, o[5])
@@ -326,10 +340,14 @@ local function BuildPanel()
   Check(L["Tell me when a player I can help comes back online"], BACK_ONLINE_TIP, -244, GetBackOnline, SetBackOnline)
   Check(L["Show group crafters in tooltips"], GROUP_TIPS_TIP, -272, GetGroupTips, SetGroupTips)
   Check(L["Gamepad controls in the CraftBoard window"], GAMEPAD_TIP, -300, GetGamepad, SetGamepad)
+  Check(L["Tell me when a crafting cooldown is ready"], COOLDOWN_NOTICE_TIP, -328, GetCooldownNotice, SetCooldownNotice)
+  Check(L["Tell me when I can train the next profession rank"], TRAINER_NOTICE_TIP, -356, GetTrainerNotice, SetTrainerNotice)
+  Check(L["Show reagent info in item tooltips"], REAGENT_TIPS_TIP, -384, GetReagentTips, SetReagentTips)
+  Check(L["Show which of my characters can learn recipes"], RECIPE_TIPS_TIP, -412, GetRecipeTips, SetRecipeTips)
 
   local advertise = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   advertise:SetSize(220, 22)
-  advertise:SetPoint("TOPLEFT", 20, -338)
+  advertise:SetPoint("TOPLEFT", 20, -450)
   advertise.label = L["Advertise channel"]
   advertise.tip = ADVERTISE_TIP
   local function syncAdvertise()
@@ -345,7 +363,7 @@ local function BuildPanel()
 
   local forget = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   forget:SetSize(180, 22)
-  forget:SetPoint("TOPLEFT", 20, -370)
+  forget:SetPoint("TOPLEFT", 20, -482)
   forget:SetText(L["Forget all peer data"])
   forget.label = L["Forget all peer data"]
   forget.tip = L["Clears every known crafter and every board post, including your own. They come back as peers announce themselves again."]
@@ -355,7 +373,7 @@ local function BuildPanel()
 
   local tips = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
   tips:SetSize(180, 22)
-  tips:SetPoint("TOPLEFT", 20, -402)
+  tips:SetPoint("TOPLEFT", 20, -514)
   tips:SetText(L["Show tips again"])
   tips.label = L["Show tips again"]
   tips.tip = TIPS_TIP

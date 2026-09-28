@@ -93,6 +93,24 @@ local function NoteCategory(recipeID, categoryID, name)
   return true
 end
 
+-- Profession name for a skill line, from my characters' records (current character first), or nil.
+function NS.ProfessionName(profID)
+  local db = type(CraftBoardDB) == "table" and CraftBoardDB
+  if not (db and type(db.chars) == "table" and profID ~= nil) then return nil end
+  local function nameOf(c)
+    local p = type(c) == "table" and type(c.profs) == "table" and c.profs[profID]
+    local n = type(p) == "table" and (p.name or p[1])
+    return type(n) == "string" and n ~= "" and n or nil
+  end
+  local n = NS.Me and nameOf(db.chars[NS.Me])
+  if n then return n end
+  for _, c in pairs(db.chars) do
+    n = nameOf(c)
+    if n then return n end
+  end
+  return nil
+end
+
 -- Profession icon (file ID / path) for a skill line, or nil.
 function Recipes.ProfessionIcon(profID)
   if type(profID) ~= "number" then return nil end
@@ -263,8 +281,16 @@ function Recipes.IsTradeable(rec)
   return not IsBound(b), false
 end
 
+-- Skill-up colour of a learned recipe from GetRecipeInfo: 0 orange (always), 1 yellow (usually),
+-- 2 green (rarely), 3 grey (never) - Enum.TradeskillRelativeDifficulty's order. nil if unknown.
+local function Difficulty(info)
+  local d = type(info) == "table" and info.relativeDifficulty
+  if type(d) == "number" and d >= 0 and d <= 3 then return d end
+  return nil
+end
+
 local function ReadRecipe(recipeID, info, profID, prev)
-  local rec = { p = profID, n = info.name, r = {} }
+  local rec = { p = profID, n = info.name, r = {}, d = Difficulty(info) }
   if type(info.categoryID) == "number" then rec.c = info.categoryID end
   local _, isEnchant = AcceptType(info.recipeType)
   if isEnchant then rec.e = true end
@@ -380,6 +406,13 @@ function Recipes.Scan(force)
       end
     end
     if type(info) == "table" and info.learned then
+      -- Colours move with the skill while the learned set stays the same: keep them current.
+      local old = c.recipes[recipeID]
+      local d = Difficulty(info)
+      if type(old) == "table" and d ~= nil and old.d ~= d then
+        old.d = d
+        catChanged = true
+      end
       learnedIDs[#learnedIDs + 1] = recipeID
       learnedInfo[#learnedInfo + 1] = info
       s1 = (s1 + recipeID) % 2147483647

@@ -1,6 +1,7 @@
 # CraftBoard
 
-Crafting orders for World of Warcraft: Forever.
+A crafting companion for World of Warcraft: Forever: level your professions, plan and craft,
+and find crafters or customers.
 
 Forever brought back the Classic world but not retail's crafting orders, so finding a crafter still
 means repeating "LF LW, have mats" in Trade and hoping. CraftBoard adds a crafting board to the
@@ -28,6 +29,13 @@ CurseForge app and WowUp under the Forever game version.
 - **Seen in chat.** Players asking for a crafter in Trade or General ("LF enchanter", "WTB [item]")
   are listed on the Requests tab, with a green check when you can make it. This works even when
   nobody else on your realm runs CraftBoard.
+- **Plan your leveling.** The Plan tab sorts your recipes by skill-up colour, says how many crafts
+  reach the next rank, and reminds you when to visit your trainer.
+- **Craft from the board.** Queue crafts from requests or your plan, then Craft next works through
+  them while the profession window is open. At a vendor, one button buys the missing thread,
+  vials and flux.
+- **Your alts count.** Reagents on your other characters show up in slots and tooltips, and recipe
+  tooltips say which of your characters can learn a recipe.
 - **Queue and chains.** Queue the requests you take on and see the reagents for all of them at
   once. When a craft needs an intermediate someone else makes, post linked orders for it.
 - **Trade window help.** One click casts a requested enchant on your partner's item, and

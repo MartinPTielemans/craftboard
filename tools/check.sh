@@ -14,7 +14,7 @@ done
 # Locales: every L["..."] used in the addon must be listed in Locales.lua's enUS table,
 # and every listed key should still be used somewhere.
 used=$(mktemp); listed=$(mktemp)
-cat $(find CraftBoard -name '*.lua' -not -path '*/Libs/*') | grep -vE '^[[:space:]]*--' \
+cat $(find CraftBoard -name '*.lua' -not -path '*/Libs/*' -not -name 'Locales_*.lua') | grep -vE '^[[:space:]]*--' \
   | grep -oE 'L\["([^"\\]|\\.)*"\]' | sed -E 's/^L\["(.*)"\]$/\1/' | sort -u > "$used"
 sed -n '/^local enUS = {/,/^}/p' CraftBoard/Locales.lua \
   | grep -E '^[[:space:]]*"' | sed -E 's/^[[:space:]]*"(.*)",[[:space:]]*$/\1/' | sort -u > "$listed"

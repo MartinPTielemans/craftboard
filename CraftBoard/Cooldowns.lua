@@ -3,6 +3,10 @@
 -- time (0 = ready) }, read from the spell cooldown on login, after a cast and on cooldown updates,
 -- and from the profession window while it is open. The current character's entries go out in
 -- the hello (seconds until ready, so peers' clocks don't matter); peers' land in Comm.Peers().cd.
+-- Ready notice: one quiet chat line when a cooldown on one of my characters runs out (checked
+-- every minute and on updates; ones that ran out while offline in one line after login), said
+-- once per cooldown (chars[key].cdSeen[recipeID] = the ready-at time announced). Option
+-- CraftBoardDB.cooldownNotice (default on).
 local ADDON, NS = ...
 
 local Cooldowns = {}
@@ -88,6 +92,10 @@ function Cooldowns.Update()
       local left = SpellRemaining(id)
       if left then
         local at = left > 0 and now + floor(left) or 0
+        -- A cooldown that ran out keeps its ready-at time (in the past, so still "ready"
+        -- everywhere) for the ready notice; 0 only when none was known.
+        local old = c.cd[id]
+        if at == 0 and type(old) == "number" and old > 0 and old <= now + 60 then at = old end
         -- Tolerate a minute of drift so repeated reads don't count as changes.
         if not c.cd[id] or math.abs((c.cd[id] or 0) - at) > 60 then
           c.cd[id] = at
@@ -183,6 +191,82 @@ function Cooldowns.Print()
   if not any then NS.Print(L["No crafting cooldowns recorded. Open the profession window once."]) end
 end
 
+-- Ready notice ----------------------------------------------------------------------
+
+local function RecipeName(c, id)
+  local rec = type(c.recipes) == "table" and c.recipes[id]
+  return type(rec) == "table" and rec.n or (NS.Recipes and NS.Recipes.NameOf and NS.Recipes.NameOf(id)) or tostring(id)
+end
+
+-- Cooldowns on my characters that have run out: { {key=, recipeID=, name=, at=}, ... }, sorted
+-- by character then recipe name. at is 0 when the ready time isn't known.
+function Cooldowns.Ready()
+  local db = type(CraftBoardDB) == "table" and CraftBoardDB
+  local chars = db and type(db.chars) == "table" and db.chars or {}
+  local out, now = {}, time()
+  for key, c in pairs(chars) do
+    if type(c) == "table" and type(c.cd) == "table" then
+      for id, at in pairs(c.cd) do
+        if type(at) == "number" and at <= now then
+          out[#out + 1] = { key = key, recipeID = id, name = RecipeName(c, id), at = at }
+        end
+      end
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.key ~= b.key then return a.key < b.key end
+    return tostring(a.name) < tostring(b.name)
+  end)
+  return out
+end
+
+local function NoticeOn()
+  return not (type(CraftBoardDB) == "table" and CraftBoardDB.cooldownNotice == false)
+end
+
+-- Cooldowns that ran out since they were last announced; each is marked as announced.
+local function Unannounced()
+  local out = {}
+  if not (type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table") then return out end
+  for _, r in ipairs(Cooldowns.Ready()) do
+    local c = CraftBoardDB.chars[r.key]
+    if r.at > 0 then
+      c.cdSeen = type(c.cdSeen) == "table" and c.cdSeen or {}
+      if c.cdSeen[r.recipeID] ~= r.at then
+        c.cdSeen[r.recipeID] = r.at
+        out[#out + 1] = r
+      end
+    end
+  end
+  -- Forget announcements for cooldowns that are gone or running again.
+  for _, c in pairs(CraftBoardDB.chars) do
+    if type(c) == "table" and type(c.cdSeen) == "table" then
+      for id, at in pairs(c.cdSeen) do
+        if type(c.cd) ~= "table" or c.cd[id] ~= at then c.cdSeen[id] = nil end
+      end
+    end
+  end
+  return out
+end
+
+local loggedIn = false   -- updates before the login line don't announce one by one
+
+-- combined: one "Ready: ..." line when several ran out at once (after login).
+function Cooldowns.Notice(combined)
+  if not (loggedIn and NoticeOn()) then return end
+  local list = Unannounced()
+  if #list == 0 then return end
+  if combined and #list > 1 then
+    local parts = {}
+    for i, r in ipairs(list) do parts[i] = r.name .. " (" .. NS.ShortName(r.key) .. ")" end
+    NS.Print(format(L["Ready: %s"], table.concat(parts, ", ")))
+    return
+  end
+  for _, r in ipairs(list) do
+    NS.Print(format(L["%s is ready on %s."], r.name, NS.ShortName(r.key)))
+  end
+end
+
 -- Events --------------------------------------------------------------------------
 
 local pending = false
@@ -195,7 +279,19 @@ local function Soon(delay)
   end)
 end
 
-NS.Register("PLAYER_LOGIN", function() Soon(5) end)
+NS.Register("PLAYER_LOGIN", function()
+  Soon(5)
+  -- Cooldowns that ran out while I was offline: one line once login chatter has settled, then
+  -- every minute (a cooldown needs no event to run out).
+  C_Timer.After(8, function()
+    loggedIn = true
+    Cooldowns.Notice(true)
+    if C_Timer.NewTicker then C_Timer.NewTicker(60, function() Cooldowns.Notice(false) end) end
+  end)
+end)
+if NS.RegisterCallback then
+  NS.RegisterCallback(Cooldowns, "COOLDOWNS_UPDATED", function() Cooldowns.Notice(false) end)
+end
 NS.Register("SPELL_UPDATE_COOLDOWN", function() Soon(2) end)
 NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
   if issecretvalue and (issecretvalue(unit) or issecretvalue(spellID)) then return end

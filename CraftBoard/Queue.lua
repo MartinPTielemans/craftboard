@@ -95,10 +95,39 @@ function Queue.Delivered(who, item, recipeID, count)
       -- A delivery bigger than this row carries over to their next row for the same craft.
       local take = math.min(count, x.qty)
       x.qty, count, changed = x.qty - take, count - take, true
+      -- What was handed over was made already: those crafts no longer count as made-and-waiting.
+      if x.made then
+        local rec = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine()[x.recipeID]
+        local crafts = NS.Inventory and NS.Inventory.CraftsFor and NS.Inventory.CraftsFor(rec, take) or take
+        x.made = math.max(0, x.made - crafts)
+      end
       if x.qty <= 0 then table.remove(q, i) else i = i + 1 end
     else
       i = i + 1
     end
   end
   if changed then NS.Fire("QUEUE_UPDATED") end
+end
+
+-- Crafts an entry still needs: its item count over the recipe's yield, minus crafts already made
+-- for it (made counts crafts; an entry for someone stays until the trade hands it over).
+function Queue.CraftsLeft(x, rec)
+  local total = NS.Inventory and NS.Inventory.CraftsFor and NS.Inventory.CraftsFor(rec, x.qty) or x.qty
+  return math.max(0, total - (x.made or 0))
+end
+
+-- One craft of recipeID was made: it goes to the oldest entry still needing it. Entries for
+-- nobody (planned crafts from the Plan tab) are done when fully made; entries for a player
+-- wait for the trade (Queue.Delivered).
+function Queue.Crafted(recipeID, rec)
+  local q = List()
+  if not q then return end
+  for i, x in ipairs(q) do
+    if x.recipeID == recipeID and Queue.CraftsLeft(x, rec) > 0 then
+      x.made = (x.made or 0) + 1
+      if not x.who and Queue.CraftsLeft(x, rec) == 0 then table.remove(q, i) end
+      NS.Fire("QUEUE_UPDATED")
+      return
+    end
+  end
 end

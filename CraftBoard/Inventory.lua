@@ -186,18 +186,183 @@ NS.Register("GET_ITEM_INFO_RECEIVED", function(_, itemID, success)
   if itemID and requested[itemID] and success then FireNamesUpdated() end
 end)
 
--- Let the UI refresh have/need when bags change.
+-- Per-character item counts, so tooltips and reagent slots can say what my alts hold:
+-- CraftBoardDB.chars[Me].items = { [itemID] = bags + bank }, chars[Me].bank = last known bank
+-- counts. The bank is only readable while it is open, so a bags rescan keeps the saved bank part.
+local function NumSlots(bag)
+  local f = (C_Container and C_Container.GetContainerNumSlots) or GetContainerNumSlots
+  if not f then return 0 end
+  local ok, n = pcall(f, bag)
+  return ok and tonumber(n) or 0
+end
+
+-- itemID, stack count of one slot, or nil when empty.
+local function SlotItem(bag, slot)
+  if C_Container and C_Container.GetContainerItemInfo then
+    local ok, info = pcall(C_Container.GetContainerItemInfo, bag, slot)
+    if ok and type(info) == "table" and type(info.itemID) == "number" then
+      return info.itemID, tonumber(info.stackCount) or 1
+    end
+    return nil
+  end
+  if GetContainerItemInfo then
+    local ok, _, count, _, _, _, _, link, _, _, id = pcall(GetContainerItemInfo, bag, slot)
+    if not ok then return nil end
+    id = type(id) == "number" and id or (type(link) == "string" and tonumber(link:match("item:(%d+)")))
+    if id then return id, tonumber(count) or 1 end
+  end
+  return nil
+end
+
+local function AddContainer(counts, bag)
+  if type(bag) ~= "number" then return end
+  for slot = 1, NumSlots(bag) do
+    local id, n = SlotItem(bag, slot)
+    if id then counts[id] = (counts[id] or 0) + n end
+  end
+end
+
+local function BagIDs()
+  local ids = {}
+  for bag = 0, NUM_BAG_SLOTS or 4 do ids[#ids + 1] = bag end
+  local BI = Enum and Enum.BagIndex
+  if BI and BI.ReagentBag then ids[#ids + 1] = BI.ReagentBag end
+  return ids
+end
+
+-- The bank container, the bank bags, and a mainline client's character bank tabs if it has them.
+local function BankIDs()
+  local BI = Enum and Enum.BagIndex
+  local ids = {}
+  local main = (BI and BI.Bank) or BANK_CONTAINER or -1
+  ids[#ids + 1] = main
+  local first = (NUM_BAG_SLOTS or 4) + 1
+  for bag = first, first + (NUM_BANKBAGSLOTS or 7) - 1 do ids[#ids + 1] = bag end
+  if BI and BI.CharacterBankTab_1 then
+    for i = 1, 6 do
+      local tab = BI["CharacterBankTab_" .. i]
+      if type(tab) == "number" then ids[#ids + 1] = tab end
+    end
+  end
+  return ids
+end
+
+local bankOpen = false
+
+local function MyRecord()
+  local db = type(CraftBoardDB) == "table" and CraftBoardDB
+  if not (db and NS.Me and type(db.chars) == "table") then return nil end
+  local c = db.chars[NS.Me]
+  return type(c) == "table" and c or nil
+end
+
+local function SameCounts(a, b)
+  if type(a) ~= "table" or type(b) ~= "table" then return false end
+  for k, v in pairs(a) do if b[k] ~= v then return false end end
+  for k in pairs(b) do if a[k] == nil then return false end end
+  return true
+end
+
+-- Rescan bags (and the bank while it's open) into chars[Me].items. True when the counts changed.
+local function RecordItems()
+  local c = MyRecord()
+  if not c then return false end
+  local changed = false
+  if bankOpen then
+    local bank = {}
+    for _, bag in ipairs(BankIDs()) do AddContainer(bank, bag) end
+    if not SameCounts(bank, c.bank) then c.bank, changed = bank, true end
+  end
+  local items = {}
+  for _, bag in ipairs(BagIDs()) do AddContainer(items, bag) end
+  for id, n in pairs(type(c.bank) == "table" and c.bank or {}) do
+    if type(id) == "number" and type(n) == "number" then items[id] = (items[id] or 0) + n end
+  end
+  if not SameCounts(items, c.items) then c.items, changed = items, true end
+  return changed
+end
+
+-- My OTHER characters holding itemID: total, { {name="Name-Realm", n=}, ... } (most first).
+function Inventory.AltCounts(itemID)
+  local list, total = {}, 0
+  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars
+  if type(itemID) ~= "number" or not chars then return 0, list end
+  for key, c in pairs(chars) do
+    local n = key ~= NS.Me and type(c) == "table" and type(c.items) == "table" and tonumber(c.items[itemID]) or 0
+    if n > 0 then
+      list[#list + 1] = { name = key, n = n }
+      total = total + n
+    end
+  end
+  table.sort(list, function(a, b)
+    if a.n ~= b.n then return a.n > b.n end
+    return a.name < b.name
+  end)
+  return total, list
+end
+
+-- "+12 on alts" for a reagent slot, or nil.
+function Inventory.AltText(itemID)
+  local total = Inventory.AltCounts(itemID)
+  if total <= 0 then return nil end
+  return string.format(L["+%d on alts"], total)
+end
+
+-- Let the UI refresh have/need when bags change (and record the new counts first).
 local bagPending = false
+local function BagsChanged()
+  bagPending = false
+  pcall(RecordItems)
+  NS.Fire("INVENTORY_UPDATED")
+end
+
 NS.Register("BAG_UPDATE_DELAYED", function()
   if bagPending then return end
   if C_Timer and C_Timer.After then
     bagPending = true
-    C_Timer.After(0.3, function()
-      bagPending = false
-      NS.Fire("INVENTORY_UPDATED")
-    end)
+    C_Timer.After(0.3, BagsChanged)
   else
-    NS.Fire("INVENTORY_UPDATED")
+    BagsChanged()
+  end
+end)
+
+local bankPending = false
+local function BankChanged()
+  bankPending = false
+  local ok, changed = pcall(RecordItems)
+  if ok and changed then NS.Fire("INVENTORY_UPDATED") end
+end
+
+local function BankSoon()
+  if bankPending then return end
+  if C_Timer and C_Timer.After then
+    bankPending = true
+    C_Timer.After(0.3, BankChanged)
+  else
+    BankChanged()
+  end
+end
+
+NS.Register("BANKFRAME_OPENED", function()
+  bankOpen = true
+  BankSoon()
+end)
+NS.Register("PLAYERBANKSLOTS_CHANGED", function()
+  if bankOpen then BankSoon() end
+end)
+-- Rescan once more on close (the bank is still readable in this event), then stop.
+NS.Register("BANKFRAME_CLOSED", function()
+  if not bankOpen then return end
+  local ok, changed = pcall(RecordItems)
+  bankOpen = false
+  if ok and changed then NS.Fire("INVENTORY_UPDATED") end
+end)
+
+NS.Register("PLAYER_LOGIN", function()
+  if C_Timer and C_Timer.After then
+    C_Timer.After(3, BankChanged)
+  else
+    BankChanged()
   end
 end)
 
