@@ -1730,7 +1730,14 @@ local function BuildUniverse()
     }
     for _, c in ipairs(u.crafters) do
       if c.mine then
-        if c.name == NS.Me then u.me = true elseif not u.alt then u.alt = Short(c.name) end
+        if c.name == NS.Me then
+          u.me = true
+        elseif not u.alt then
+          -- An alt only counts when it can supply this realm and faction (linked orders, "Alt").
+          local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+          local reachable = NS.Inventory and NS.Inventory.Reachable
+          if not reachable or reachable(c.name, chars[c.name]) then u.alt = Short(c.name) end
+        end
       else
         u.peersN = u.peersN + 1
         u.peerName = u.peerName or Short(c.name)

@@ -8,11 +8,12 @@ NS.Inventory = Inventory
 local L = NS.L
 
 -- Bags + bank + reagent bank.
--- bagsOnly: what a craft can use right now (the bags and reagent bag), not the bank.
+-- bagsOnly: what a craft can use right now: the bags (the equipped reagent bag is one of them)
+-- and the reagent bank, which crafting draws from on clients that have one; not the bank.
 function Inventory.Count(itemID, bagsOnly)
   if type(itemID) ~= "number" then return 0 end
   if C_Item and C_Item.GetItemCount then
-    return C_Item.GetItemCount(itemID, not bagsOnly, false, not bagsOnly) or 0
+    return C_Item.GetItemCount(itemID, not bagsOnly, false, true) or 0
   elseif GetItemCount then
     return GetItemCount(itemID, not bagsOnly) or 0
   end

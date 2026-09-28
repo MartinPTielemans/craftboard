@@ -97,7 +97,8 @@ function Craft.CanCraft(recipeID)
   if tool then return false, format(L["Requires %s."], tool), 0 end
   local times = Available(recipeID)
   if times == nil then
-    local cc = NS.Inventory and NS.Inventory.CanCraft and NS.Inventory.CanCraft(rec) or { ready = false, times = 0 }
+    -- No count from the window: my bags (and reagent bank), never the rest of the bank.
+    local cc = NS.Inventory and NS.Inventory.CanCraft and NS.Inventory.CanCraft(rec, nil, true) or { ready = false, times = 0 }
     times = cc.ready and (cc.times or 1) or 0
   end
   if times < 1 then return false, L["Missing reagents in your bags."], 0 end
