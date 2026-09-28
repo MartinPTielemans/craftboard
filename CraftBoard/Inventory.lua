@@ -567,20 +567,19 @@ function NS.CanCraftItem(itemID)
   return Inventory.MyRecipeFor(itemID) ~= nil
 end
 
--- Every reagent of a craft list with have/need, needs summed over the list:
--- list { {record=, qty= (output items)}, ... } -> { {itemID=, need=, have=, alts=}, ... } in first-seen order.
--- (alts: the reagent slot's other quality tiers, as in SlotCount.)
--- Shares what the bags and bank hold between reagent rows ({ ids = accepted items, need = }) so
--- that as many needs as possible are covered, whatever order the rows come in: a row short of
--- items takes them from a stack another row uses when that row can switch to a tier nobody else
--- needs (augmenting paths over rows and items). Sets each row's have: what it was given plus
--- what is still spare of its items (have >= need exactly when the row is covered).
-local function Share(rows)
+-- Shares items between rows ({ ids = accepted items (preferred first), need = }) so that as
+-- many needs as possible are covered, whatever order the rows come in: a row short of items takes
+-- them from a stack another row uses when that row can switch to an item nobody else needs
+-- (augmenting paths over rows and items). supply(id): how many there are (default: my bags and
+-- bank). Sets each row's have: what it was given plus what is still spare of its items (have >=
+-- need exactly when the row is covered). Returns flow ([row index][id] = items given).
+function Inventory.Share(rows, supply)
+  supply = supply or Inventory.Count
   local left, flow, got = {}, {}, {}
   for i, r in ipairs(rows) do
     flow[i], got[i] = {}, 0
     for _, id in ipairs(r.ids) do
-      if left[id] == nil then left[id] = Inventory.Count(id) end
+      if left[id] == nil then left[id] = supply(id) end
     end
   end
   -- Rows accepting each item, to find who could give one back.
@@ -641,11 +640,14 @@ local function Share(rows)
     for _, id in ipairs(r.ids) do have = have + left[id] end
     r.have = have
   end
+  return flow
 end
 
+-- Every reagent of a craft list with have/need, needs summed over the list:
+-- list { {record=, qty= (output items)}, ... } -> { {itemID=, need=, have=, alts=}, ... } in first-seen order.
 -- Reagent slots that accept the same items (one item, or the same quality tiers in any order)
 -- add up into one row: { itemID=, need=, have=, alts= (the other accepted items) }. What the
--- bags and bank hold is shared out between rows (Share), so a stack two rows could use
+-- bags and bank hold is shared out between rows (Inventory.Share), so a stack two rows could use
 -- (overlapping tiers) isn't counted for both.
 function Inventory.Totals(list)
   local rows, byKey = {}, {}
@@ -679,7 +681,7 @@ function Inventory.Totals(list)
       end
     end
   end
-  Share(rows)
+  Inventory.Share(rows)
   for _, r in ipairs(rows) do r.ids, r.n = nil, nil end
   return rows
 end

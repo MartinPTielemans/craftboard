@@ -207,27 +207,37 @@ function Merchant.Plan()
     end
     return out
   end
-  -- Where this merchant sells each accepted item for gold, then what each short slot buys: its own
-  -- item when sold here, else the first accepted tier that is. Slots buying the same item add up.
+  -- Where this merchant sells each accepted item for gold, and how many it has (whole bundles;
+  -- unlimited stock is plenty). Then the short slots share what is sold: each slot its own item
+  -- first, then its other tiers, moving to another tier when a limited one runs out
+  -- (Inventory.Share). Slots buying the same item add up.
   local n = tonumber(GetMerchantNumItems()) or 0
-  local soldAt, wantAt = {}, {}
+  local soldAt, stock, wantAt = {}, {}, {}
   for index = 1, n do
     local itemID = ItemID(index)
     if itemID and accepted[itemID] and not soldAt[itemID] then
-      local price, _, _, purchasable, extended = ItemInfo(index)
-      if price and price > 0 and purchasable and not extended then soldAt[itemID] = index end
+      local price, stack, avail, purchasable, extended = ItemInfo(index)
+      if price and price > 0 and purchasable and not extended then
+        stack = math.max(1, stack)
+        soldAt[itemID] = index
+        stock[itemID] = avail >= 0 and math.floor(avail / stack) * stack or math.huge
+      end
     end
   end
+  local share = {}
   for _, sh in ipairs(shorts) do
-    local index
+    local ids = {}
     for _, x in ipairs(sh.ids) do
-      index = soldAt[x]
-      if index then break end
+      if soldAt[x] then ids[#ids + 1] = x end
     end
-    if index then
-      wantAt[index] = (wantAt[index] or 0) + sh.want
-    else
-      info.notSold[#info.notSold + 1] = sh.id
+    if #ids == 0 then info.notSold[#info.notSold + 1] = sh.id end
+    share[#share + 1] = { ids = ids, need = sh.want }
+  end
+  local flow = NS.Inventory and NS.Inventory.Share
+    and NS.Inventory.Share(share, function(id) return stock[id] or 0 end) or {}
+  for i in ipairs(share) do
+    for id, got in pairs(flow[i] or {}) do
+      if got > 0 then wantAt[soldAt[id]] = (wantAt[soldAt[id]] or 0) + got end
     end
   end
   for index = 1, n do

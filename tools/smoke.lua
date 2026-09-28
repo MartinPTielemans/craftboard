@@ -329,6 +329,18 @@ do
   GetMerchantItemInfo = function() return "x", nil, 10, 5, 7, true, nil, false end
   plan = NS.Merchant.Plan()
   check(#plan == 1 and plan[1].count == 5, "limited stock caps the bundles by the items in stock")
+  -- {b,a} and {b,c} short one each, one b in stock, a and c unlimited: both slots get bought.
+  NS.Queue.Totals = function()
+    return { { itemID = 6102, alts = { 6101 }, need = 1, have = 0 }, { itemID = 6102, alts = { 6103 }, need = 1, have = 0 } }
+  end
+  local sold = { 6102, 6101, 6103 }
+  GetMerchantNumItems = function() return #sold end
+  GetMerchantItemID = function(i) return sold[i] end
+  GetMerchantItemInfo = function(i) return "x", nil, 10, 1, i == 1 and 1 or -1, true, nil, false end
+  plan = NS.Merchant.Plan()
+  local items = 0
+  for _, e in ipairs(plan) do items = items + e.count end
+  check(items == 2 and #plan == 2, "a slot moves to another tier when a limited one runs out")
   NS.Queue.Totals = totals
   GetMerchantNumItems, GetMerchantItemID, GetMerchantItemInfo, GetMoney = nil, nil, nil, nil
 end

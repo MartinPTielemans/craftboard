@@ -189,8 +189,10 @@ local function Mine(unit, spellID)
 end
 
 -- Recipes with a varying yield (rec.yMax): the count in my bags before a cast, then what it
--- really made once the items land, beyond the minimum the queue was credited with.
-local yieldBefore, yieldCheck = {}, nil
+-- really made once the items land, beyond the minimum the queue was credited with. Casts that
+-- succeed before the bags update are measured together: yieldCheck[recipeID] = { rec=, before=
+-- (the first cast's count), casts= }.
+local yieldBefore, yieldCheck = {}, {}
 
 local function BagCount(itemID)
   if C_Item and C_Item.GetItemCount then
@@ -229,8 +231,13 @@ NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
   end
   if NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(spellID, rec) end
   -- A varying yield: the queue got the minimum; the bags say what came out (next bag update).
-  if rec.yMax and yieldBefore[spellID] then
-    yieldCheck = { recipeID = spellID, rec = rec, before = yieldBefore[spellID] }
+  if rec.yMax then
+    local c = yieldCheck[spellID]
+    if c then
+      c.casts = c.casts + 1
+    elseif yieldBefore[spellID] then
+      yieldCheck[spellID] = { rec = rec, before = yieldBefore[spellID], casts = 1 }
+    end
     yieldBefore[spellID] = nil
   end
   NS.Fire("CRAFT_UPDATED")
@@ -246,13 +253,16 @@ NS.Register("UNIT_SPELLCAST_START", function(_, unit, _, spellID)
 end)
 
 NS.Register("BAG_UPDATE_DELAYED", function()
-  local c = yieldCheck
-  if not c then return end
-  yieldCheck = nil
-  local now = BagCount(c.rec.o)
-  if not (now and c.before) then return end
-  local extra = (now - c.before) - math.max(1, c.rec.y or 1)
-  if extra > 0 and NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(c.recipeID, c.rec, nil, extra) end
+  if not next(yieldCheck) then return end
+  local checks = yieldCheck
+  yieldCheck = {}
+  for recipeID, c in pairs(checks) do
+    local now = BagCount(c.rec.o)
+    if now and c.before then
+      local extra = (now - c.before) - c.casts * math.max(1, c.rec.y or 1)
+      if extra > 0 and NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(recipeID, c.rec, nil, extra) end
+    end
+  end
 end)
 
 -- Moving, jumping or acting ends a batch early.

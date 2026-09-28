@@ -2862,6 +2862,10 @@ function R.Offer(e)
   if NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, R.OfferText(e.post.item)) then
     if NS.Comm.MarkOffered then NS.Comm.MarkOffered(e.post.id) end
     UI.RefreshRequestDetail()
+    -- An offered request stops counting: recount for the tab, embedded tab and broker badges.
+    reqs.countDirty = true
+    if UI.RequestCount then UI.RequestCount() end
+    UI.UpdateBadge()
   else
     NS.Print(format(L["Could not whisper %s."], Short(e.post.from)))
   end
