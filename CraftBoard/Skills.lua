@@ -159,6 +159,16 @@ local function Drop(c, key)
   end
   if type(c.trainer) == "table" then c.trainer[key] = nil end
   if type(c.trainSeen) == "table" then c.trainSeen[key] = nil end
+  -- Its cooldowns (and their notices) go with its recipes.
+  local cdGone = false
+  for _, t in ipairs({ c.cd, c.cdSeen }) do
+    if type(t) == "table" then
+      for id in pairs(t) do
+        if not (type(c.recipes) == "table" and c.recipes[id]) then t[id], cdGone = nil, true end
+      end
+    end
+  end
+  if cdGone then NS.Fire("COOLDOWNS_UPDATED") end
 end
 
 -- Store the book's ranks on my character. Returns true when a rank or cap changed, or an

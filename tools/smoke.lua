@@ -358,6 +358,23 @@ do
   me.cd = saved
 end
 
+-- Every live retraction is kept (hellos take turns sending them), and an alt on the other
+-- faction doesn't count as able to craft for someone here.
+do
+  for i = 1, 25 do
+    local id = NS.Me .. ":x:" .. i
+    db.posts[id] = { id = id, from = NS.Me, item = 2304, qty = 1, t = time() }
+    NS.Comm.Retract(id)
+  end
+  local n = 0
+  for _ in pairs(db.myRetracted or {}) do n = n + 1 end
+  check(n >= 25, "all live retractions are kept, not just the newest 20")
+  db.chars["Horde Alt-Forever"] = { faction = "Horde", profs = {}, recipes = { [5555] = { p = 1, o = 5556, r = {} } } }
+  NS.Faction = "Alliance"
+  check(NS.Inventory.MyRecipeFor(5556) == nil, "an alt on the other faction can't craft for this realm's players")
+  db.chars["Horde Alt-Forever"] = nil
+end
+
 -- Recipe tooltips: Blizzard's "Requires %s (%d)" becomes a pattern (a "^" with a start offset
 -- anchors at that offset in Lua 5.1, which the parser relies on) that reads profession and skill.
 do

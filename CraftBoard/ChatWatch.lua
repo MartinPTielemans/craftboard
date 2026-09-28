@@ -319,8 +319,10 @@ local function BuildIndex()
   if NS.Me then take(chars[NS.Me], true, NS.Me) end
   -- Alts in name order, so "Known on <alt>" doesn't change between sessions.
   local keys = {}
-  for key in pairs(chars) do
-    if key ~= NS.Me and type(key) == "string" then keys[#keys + 1] = key end
+  -- Only alts on this realm and faction: another's crafts can't reach the asker.
+  local reachable = NS.Inventory and NS.Inventory.Reachable
+  for key, c in pairs(chars) do
+    if key ~= NS.Me and type(key) == "string" and (not reachable or reachable(key, c)) then keys[#keys + 1] = key end
   end
   sort(keys)
   for _, key in ipairs(keys) do take(chars[key], false, key) end

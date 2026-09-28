@@ -43,7 +43,7 @@ local ONLINE_WINDOW = 15 * 60
 local PEER_TTL = 30 * 86400
 local POST_TTL = 24 * 3600
 local MAX_POSTS_PER_SENDER = 5
-local MAX_REPEATED_X = 20         -- my retractions re-sent with each hello
+local MAX_REPEATED_X = 20         -- my retractions re-sent with each hello (the rest take turns)
 local MAX_POSTS = 300
 local POST_GAP = 10               -- our own post rate limit
 local INBOUND_WINDOW = 60
@@ -84,6 +84,7 @@ local sentCd = {}         -- [dist] = cooldown signature (CooldownSig) of the la
 local busyPending = false -- a busy hello is scheduled
 local loginHello = {}     -- [dist] = true once the login hello (l=true) went out there (or after a /reload)
 local backAlerted = {}    -- [peer] = time of the last back-online notice
+local xRotation = 0       -- where the next hello's turn through my older retractions starts
 local rawNew, rawOld, rawAt = {}, {}, 0 -- exact copies seen: [peer .. message] = time, two generations
 local heardOn = {}        -- [peer] = "GUILD" / "CHANNEL": where their last broadcast reached us
 local queryTimes = {}     -- arrival times of the queries answered in the last R_BATCH_WINDOW
@@ -752,10 +753,29 @@ function SendMyPosts(dist)
       Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa }, dist, target, "BULK")
     end
   end
+  -- My retractions still within the post lifetime all stay; each hello repeats the newest half
+  -- of MAX_REPEATED_X and a rotating share of the older ones, so the burst stays bounded and
+  -- every tombstone keeps reaching peers who were away.
+  local live = {}
   for id, t in pairs(MyRetracted()) do
-    if type(t) == "number" and now - t < POST_TTL then
-      Send("X", { v = VERSION, id = id }, dist, dist == "CHANNEL" and channelId or nil, "BULK")
+    if type(t) == "number" and now - t < POST_TTL then live[#live + 1] = { id = id, t = t } end
+  end
+  sort(live, function(a, b)
+    if a.t ~= b.t then return a.t > b.t end
+    return a.id < b.id
+  end)
+  local newest = floor(MAX_REPEATED_X / 2)
+  local send = {}
+  for i = 1, min(#live, newest) do send[#send + 1] = live[i].id end
+  local older = #live - newest
+  if older > 0 then
+    for k = 0, min(older, MAX_REPEATED_X - newest) - 1 do
+      send[#send + 1] = live[newest + 1 + (xRotation + k) % older].id
     end
+    xRotation = (xRotation + MAX_REPEATED_X - newest) % older
+  end
+  for _, id in ipairs(send) do
+    Send("X", { v = VERSION, id = id }, dist, dist == "CHANNEL" and channelId or nil, "BULK")
   end
 end
 
@@ -856,19 +876,13 @@ function SendRetract(id, dists, since)
 end
 
 -- Retracting one of my posts also retracts the linked orders posted for it.
--- One of my posts is retracted: tombstone it, remember it for repeating with hellos (the newest
--- few; older ones have reached most peers) and send the X.
+-- One of my posts is retracted: tombstone it, remember it for repeating with hellos and send
+-- the X.
 local function RetractMine(id)
   local now = time()
   Retracted()[id] = now
-  local mineX = MyRetracted()
-  mineX[id] = now
-  local n, oldest, oldT = 0, nil, nil
-  for rid, t in pairs(mineX) do
-    n = n + 1
-    if not oldT or t < oldT then oldest, oldT = rid, t end
-  end
-  if n > MAX_REPEATED_X then mineX[oldest] = nil end
+  -- Kept for the post lifetime (PrunePosts drops expired ones); SendMyPosts takes turns with them.
+  MyRetracted()[id] = now
   SendRetract(id)
 end
 

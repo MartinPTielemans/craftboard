@@ -2742,8 +2742,10 @@ function R.RecipesByOutput()
     end
   end
   if NS.Me then take(chars[NS.Me], true, NS.Me) end
+  -- Only alts on this realm and faction: another's crafts can't reach the requester.
+  local reachable = NS.Inventory and NS.Inventory.Reachable
   for key, c in pairs(chars) do
-    if key ~= NS.Me then take(c, false, key) end
+    if key ~= NS.Me and (not reachable or reachable(key, c)) then take(c, false, key) end
   end
   if type(db.recipeNames) == "table" then
     for id, e in pairs(db.recipeNames) do
@@ -3819,9 +3821,7 @@ local function Annotate()
       e.can = e.ready or e.readyAlt or false
       -- Asked again with another quantity ("LF 5x" after "LF 1x"): the queued craft follows.
       local x = Q and s.qty and Q.Get(e.id)
-      if x and x.who and not x.madeItems and x.qty ~= Q.ClampQty(x.recipeID, s.qty) then
-        x.qty = Q.ClampQty(x.recipeID, s.qty)
-      end
+      if x and x.who and not x.madeItems then Q.SetQty(x, s.qty) end
       -- The count leaves out profession-only asks ("LF ench"): only asks for a recipe I know.
       e.counts = e.can and s.recipeID ~= nil and not e.dim
       add(e)

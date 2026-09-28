@@ -50,6 +50,15 @@ function Queue.ClampQty(recipeID, qty)
   return math.max(1, math.min(1000 * y, math.floor(tonumber(qty) or 1)))
 end
 
+-- Sets an entry's item count (a request asked again with another quantity).
+function Queue.SetQty(x, qty)
+  if type(x) ~= "table" then return end
+  local q = Queue.ClampQty(x.recipeID, qty)
+  if q == x.qty then return end
+  x.qty = q
+  NS.Fire("QUEUE_UPDATED")
+end
+
 -- Adds items to an existing entry (planning more of the same craft).
 function Queue.Grow(x, qty)
   if type(x) ~= "table" then return end

@@ -524,8 +524,9 @@ function Inventory.MyRecipeFor(itemID)
     local id, rec = find(CraftBoardDB.chars[NS.Me])
     if id then return id, rec, NS.Me, true end
   end
+  -- Alts only on this realm and faction (what they craft can reach the other player).
   for key, c in pairs(CraftBoardDB.chars) do
-    if key ~= NS.Me then
+    if key ~= NS.Me and Inventory.Reachable(key, c) then
       local id, rec = find(c)
       if id then return id, rec, key, false end
     end
