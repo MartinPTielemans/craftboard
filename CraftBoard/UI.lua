@@ -4566,7 +4566,8 @@ local function NewStatusLine(f)
   -- has no portrait, and the line may be cut short).
   b:EnableMouse(true)
   b:SetScript("OnEnter", function(self)
-    TextTooltip(self, BoardLine(), SummaryLine())
+    -- BoardLine / SummaryLine are defined below this function: go through their public names.
+    TextTooltip(self, UI.StatusText(), UI.SummaryText())
   end)
   b:SetScript("OnLeave", HideTooltip)
   return b
@@ -4605,6 +4606,11 @@ end
 -- The window's board status line, for the minimap button tooltip.
 function UI.StatusText()
   return BoardLine()
+end
+
+-- "61 recipes · 3 other CraftBoard users · realm channel on" (portrait / status line tooltip).
+function UI.SummaryText()
+  return SummaryLine()
 end
 
 function UI.RefreshStatus()
@@ -4662,6 +4668,8 @@ local REFRESH = {
 -- No search box ever takes the keyboard on its own: like Blizzard's profession search, it does
 -- when clicked, so chat commands typed with the window open still work.
 
+local TAB_NAMES = { L["Find"], L["Requests"], L["Plan"] }
+
 local function SelectTab(i)
   activeTab = i
   local db = UIDB()
@@ -4715,7 +4723,6 @@ function UI.ShowTab(i)
   if UI.IsShown() then SelectTab(i) else UI.Show() end
 end
 
-local TAB_NAMES = { L["Find"], L["Requests"], L["Plan"] }
 
 local BuildTabs, SideTab
 do
