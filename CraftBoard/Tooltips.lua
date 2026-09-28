@@ -188,7 +188,14 @@ local function ReagentLines(itemID, out)
   end
   local Inv = NS.Inventory
   if not (Inv and Inv.AltCounts and Inv.IsReagentLike and Inv.IsReagentLike(itemID)) then return end
-  local total, list = Inv.AltCounts(itemID)
+  -- A queued reagent slot that takes several quality tiers: alts' holdings of any of them, as
+  -- the queue line above counts.
+  local total, list
+  if row and type(row.alts) == "table" and #row.alts > 0 then
+    total, list = Inv.AltCounts(row.itemID, row.alts)
+  else
+    total, list = Inv.AltCounts(itemID)
+  end
   if total <= 0 then return end
   Line(out, format(L["+%d on alts"], total), LINE_RGB)
   for i = 1, math.min(MAX_ALTS, #list) do

@@ -147,24 +147,35 @@ end
 -- What one click buys: plan { {index=, itemID=, count= (items), stack= (items per purchase), cost=}, ... },
 -- total cost, info { notSold = {itemIDs short but not sold here for gold}, poor = {itemIDs I
 -- can't afford all of}, full = true when bag space cut the plan }. Items bought a moment ago
--- that haven't arrived yet count as had.
+-- that haven't arrived yet count as had. A reagent slot that takes several quality tiers
+-- (row.alts) is bought once, in the tier this merchant sells (its first one when it sells several).
 function Merchant.Plan()
   local plan, total = {}, 0
   local info = { notSold = {}, poor = {}, full = false }
   local rows = NS.Queue and NS.Queue.Totals and NS.Queue.Totals(true) or {}
-  local short, order = {}, {}
+  local short, order, slotOf, accepted = {}, {}, {}, {}
   for _, row in ipairs(rows) do
     local id = row.itemID
-    local need, have = tonumber(row.need) or 0, tonumber(row.have) or 0
-    local want = type(id) == "number" and need - have - (pending[id] or 0) or 0
-    if want > 0 and not short[id] then
-      short[id] = want
-      order[#order + 1] = id
+    if type(id) == "number" and not short[id] then
+      local ids = { id }
+      for _, alt in ipairs(type(row.alts) == "table" and row.alts or {}) do
+        if type(alt) == "number" and alt ~= id then ids[#ids + 1] = alt end
+      end
+      local want = (tonumber(row.need) or 0) - (tonumber(row.have) or 0)
+      for _, x in ipairs(ids) do want = want - (pending[x] or 0) end
+      if want > 0 then
+        short[id] = want
+        order[#order + 1] = id
+        for _, x in ipairs(ids) do
+          slotOf[x] = slotOf[x] or id
+          accepted[x] = true
+        end
+      end
     end
   end
   if #order == 0 or not GetMerchantNumItems then return plan, total, info end
   local money = Money()
-  local free, room, special = BagRoom(short)
+  local free, room, special = BagRoom(accepted)
   local band = bit and bit.band
   local familyOf = (C_Item and C_Item.GetItemFamily) or GetItemFamily
   -- Free slots of the profession bags this item may go in (they are used first).
@@ -179,14 +190,27 @@ function Merchant.Plan()
     end
     return out
   end
-  local listed = {}
-  for index = 1, tonumber(GetMerchantNumItems()) or 0 do
+  -- Which of this merchant's items fills each short slot: the slot's own item when it is sold
+  -- (for gold), else the first accepted tier that is.
+  local n = tonumber(GetMerchantNumItems()) or 0
+  local pick = {}
+  for index = 1, n do
     local itemID = ItemID(index)
-    local want = itemID and not listed[itemID] and short[itemID]
+    local slot = itemID and slotOf[itemID]
+    if slot and (not pick[slot] or (itemID == slot and ItemID(pick[slot]) ~= slot)) then
+      local price, _, _, purchasable, extended = ItemInfo(index)
+      if price and price > 0 and purchasable and not extended then pick[slot] = index end
+    end
+  end
+  local listed = {}
+  for index = 1, n do
+    local itemID = ItemID(index)
+    local slot = itemID and slotOf[itemID]
+    local want = slot and pick[slot] == index and short[slot]
     if want then
       local price, stack, avail, purchasable, extended = ItemInfo(index)
       if price and price > 0 and purchasable and not extended then
-        listed[itemID] = true
+        listed[slot] = true
         stack = math.max(1, stack)
         local bundles = math.ceil(want / stack)
         if avail >= 0 then bundles = math.min(bundles, avail) end

@@ -399,6 +399,30 @@ do
   db.chars["Horde Alt-Forever"] = nil
 end
 
+-- Buy missing reagents: a slot that takes several quality tiers is bought in the tier this
+-- merchant sells, once.
+do
+  local totals = NS.Queue.Totals
+  NS.Queue.Totals = function() return { { itemID = 7001, alts = { 7002, 7003 }, need = 5, have = 1 } } end
+  local ids = { 5000, 7002, 7003 }
+  GetMerchantNumItems = function() return #ids end
+  GetMerchantItemID = function(i) return ids[i] end
+  GetMerchantItemInfo = function() return "x", nil, 10, 1, -1, true, nil, false end
+  GetMoney = function() return 100000 end
+  local plan, _, info = NS.Merchant.Plan()
+  eq(#plan, 1, "one purchase for a tiered slot")
+  eq(plan[1] and plan[1].itemID, 7002, "the first tier the merchant sells")
+  eq(plan[1] and plan[1].count, 4, "the slot's shortfall")
+  eq(#info.notSold, 0, "an accepted tier counts as sold here")
+  NS.Queue.Totals = totals
+  GetMerchantNumItems, GetMerchantItemID, GetMerchantItemInfo, GetMoney = nil, nil, nil, nil
+end
+
+-- Post notes carry no prices, in any coin, but keep item names made of metal.
+eq(NS.Comm.StripPrices("will pay 50 silver"), "will pay", "silver amounts leave a note")
+eq(NS.Comm.StripPrices("25c or 2 gold, tip 5"), "or, tip", "copper, gold and tip amounts leave a note")
+eq(NS.Comm.StripPrices("need 20 copper bars"), "need 20 copper bars", "copper bars are an item, not a price")
+
 -- Recipe tooltips: Blizzard's "Requires %s (%d)" becomes a pattern (a "^" with a start offset
 -- anchors at that offset in Lua 5.1, which the parser relies on) that reads profession and skill.
 do

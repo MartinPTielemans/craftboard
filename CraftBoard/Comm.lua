@@ -203,20 +203,33 @@ local function CleanString(s, maxLen)
   return s
 end
 
--- Prices off a post note ("5g", "50 s", "1.5g", "10 gold", "gold", the number in "tip 5"),
--- trimmed: the board carries no gold amounts. "will tip" stays.
+-- Prices off a post note ("5g", "50 s", "1.5g", "10 gold", "50 silver", "25c", "gold", the
+-- number in "tip 5"), trimmed: the board carries no gold amounts. "will tip" stays, and so do
+-- item names ("20 copper bars", "gold ore", "Silver Rod").
+local COIN = { g = true, s = true, c = true, gold = true, silver = true, copper = true }
+local METAL_ITEM = { bar = true, bars = true, ore = true, ores = true, rod = true, rods = true, tube = true,
+  tubes = true, wire = true, nugget = true, nuggets = true, powder = true, dust = true, ring = true,
+  rings = true, band = true, bands = true, necklace = true, pendant = true }
+
 local function StripPrices(s)
   s = " " .. s .. " "
-  s = s:gsub("(%f[%a][tT][iI][pP][sS]?)%s*:?%s*%d+[%.,]?%d*%s*[gGsS]%f[%A]", "%1 ")
-    :gsub("(%f[%a][tT][iI][pP][sS]?)%s*:?%s*%d+[%.,]?%d*", "%1 ")
-    :gsub("%d+[%.,]?%d*%s*[gG][oO][lL][dD]%f[%A]", " ")
-    :gsub("%f[%a][gG][oO][lL][dD]%f[%A]", " ")
-    :gsub("%d+[%.,]?%d*%s*[gGsS]%f[%A]", " ")
+  local function ItemAfter(pos)
+    local nxt = s:match("^%s*(%a+)", pos)
+    return nxt ~= nil and METAL_ITEM[nxt:lower()] == true
+  end
+  s = s:gsub("(%d+[%.,]?%d*)%s*(%a+)()", function(_, unit, pos)
+    if COIN[unit:lower()] and not ItemAfter(pos) then return " " end
+  end)
+  s = s:gsub("%f[%a]([gG][oO][lL][dD])%f[%A]()", function(_, pos)
+    if not ItemAfter(pos) then return " " end
+  end)
+  s = s:gsub("(%f[%a][tT][iI][pP][sS]?)%s*:?%s*%d+[%.,]?%d*", "%1 ")
     :gsub("%(%s*%)", " ")
-  s = s:gsub("%s+", " "):gsub(" ([,;:%.!%?])", "%1")
+  s = s:gsub("%s+", " "):gsub(" ([,;:%.!%?%)])", "%1")
     :gsub("^[%s,;:%-%+/&]+", ""):gsub("[%s,;:%-%+/&]+$", "")
   return s
 end
+Comm.StripPrices = StripPrices
 
 local function PosInt(x, maxV)
   if type(x) ~= "number" or x ~= x or x < 1 or x > maxV or floor(x) ~= x then return nil end
@@ -686,9 +699,6 @@ local function Friends()
   return friends, friendsFirst
 end
 
-if NS.Register then
-  NS.Register("FRIENDLIST_UPDATE", function() friends, friendsFirst = nil, nil end)
-end
 
 -- true / false when the friend list knows the player, else nil.
 local function FriendOnline(full)
@@ -709,6 +719,44 @@ local function OnlineOf(full, p, roster, now)
   local f = FriendOnline(full)
   if f ~= nil then return f end
   return type(p) == "table" and type(p.seen) == "number" and now - p.seen < ONLINE_WINDOW or false
+end
+
+-- Peers' online state as last checked. A change nobody sends a message about (a friend or guild
+-- member logging on or off, a peer not heard from within ONLINE_WINDOW) fires PEERS_UPDATED, so
+-- the request count, badges and Find's order follow.
+local lastOnline = {}
+local function CheckOnline()
+  local db = DB()
+  if not (db and type(db.peers) == "table") then return end
+  local roster, now, current, changed = GuildRoster(), time(), {}, false
+  for full, p in pairs(db.peers) do
+    local on = OnlineOf(full, p, roster, now) and true or false
+    current[full] = on
+    if lastOnline[full] ~= nil and lastOnline[full] ~= on then changed = true end
+  end
+  lastOnline = current
+  if changed then FirePeersSoon() end
+end
+
+local checkOnlinePending = false
+local function CheckOnlineSoon()
+  if checkOnlinePending or not (C_Timer and C_Timer.After) then return end
+  checkOnlinePending = true
+  C_Timer.After(2, function()
+    checkOnlinePending = false
+    CheckOnline()
+  end)
+end
+
+if NS.Register then
+  NS.Register("FRIENDLIST_UPDATE", function()
+    friends, friendsFirst = nil, nil
+    CheckOnlineSoon()
+  end)
+  NS.Register("GUILD_ROSTER_UPDATE", function()
+    rosterCache = nil
+    CheckOnlineSoon()
+  end)
 end
 
 -- One player's online state (a board post's author, a crafter), as Comm.Peers() would say it.
@@ -1561,19 +1609,9 @@ local function Start()
       SweepDedupe()
     end)
     -- Nobody says goodbye: a peer not heard from within ONLINE_WINDOW goes offline without a
-    -- message. Checked once a minute, so the request count, badges and Find's order follow.
-    local lastExpiry = time()
-    C_Timer.NewTicker(60, function()
-      local db, now = DB(), time()
-      for _, p in pairs(db and type(db.peers) == "table" and db.peers or {}) do
-        local seen = type(p) == "table" and p.seen
-        if type(seen) == "number" and seen >= lastExpiry - ONLINE_WINDOW and seen < now - ONLINE_WINDOW then
-          FirePeersSoon()
-          break
-        end
-      end
-      lastExpiry = now
-    end)
+    -- message. Checked once a minute (from a first look now).
+    CheckOnline()
+    C_Timer.NewTicker(60, CheckOnline)
   end
 end
 
