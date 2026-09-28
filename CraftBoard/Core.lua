@@ -258,13 +258,23 @@ NS.Register("PLAYER_LOGIN", function()
     c.recipes = c.recipes or {}
     c.profs = c.profs or {}
     c.faction = NS.Faction
-    -- Last login (for /cb chars and to tell forgotten characters apart) and class (name colours).
+    -- Last login (for /cb chars and to tell forgotten characters apart), class (name colours)
+    -- and level (recipe tooltips: whether this character can learn one).
     c.seen = time and time() or nil
     if UnitClass then
       local ok, _, classFile = pcall(UnitClass, "player")
       if ok and type(classFile) == "string" then c.class = classFile end
     end
+    if UnitLevel then
+      local ok, level = pcall(UnitLevel, "player")
+      if ok and type(level) == "number" and not (issecretvalue and issecretvalue(level)) and level > 0 then c.level = level end
+    end
   end
+end)
+
+NS.Register("PLAYER_LEVEL_UP", function(_, level)
+  local c = NS.Me and type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars[NS.Me]
+  if type(c) == "table" and type(level) == "number" and not (issecretvalue and issecretvalue(level)) then c.level = level end
 end)
 
 -- /cb chars: my characters CraftBoard remembers, with their last login.

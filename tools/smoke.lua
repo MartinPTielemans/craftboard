@@ -408,6 +408,15 @@ do
   check(a == "Leatherworking" and b == "150" and order and order[1] == 1, "the pattern reads profession and skill")
   local pat2 = NS.Tooltips.FormatToPattern("Benötigt %2$s (%1$d)")
   check(type(pat2) == "string", "positional placeholders")
+  -- Requirements past the skill are the recipe's own (before its "Use:" line), not the crafted
+  -- item's that follow.
+  local req = NS.Tooltips.OtherRequirements({ "Schematic: Gnomish Cloaking Device", "Requires Engineering (200)",
+    "Requires Gnomish Engineer", "Use: Teaches you how to make a Gnomish Cloaking Device.",
+    "Gnomish Cloaking Device", "Requires Level 40" })
+  check(req.level == nil and req.other[1] == "Gnomish Engineer" and #req.other == 1, "a specialization is a requirement")
+  req = NS.Tooltips.OtherRequirements({ "Plans: Thorium Belt", "Requires Blacksmithing (250)", "Requires Level 45",
+    "Use: Teaches you how to make a Thorium Belt." })
+  check(req.level == 45 and #req.other == 0, "the recipe's own level requirement")
 end
 
 -- UI walk: build the window, open every tab, and select every row's card (requests of each

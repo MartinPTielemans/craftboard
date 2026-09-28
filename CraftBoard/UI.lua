@@ -1707,7 +1707,9 @@ end
 -- only filters: lower-cased names, profession, who knows it, whether I can craft it now.
 
 local universe, universeByID, universeProfs = {}, {}, {}
-local universeByItem = {}      -- [output itemID] = universe entry (who on the board makes it)
+-- [output itemID] = who on the board makes it, over every recipe that does:
+-- { me =, alt =, peersN =, crafters = { crafter, ... } (each player once) }
+local universeByItem = {}
 
 local function BuildUniverse()
   local R, I = NS.Recipes, NS.Inventory
@@ -1755,7 +1757,22 @@ local function BuildUniverse()
     if u.prof ~= nil then profCount[u.prof] = (profCount[u.prof] or 0) + 1 end
     universe[#universe + 1] = u
     universeByID[u.recipeID] = u
-    if out and not universeByItem[out] then universeByItem[out] = u end
+    if out then
+      local m = universeByItem[out]
+      if not m then
+        m = { me = false, alt = nil, peersN = 0, crafters = {}, seen = {} }
+        universeByItem[out] = m
+      end
+      m.me = m.me or u.me
+      m.alt = m.alt or u.alt
+      for _, c in ipairs(u.crafters) do
+        if type(c.name) == "string" and not m.seen[c.name] then
+          m.seen[c.name] = true
+          m.crafters[#m.crafters + 1] = c
+          if not c.mine then m.peersN = m.peersN + 1 end
+        end
+      end
+    end
   end
   universeProfs = {}
   for id in pairs(profCount) do
@@ -1827,7 +1844,7 @@ function Chain.MakersText(itemID)
     if not c.mine then names[#names + 1] = Short(c.name) end
   end
   if #names == 0 then return nil end
-  local more = #u.crafters - #names
+  local more = (u.me and 1 or 0) + (u.alt and 1 or 0) + u.peersN - #names
   local text = format(L["Crafters: %s"], table.concat(names, ", "))
   if more > 0 then text = text .. format(" (+%d)", more) end
   return text

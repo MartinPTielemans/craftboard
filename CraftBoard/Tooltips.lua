@@ -238,7 +238,7 @@ local function FormatToPattern(fmt)
 end
 
 local minSkillPattern, minSkillOrder = nil, nil
-local repPattern = nil
+local repPattern, levelPattern, reqPattern, usePrefix = nil, nil, nil, nil
 
 -- A tooltip line's left text: a data line ({leftText=}, or older clients' unsurfaced
 -- {args={ {field=, stringVal=} }}) or a plain string.
@@ -274,17 +274,36 @@ local function RequiredSkill(lines)
   return nil
 end
 
--- The tooltip has a reputation requirement ("Requires Timbermaw Hold - Honored").
-local function NeedsReputation(lines)
+-- A recipe item's own requirements, beyond its profession skill, read from the lines before its
+-- "Use: Teaches you ..." (the crafted item's tooltip follows, with that item's requirements):
+-- { level = 40 (or nil), rep = true (or nil), other = { "Gnomish Engineer", ... } }.
+local function OtherRequirements(lines)
   if repPattern == nil then
     repPattern = type(ITEM_REQ_REPUTATION) == "string" and FormatToPattern(ITEM_REQ_REPUTATION) or false
+    levelPattern = FormatToPattern(type(ITEM_MIN_LEVEL) == "string" and ITEM_MIN_LEVEL or "Requires Level %d") or false
+    reqPattern = FormatToPattern(type(ITEM_REQ_SKILL) == "string" and ITEM_REQ_SKILL or "Requires %s") or false
+    usePrefix = type(ITEM_SPELL_TRIGGER_ONUSE) == "string" and ITEM_SPELL_TRIGGER_ONUSE or "Use:"
   end
-  if not repPattern or type(lines) ~= "table" then return false end
-  for _, line in ipairs(lines) do
+  local out = { other = {} }
+  if type(lines) ~= "table" then return out end
+  if minSkillPattern == nil then RequiredSkill(nil) end
+  for i, line in ipairs(lines) do
     local text = LeftText(line)
-    if text and text:match(repPattern) then return true end
+    if text and i > 1 then
+      if text:sub(1, #usePrefix) == usePrefix then break end
+      if minSkillPattern and text:match(minSkillPattern) then
+        -- the profession skill: checked per character
+      elseif repPattern and text:match(repPattern) then
+        out.rep = true
+      elseif levelPattern and text:match(levelPattern) then
+        out.level = out.level or tonumber(text:match(levelPattern))
+      elseif reqPattern then
+        local what = text:match(reqPattern)
+        if what then out.other[#out.other + 1] = what end
+      end
+    end
   end
-  return false
+  return out
 end
 
 -- Names compared loosely: lower case, punctuation dropped, spaces collapsed, so a recipe item's
@@ -357,8 +376,10 @@ local function RecipeLines(itemID, lines, out)
   if k1 then merge(knownBy[k1]) end
   if k2 then merge(knownBy[k2]) end
   local profName, required = RequiredSkill(lines)
+  local reqs = profName and OtherRequirements(lines) or { other = {} }
   local reachable = NS.Inventory and NS.Inventory.Reachable
-  local knownList, learn, short = {}, {}, {}
+  local knownList, learn, short, low = {}, {}, {}, {}
+  local levelUnknown = false
   for key, c in pairs(Chars()) do
     if key ~= NS.Me and type(c) == "table" and (not reachable or reachable(key, c)) then
       local who = NS.ShortName(key)
@@ -366,8 +387,12 @@ local function RecipeLines(itemID, lines, out)
         knownList[#knownList + 1] = who
       elseif profName then
         local rank = ProfRank(c, profName)
-        if rank and rank >= required then
+        local level = tonumber(c.level)
+        if rank and rank >= required and reqs.level and level and level < reqs.level then
+          low[#low + 1] = who
+        elseif rank and rank >= required then
           learn[#learn + 1] = who
+          if reqs.level and not level then levelUnknown = true end
         elseif rank then
           short[#short + 1] = { name = who, rank = rank }
         end
@@ -376,15 +401,26 @@ local function RecipeLines(itemID, lines, out)
   end
   table.sort(knownList)
   table.sort(learn)
+  table.sort(low)
   table.sort(short, function(a, b)
     if a.rank ~= b.rank then return a.rank > b.rank end
     return a.name < b.name
   end)
   if #knownList > 0 then Line(out, format(L["Known by: %s"], Names(knownList)), GREY) end
   if #learn > 0 then
-    local fmt = NeedsReputation(lines) and L["Can learn: %s (needs reputation)"] or L["Can learn: %s"]
-    Line(out, format(fmt, Names(learn)), GREEN)
+    -- What the saved data can't tell for an alt (reputation, a specialization, a level not yet
+    -- recorded) is named rather than assumed.
+    local needs = {}
+    for _, what in ipairs(reqs.other) do needs[#needs + 1] = what end
+    if reqs.rep then needs[#needs + 1] = L["reputation"] end
+    if levelUnknown then needs[#needs + 1] = format(L["level %d"], reqs.level) end
+    if #needs > 0 then
+      Line(out, format(L["Can learn: %s (needs %s)"], Names(learn), table.concat(needs, ", ")), GREEN)
+    else
+      Line(out, format(L["Can learn: %s"], Names(learn)), GREEN)
+    end
   end
+  if #low > 0 then Line(out, format(L["Needs level %d: %s"], reqs.level, Names(low)), ORANGE) end
   if #short > 0 then
     local parts = {}
     for i, s in ipairs(short) do parts[i] = format("%s (%d/%d)", s.name, s.rank, required) end
@@ -438,6 +474,7 @@ end
 local function MineDirty() usedIn, knownBy, knownByID, queueRows = nil, nil, nil, nil end
 local function QueueDirty() queueRows = nil end
 Tooltips.FormatToPattern = FormatToPattern
+Tooltips.OtherRequirements = OtherRequirements
 
 local hooked = false
 local function Hook()

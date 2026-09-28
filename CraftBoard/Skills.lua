@@ -129,7 +129,12 @@ local function ReadBook()
   -- minute it is a real (and complete) answer, so unlearning the last profession is noticed;
   -- Update's second read a few seconds later still has to agree before anything is dropped.
   if not any then
-    if not (GetTime and loginAt and GetTime() - loginAt > 30) then return nil end
+    if not (GetTime and loginAt and GetTime() - loginAt > 30) then
+      -- Asked again once the half minute is over: a character whose last profession was dropped
+      -- while CraftBoard was off would otherwise keep it (every login reads this early).
+      if Soon and GetTime and loginAt then Soon(31 - (GetTime() - loginAt)) end
+      return nil
+    end
     return out, true
   end
   return out, complete

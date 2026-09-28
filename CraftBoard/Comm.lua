@@ -929,6 +929,28 @@ end
 -- joined yet) keeps it pending and is retried every 15 s for as long as the post would have
 -- lived, so peers never keep a post I already dropped. Distributions turned off are skipped.
 local SendRetract
+
+-- Realm sharing turned off after a post went to the channel: the (hidden) channel is joined just
+-- long enough to retract it there, then left again once no retraction waits for it.
+local retractJoinAt, retractJoined = 0, false
+local function JoinForRetract()
+  if RealmChannelOn() or ResolveChannel() or time() - retractJoinAt < 30 then return end
+  retractJoinAt, retractJoined = time(), true
+  if JoinChannelByName then pcall(JoinChannelByName, CHANNEL_NAME) end
+  C_Timer.After(2, function() if ResolveChannel() then HideChannelFromChat() end end)
+end
+
+local function LeaveAfterRetract()
+  if not retractJoined then return end
+  if RealmChannelOn() then retractJoined = false return end
+  for _, e in pairs(PendingX()) do
+    if type(e) == "table" and type(e.dists) == "table" and e.dists.CHANNEL then return end
+  end
+  retractJoined = false
+  if LeaveChannelByName and ResolveChannel() then pcall(LeaveChannelByName, CHANNEL_NAME) end
+  channelId = nil
+end
+
 local function RetryRetracts()
   pendingXTimer = false
   local now = time()
@@ -943,7 +965,7 @@ end
 
 -- sentTo: where the post went ({ [dist] = true }, saved on it). A retraction goes there even when
 -- sharing on that distribution has been turned off since (the guild can still be written to; the
--- realm channel only while still joined), as well as wherever sharing is on now.
+-- realm channel is joined again for it), as well as wherever sharing is on now.
 function SendRetract(id, dists, since, sentTo)
   sentTo = type(sentTo) == "table" and sentTo or {}
   dists = dists or { GUILD = true, CHANNEL = true }
@@ -954,10 +976,11 @@ function SendRetract(id, dists, since, sentTo)
       wanted = InGuild() and (GuildShareOn() or sentTo.GUILD) and true or false
       reachable = InGuild()
     else
-      -- Sent there once: retracted there too, waiting (like any pending retraction, for the post's
-      -- lifetime) while the channel is left, and going out once it is joined again.
+      -- Sent there once: retracted there too. With sharing off since, the channel is joined
+      -- again for it (and left once the retraction has gone out).
       wanted = (RealmChannelOn() or sentTo.CHANNEL) and true or false
       reachable = ResolveChannel() ~= nil
+      if wanted and not reachable and C_Timer and C_Timer.After then JoinForRetract() end
     end
     if wanted then
       local sent = CanSend() and reachable
@@ -968,7 +991,11 @@ function SendRetract(id, dists, since, sentTo)
       end
     end
   end
-  if not left then return end
+  if not left then
+    -- Give the queued X time to leave before a channel joined only for it is left again.
+    if retractJoined and C_Timer and C_Timer.After then C_Timer.After(10, LeaveAfterRetract) end
+    return
+  end
   PendingX()[id] = { dists = left, t = since or time(), sentTo = sentTo }
   if pendingXTimer or not (C_Timer and C_Timer.After) then return end
   pendingXTimer = true
@@ -1463,6 +1490,8 @@ function commObj:OnCommReceived(prefix, message, distribution, from)
   local kind = message:sub(1, 1)
   local allowed = ALLOWED[kind]
   if not allowed or not allowed[distribution] then return end
+  -- The channel joined only to retract a post there: nothing is read from it.
+  if distribution == "CHANNEL" and not RealmChannelOn() then return end
   -- A recipe list I didn't ask for (a batch answer to other peers) isn't even decoded.
   if kind == "R" and not (queried[full] and time() - queried[full] <= QUERY_TTL) then return end
   if distribution ~= "WHISPER" then
@@ -1531,6 +1560,20 @@ local function Start()
       if InGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then pcall(C_GuildInfo.GuildRoster) end
       SweepDedupe()
     end)
+    -- Nobody says goodbye: a peer not heard from within ONLINE_WINDOW goes offline without a
+    -- message. Checked once a minute, so the request count, badges and Find's order follow.
+    local lastExpiry = time()
+    C_Timer.NewTicker(60, function()
+      local db, now = DB(), time()
+      for _, p in pairs(db and type(db.peers) == "table" and db.peers or {}) do
+        local seen = type(p) == "table" and p.seen
+        if type(seen) == "number" and seen >= lastExpiry - ONLINE_WINDOW and seen < now - ONLINE_WINDOW then
+          FirePeersSoon()
+          break
+        end
+      end
+      lastExpiry = now
+    end)
   end
 end
 
@@ -1589,7 +1632,15 @@ local function OnEnteringWorld(_, isInitialLogin)
   Start()
   UpdateBusy()
   -- Channel joins fail during the first seconds of loading; re-checked on every zone-in.
-  C_Timer.After(5, function() JoinRealmChannel(1) end)
+  C_Timer.After(5, function()
+    JoinRealmChannel(1)
+    -- Still in the channel with sharing off (joined for a retraction before a reload): left
+    -- again once no retraction waits for it.
+    if not RealmChannelOn() and ResolveChannel() then
+      retractJoined = true
+      LeaveAfterRetract()
+    end
+  end)
 end
 
 if NS.Register then
@@ -1614,6 +1665,7 @@ function Comm.SetRealmChannel(on)
   if (db.realmChannel and true or false) ~= (on and true or false) then FirePeersSoon() end
   db.realmChannel = on and true or false
   if on then
+    retractJoined = false
     JoinRealmChannel(1)
   else
     if LeaveChannelByName and ResolveChannel() then pcall(LeaveChannelByName, CHANNEL_NAME) end

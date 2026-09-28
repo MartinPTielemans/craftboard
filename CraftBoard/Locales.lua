@@ -452,9 +452,12 @@ local enUS = {
   "realm channel on",
   -- Tooltips
   "Can learn: %s",
-  "Can learn: %s (needs reputation)",
+  "Can learn: %s (needs %s)",
   "Known by: %s",
+  "Needs level %d: %s",
   "Needs more skill: %s",
+  "level %d",
+  "reputation",
   "Professions: %s",
   -- Onboarding
   "Plan shows your recipes by skill-up color and what to craft next.",

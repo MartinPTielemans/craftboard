@@ -71,7 +71,8 @@ CraftBoard 1.0: from a crafting-order board to a crafting companion for Forever.
 - Queue: shows what is made ("2/5", "made · Bob"); reagent totals and Buy missing count only
   what is still to make and skip crafts whose player brings the reagents.
 - Tooltips: alt counts only on reagents, per alt; recipe tooltips group "Known by", "Can learn"
-  and "Needs more skill"; only characters on your realm and faction count as alts.
+  (naming a specialization, reputation or level it can't check for an alt), "Needs level" and
+  "Needs more skill"; only characters on your realm and faction count as alts.
 - Buy missing reagents: stays clear of the Buyback tab, checks money and bag space, and reports
   what actually arrived.
 - The one-click enchant button works with the Enchanting window open (crafting through the API)

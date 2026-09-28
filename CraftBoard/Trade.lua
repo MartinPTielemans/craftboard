@@ -118,6 +118,15 @@ local function PeerMakes(full, item)
   return false
 end
 
+-- I have a request of my own on the board for item.
+local function IAsked(item)
+  local posts = type(CraftBoardDB) == "table" and type(CraftBoardDB.posts) == "table" and CraftBoardDB.posts or {}
+  for _, p in pairs(posts) do
+    if type(p) == "table" and p.mine and p.item == item then return true end
+  end
+  return false
+end
+
 -- The trade partner is one of my own characters.
 local function MyCharacter(full)
   local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
@@ -168,8 +177,10 @@ local function Completed()
     local id = MyEnchant(s.enchantGiven, true) or pendingEnchant or MyEnchant(s.enchantGiven)
     if id then Deliver(who, nil, id, 1) end
   end
+  -- Getting an item counts as them crafting for me only when I asked for it on the board and
+  -- they make it (not any bar or potion a crafter hands over).
   for _, g in ipairs(s.got) do
-    if PeerMakes(who, g.item) then forMe = true end
+    if IAsked(g.item) and PeerMakes(who, g.item) then forMe = true end
   end
   if not (byMe or forMe) then return end
   local db = Crafted()
