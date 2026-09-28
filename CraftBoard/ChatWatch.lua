@@ -77,6 +77,10 @@ local MATS = { " have mats ", " have the mats ", " have all mats ", " have all t
 -- The player no longer needs what they asked for.
 local DONE = { " nvm ", " nevermind ", " never mind ", " found one ", " found someone ", " got one ", " got it ",
   " no longer " }
+-- Cancellations that contain an ask marker themselves ("I no longer need an enchanter"): they end
+-- the ask wherever they stand in the line.
+local CANCEL = { " no longer need ", " dont need ", " don t need ", " do not need ", " not needed ", " no need for ",
+  " no longer looking ", " not looking for " }
 
 -- Links players can paste for something craftable (not quests, achievements, players...).
 local LINK_TYPES = { item = true, enchant = true, spell = true, trade = true }
@@ -551,7 +555,7 @@ function ChatWatch.Add(text, sender, channel, guild)
   -- doesn't make a new row either. A line about reagents ("I no longer have mats") isn't done:
   -- it only changes whether they bring them (below).
   local saidMats = Mats(s)
-  if Has(s, DONE) and not saidMats and (not hit or Opens(s, DONE)) then
+  if not saidMats and (Has(s, CANCEL) or (Has(s, DONE) and (not hit or Opens(s, DONE)))) then
     if prev then
       seen[from] = nil
       FireSoon()

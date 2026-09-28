@@ -42,7 +42,7 @@ CurseForge app and WowUp under the Forever game version.
   CraftBoard privately counts how often you've crafted for each other.
 - **Cooldowns.** Transmute and Mooncloth cooldowns show next to crafters; `/cb cd` lists yours.
 - **Busy mode.** Mark yourself busy and other users see you greyed out and can't whisper you from
-  the board. It turns on by itself in dungeons, raids and combat.
+  the board. It turns on by itself in dungeons and raids.
 - **Advertise.** One button posts a single plain line to Trade for players without the addon, at
   most once a minute.
 - **In your language.** English, German, French and Spanish.

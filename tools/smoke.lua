@@ -358,6 +358,17 @@ do
   me.cd = saved
 end
 
+-- "I no longer need an enchanter" ends the ask, though "need an" is an ask marker.
+do
+  local function row()
+    for _, e in ipairs(CW.Seen()) do if e.from == "Cancel Person-Forever" then return e end end
+  end
+  CW.Add("LF enchanter for bracer", "Cancel Person", "Trade")
+  check(row() ~= nil, "the ask was listed")
+  CW.Add("I no longer need an enchanter", "Cancel Person", "Trade")
+  check(row() == nil, "a first-person cancellation removes the ask")
+end
+
 -- Quantities up to what one request can hold survive detection.
 eq((CW.Detect("LF 300x |Hitem:2304::|h[Light Armor Kit]|h") or {}).qty, 300, "a 300x ask keeps its quantity")
 

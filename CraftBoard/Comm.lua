@@ -798,7 +798,10 @@ function SendMyPosts(dist)
   for id, p in pairs(db.posts) do
     if type(p) == "table" and p.from == me and type(p.t) == "number" and now - p.t < POST_TTL then
       local target = dist == "CHANNEL" and channelId or nil
-      Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa }, dist, target, "BULK")
+      if Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa }, dist, target, "BULK") then
+        p.sentTo = p.sentTo or {}
+        p.sentTo[dist] = true
+      end
     end
   end
   -- My retractions still within the post lifetime all stay; each hello repeats the newest half
@@ -902,7 +905,11 @@ function SendPost(id)
     if wanted then
       local sent = CanSend() and DistAvailable(dist) and Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty,
         note = p.note, t = p.t, pa = p.pa }, dist, dist == "CHANNEL" and channelId or nil)
-      if not sent then
+      if sent then
+        -- Where it went: its retraction goes there too, whatever the sharing settings are by then.
+        p.sentTo = p.sentTo or {}
+        p.sentTo[dist] = true
+      else
         left = left or {}
         left[dist] = true
       end
@@ -929,18 +936,29 @@ local function RetryRetracts()
   for pid, e in pairs(pending) do
     pending[pid] = nil
     if type(e) == "table" and type(e.dists) == "table" and type(e.t) == "number" and now - e.t < POST_TTL then
-      SendRetract(pid, e.dists, e.t)
+      SendRetract(pid, e.dists, e.t, e.sentTo)
     end
   end
 end
 
-function SendRetract(id, dists, since)
+-- sentTo: where the post went ({ [dist] = true }, saved on it). A retraction goes there even when
+-- sharing on that distribution has been turned off since (the guild can still be written to; the
+-- realm channel only while still joined), as well as wherever sharing is on now.
+function SendRetract(id, dists, since, sentTo)
+  sentTo = type(sentTo) == "table" and sentTo or {}
   dists = dists or { GUILD = true, CHANNEL = true }
   local left
   for dist in pairs(dists) do
-    local wanted = (dist == "GUILD" and InGuild() and GuildShareOn()) or (dist == "CHANNEL" and RealmChannelOn())
+    local wanted, reachable
+    if dist == "GUILD" then
+      wanted = InGuild() and (GuildShareOn() or sentTo.GUILD) and true or false
+      reachable = InGuild()
+    else
+      wanted = (RealmChannelOn() or (sentTo.CHANNEL and ResolveChannel() ~= nil)) and true or false
+      reachable = ResolveChannel() ~= nil
+    end
     if wanted then
-      local sent = CanSend() and DistAvailable(dist)
+      local sent = CanSend() and reachable
         and Send("X", { v = VERSION, id = id }, dist, dist == "CHANNEL" and channelId or nil)
       if not sent then
         left = left or {}
@@ -949,7 +967,7 @@ function SendRetract(id, dists, since)
     end
   end
   if not left then return end
-  PendingX()[id] = { dists = left, t = since or time() }
+  PendingX()[id] = { dists = left, t = since or time(), sentTo = sentTo }
   if pendingXTimer or not (C_Timer and C_Timer.After) then return end
   pendingXTimer = true
   C_Timer.After(15, RetryRetracts)
@@ -958,12 +976,12 @@ end
 -- Retracting one of my posts also retracts the linked orders posted for it.
 -- One of my posts is retracted: tombstone it, remember it for repeating with hellos and send
 -- the X.
-local function RetractMine(id)
+local function RetractMine(id, sentTo)
   local now = time()
   Retracted()[id] = now
   -- Kept for the post lifetime (PrunePosts drops expired ones); SendMyPosts takes turns with them.
   MyRetracted()[id] = now
-  SendRetract(id)
+  SendRetract(id, nil, nil, sentTo)
 end
 
 -- The whole chain of linked orders under a retracted request goes with it, however deep (a linked
@@ -977,7 +995,7 @@ local function DropLinked(id, seen)
   for cid, c in pairs(db.posts) do
     if type(c) == "table" and c.pa == id and not seen[cid] then
       db.posts[cid] = nil
-      if c.from == me then RetractMine(cid) else Retracted()[cid] = Retracted()[cid] or time() end
+      if c.from == me then RetractMine(cid, c.sentTo) else Retracted()[cid] = Retracted()[cid] or time() end
       DropLinked(cid, seen)
     end
   end
@@ -990,7 +1008,7 @@ function Comm.Retract(id)
   if not p then return false end
   db.posts[id] = nil
   if p.from == me then
-    RetractMine(id)
+    RetractMine(id, p.sentTo)
     -- (I never receive my own X, so nothing else would drop its linked orders on this client.)
     DropLinked(id)
   end
