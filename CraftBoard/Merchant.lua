@@ -109,12 +109,18 @@ local function BagRoom(want)
   local slotsFn = (C_Container and C_Container.GetContainerNumSlots) or GetContainerNumSlots
   local infoFn = C_Container and C_Container.GetContainerItemInfo
   local free, room, known = 0, {}, false
-  for bag = 0, tonumber(NUM_BAG_SLOTS) or 4 do
+  -- The reagent bag (mainline-type clients) holds exactly what this buys: its free slots and
+  -- partial stacks count as well.
+  local bags = {}
+  for bag = 0, tonumber(NUM_BAG_SLOTS) or 4 do bags[#bags + 1] = bag end
+  local reagentBag = Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag
+  if type(reagentBag) == "number" and reagentBag > (tonumber(NUM_BAG_SLOTS) or 4) then bags[#bags + 1] = reagentBag end
+  for _, bag in ipairs(bags) do
     local ok, n, family = pcall(freeFn, bag)
     n = ok and tonumber(n)
     if n then
       known = true
-      if (tonumber(family) or 0) == 0 then free = free + n end
+      if (tonumber(family) or 0) == 0 or bag == reagentBag then free = free + n end
     end
     local ok2, slots = false, nil
     if slotsFn then ok2, slots = pcall(slotsFn, bag) end

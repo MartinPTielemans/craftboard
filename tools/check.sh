@@ -22,7 +22,8 @@ if command -v luajit >/dev/null 2>&1; then
     grep -oE "^local (function )?[A-Za-z_][A-Za-z_0-9]*(, *[A-Za-z_][A-Za-z_0-9]*)*" "$f" \
       | sed -E 's/^local (function )?//' | tr ',' '\n' | tr -d ' ' | sort -u > "$l"
     for name in $(comm -12 "$g" "$l"); do
-      grep -qE "^local [^=]*[[:<:]]$name[[:>:]][^=]*=.*[[:<:]]$name[[:>:]]" "$f" && continue
+      b='[^A-Za-z0-9_]'
+      grep -qE "^local ([^=]*$b)?$name($b[^=]*)?=(.*$b)?$name($b|\$)" "$f" && continue
       echo "$f: '$name' is used before its local is declared"; fwd=1; fail=1
     done
   done

@@ -358,6 +358,17 @@ do
   me.cd = saved
 end
 
+-- Recipe tooltips: Blizzard's "Requires %s (%d)" becomes a pattern (a "^" with a start offset
+-- anchors at that offset in Lua 5.1, which the parser relies on) that reads profession and skill.
+do
+  local pat, order = NS.Tooltips.FormatToPattern("Requires %s (%d)")
+  check(type(pat) == "string", "FormatToPattern handles a literal prefix")
+  local a, b = ("Requires Leatherworking (150)"):match(pat or "^$")
+  check(a == "Leatherworking" and b == "150" and order and order[1] == 1, "the pattern reads profession and skill")
+  local pat2 = NS.Tooltips.FormatToPattern("Benötigt %2$s (%1$d)")
+  check(type(pat2) == "string", "positional placeholders")
+end
+
 -- UI walk: build the window, open every tab, and select every row's card (requests of each
 -- kind, queue entries and the queue total, Plan and Find recipes), which runs the list, card,
 -- button and badge code with the data above. Frames draw nothing; this catches runtime errors.

@@ -1080,7 +1080,20 @@ function handlers.H(full, data)
   local h = CleanString(data.h, 64)
   if not h or type(data.n) ~= "number" then return end
   local busy = data.b == true
-  if Duplicate(full, "H", h .. (busy and ":b" or "")) then return end
+  -- The same hello through guild and channel is one; a quick hello right after with other
+  -- cooldowns (a cast) is not: its cooldown state is part of the key.
+  local cdKey = ""
+  if type(data.cd) == "table" then
+    local now, ids = time(), {}
+    for id, sec in pairs(data.cd) do
+      if type(id) == "number" and type(sec) == "number" then
+        ids[#ids + 1] = id .. (sec == 0 and "r" or (":" .. floor((now + sec) / 900)))
+      end
+    end
+    sort(ids)
+    cdKey = table.concat(ids, ",")
+  end
+  if Duplicate(full, "H", h .. (busy and ":b" or "") .. "|" .. cdKey) then return end
   local p = Touch(full)
   if not p then return end
   if type(data.cd) == "table" then
@@ -1234,7 +1247,8 @@ function handlers.P(full, data)
     if existing.from ~= full then return end
     return -- already known; keep original local timestamp so expiry stays anchored
   end
-  -- A linked order for a request that was retracted.
+  -- A request that was retracted (its X can overtake a late copy of it), or a linked order for one.
+  if Retracted()[id] then return end
   local pa = CleanString(data.pa, 96)
   if pa and Retracted()[pa] then return end
   local count, total = 0, 0

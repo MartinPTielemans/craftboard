@@ -342,11 +342,12 @@ local function ReadTrainer()
   for key, e in pairs(c.profs) do
     if type(e) == "table" and type(e[1]) == "string" and not e.gone then byName[e[1]] = key end
   end
-  local found = {}
+  local found, listed = {}, {}
   for i = 1, math.min(count, 500) do
     local okI, _, _, category = pcall(GetTrainerServiceInfo, i)
     local okR, skill, need, hasReq = pcall(GetTrainerServiceSkillReq, i)
     local key = okI and okR and type(skill) == "string" and not IsSecret(skill) and byName[skill]
+    if key then listed[key] = true end
     if key and (category == "available" or category == "unavailable") then
       local f = found[key] or { available = 0 }
       found[key] = f
@@ -358,6 +359,11 @@ local function ReadTrainer()
         f.next = need
       end
     end
+  end
+  -- A profession this trainer teaches with every service already learned: nothing is waiting,
+  -- so its old snapshot (and "new recipes" reminder) goes.
+  for key in pairs(listed) do
+    if not found[key] then found[key] = { available = 0 } end
   end
   if next(found) == nil then return end
   c.trainer = type(c.trainer) == "table" and c.trainer or {}
