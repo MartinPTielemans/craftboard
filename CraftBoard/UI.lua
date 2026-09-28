@@ -2391,6 +2391,12 @@ local function BuildFind(p)
     local qty = ReadQty(find.qty)
     -- The request and its linked orders go up together or not at all.
     local linked = find.linked or {}
+    for _, n in ipairs(linked) do
+      if n.qty > 1000 then
+        NS.Print(format(L["%s would need %d; one request can ask for 1000 at most. Post fewer."], ItemName(n.itemID), n.qty))
+        return
+      end
+    end
     local slots = NS.Comm.OpenSlots and NS.Comm.OpenSlots()
     if slots and slots < 1 + #linked then
       NS.Print(format(L["That takes %d open requests and you have room for %d. Retract one first."], 1 + #linked, slots))
@@ -2838,7 +2844,7 @@ function R.QueueTarget(e)
 end
 
 function R.CanQueue(e)
-  return R.QueueTarget(e) ~= nil and not (NS.Queue and NS.Queue.Has(e.id))
+  return R.QueueTarget(e) ~= nil and NS.Queue ~= nil and not NS.Queue.Has(e.id) and not NS.Queue.IsFull()
 end
 
 function R.AddToQueue(e)
@@ -2910,6 +2916,12 @@ end
 function R.PostLinked(e)
   if not (e and e.post and NS.Comm and NS.Comm.PostRequest) then return end
   local needs = reqs.linkNeeds or {}
+  for _, n in ipairs(needs) do
+    if n.qty > 1000 then
+      NS.Print(format(L["%s would need %d; one request can ask for 1000 at most. Post fewer."], ItemName(n.itemID), n.qty))
+      return
+    end
+  end
   local slots = NS.Comm.OpenSlots and NS.Comm.OpenSlots()
   if slots and slots < #needs then
     NS.Print(format(L["That takes %d open requests and you have room for %d. Retract one first."], #needs, slots))
@@ -2940,7 +2952,8 @@ function R.Actions(e)
     if e.queue.who then add(format(L["Whisper %s"], Short(e.queue.who)), R.WhisperQueue, true) end
     add(L["Done"], R.Done)
   elseif e.mine then
-    add(L["Retract"], R.Retract)
+    -- An alt's request can only be retracted on that alt (its author sends the retraction).
+    if not e.altPost then add(L["Retract"], R.Retract) end
   elseif e.post then
     if e.can and e.online then add(L["Offer"], R.Offer, true) end
     add(format(L["Whisper %s"], Short(e.post.from)), R.WhisperPost, true)
@@ -3193,7 +3206,7 @@ function R.Buttons(e)
   if (post or chat) and (target or (NS.Queue and NS.Queue.Has(e.id))) then
     local queued = NS.Queue and NS.Queue.Has(e.id)
     reqs.queueBtn:SetText(queued and L["Queued"] or L["Queue"])
-    reqs.queueBtn:SetEnabled(not queued)
+    reqs.queueBtn:SetEnabled(not queued and not (NS.Queue and NS.Queue.IsFull()))
     FitButton(reqs.queueBtn, 70)
     place(reqs.queueBtn)
   end
@@ -3353,7 +3366,8 @@ function R.QueueDetail(e)
   local sub = x.who and format(L["for %s"], Short(x.who)) or L["Planned"]
   FillHeader(reqs.header, x.recipeID, x.item, e.name, sub .. DOT .. format(L["queued %s"], R.AgoText(x.t)))
   SetDetailBackground(reqs, rec and rec.p)
-  local total = rec and NS.Inventory.CraftsFor(rec, x.qty) or 0
+  local made, total = 0, 0
+  if rec then made, total = NS.Queue.Progress(x, rec) end
   local left = rec and NS.Queue.CraftsLeft(x, rec) or 0
   local lines = {}
   if rec and rec.e then
@@ -3361,8 +3375,8 @@ function R.QueueDetail(e)
       or L["Enchant from the Enchanting window: Create asks for the item."]
   elseif left == 0 then
     lines[1] = GREEN .. (x.who and format(L["Made: hand it to %s in a trade."], Short(x.who)) or L["All made."]) .. "|r"
-  elseif (x.made or 0) > 0 then
-    lines[1] = format(L["Made %d of %d."], x.made, total)
+  elseif made > 0 then
+    lines[1] = format(L["Made %d of %d."], made, total)
   end
   if x.mats then lines[#lines + 1] = L["They bring the reagents."] end
   lines[#lines + 1] = x.who and NS.Trade and NS.Trade.CraftedText(x.who) or nil
@@ -3543,6 +3557,8 @@ function BuildRequests(p)
     local e = reqs.entry
     if NS.Queue and e and NS.Queue.Has(e.id) then
       TextTooltip(self, L["Queued"], L["This request is in your queue."])
+    elseif NS.Queue and NS.Queue.IsFull() then
+      TextTooltip(self, L["Queue"], L["Your queue is full. Finish or remove a craft first."])
     else
       TextTooltip(self, L["Queue"], L["Adds the craft to your queue, where the reagents of everything queued are summed up."])
     end
@@ -3801,6 +3817,11 @@ local function Annotate()
         end
       end
       e.can = e.ready or e.readyAlt or false
+      -- Asked again with another quantity ("LF 5x" after "LF 1x"): the queued craft follows.
+      local x = Q and s.qty and Q.Get(e.id)
+      if x and x.who and not x.madeItems and x.qty ~= Q.ClampQty(x.recipeID, s.qty) then
+        x.qty = Q.ClampQty(x.recipeID, s.qty)
+      end
       -- The count leaves out profession-only asks ("LF ench"): only asks for a recipe I know.
       e.counts = e.can and s.recipeID ~= nil and not e.dim
       add(e)
@@ -3811,14 +3832,15 @@ local function Annotate()
   for _, x in ipairs(Q and Q.Entries() or {}) do
     local rec = mineRecipes[x.recipeID]
     local name = (x.item and ItemName(x.item)) or (rec and rec.n) or format(L["Recipe %d"], x.recipeID)
-    local total = rec and NS.Inventory.CraftsFor(rec, x.qty) or 0
+    local made, total = 0, 0
+    if rec then made, total = Q.Progress(x, rec) end
     local left = rec and Q.CraftsLeft(x, rec) or 0
     crafts = crafts + left
     local status
     if left == 0 and total > 0 then
       status = L["made"] .. (x.who and (DOT .. R.First(x.who)) or "")
-    elseif (x.made or 0) > 0 then
-      status = format(L["%d/%d"], x.made, total) .. (x.who and (DOT .. R.First(x.who)) or "")
+    elseif made > 0 then
+      status = format(L["%d/%d"], made, total) .. (x.who and (DOT .. R.First(x.who)) or "")
     else
       status = x.who and R.First(x.who) or L["planned"]
     end

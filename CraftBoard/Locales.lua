@@ -465,6 +465,9 @@ local enUS = {
   "Queue crafts, then Craft next makes them. Buy missing reagents at vendors.",
   "Skill up smarter",
 
+  -- Review fixes
+  "%s would need %d; one request can ask for 1000 at most. Post fewer.",
+
   -- Launcher: minimap button, key binding
   "CraftBoard",
   "Toggle CraftBoard window",

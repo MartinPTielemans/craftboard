@@ -118,12 +118,10 @@ function Queue.Delivered(who, item, recipeID, count)
       -- A delivery bigger than this row carries over to their next row for the same craft.
       local take = math.min(count, x.qty)
       x.qty, count, changed = x.qty - take, count - take, true
-      -- What was handed over was made already: those crafts no longer count as made-and-waiting.
-      if x.made then
-        local rec = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine()[x.recipeID]
-        local crafts = NS.Inventory and NS.Inventory.CraftsFor and NS.Inventory.CraftsFor(rec, take) or take
-        x.made = math.max(0, x.made - crafts)
-      end
+      -- What was handed over was made already: it no longer counts as made-and-waiting (by the
+      -- item, so handing over part of a 200-arrow batch keeps the rest of it made).
+      local made = Queue.MadeItems(x)
+      if made > 0 then x.madeItems, x.made = math.max(0, made - take), nil end
       if x.qty <= 0 then table.remove(q, i) else i = i + 1 end
     else
       i = i + 1
@@ -132,11 +130,43 @@ function Queue.Delivered(who, item, recipeID, count)
   if changed then NS.Fire("QUEUE_UPDATED") end
 end
 
--- Crafts an entry still needs: its item count over the recipe's yield, minus crafts already made
--- for it (made counts crafts; an entry for someone stays until the trade hands it over).
+-- Items already made for an entry (madeItems; older saves counted crafts in `made`).
+function Queue.MadeItems(x)
+  if type(x.madeItems) == "number" then return x.madeItems end
+  if type(x.made) == "number" and x.made > 0 then
+    local rec = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine()[x.recipeID]
+    return x.made * math.max(1, type(rec) == "table" and rec.y or 1)
+  end
+  return 0
+end
+
+-- Crafts an entry still needs: the items not made yet, over the recipe's yield. An entry for
+-- someone stays until the trade hands it over.
 function Queue.CraftsLeft(x, rec)
-  local total = NS.Inventory and NS.Inventory.CraftsFor and NS.Inventory.CraftsFor(rec, x.qty) or x.qty
-  return math.max(0, total - (x.made or 0))
+  local left = math.max(0, (x.qty or 0) - Queue.MadeItems(x))
+  if left == 0 then return 0 end
+  return NS.Inventory and NS.Inventory.CraftsFor and NS.Inventory.CraftsFor(rec, left) or left
+end
+
+-- Progress for the UI, in crafts: made, total.
+function Queue.Progress(x, rec)
+  local y = math.max(1, type(rec) == "table" and rec.y or 1)
+  local total = math.ceil((x.qty or 0) / y)
+  return math.min(total, math.ceil(Queue.MadeItems(x) / y)), total
+end
+
+-- The queue has room for another entry.
+function Queue.IsFull()
+  local q = List()
+  return q ~= nil and #q >= MAX
+end
+
+-- The entry queued from a request (by its list id), or nil.
+function Queue.Get(src)
+  for _, x in ipairs(Queue.Entries()) do
+    if x.src == src then return x end
+  end
+  return nil
 end
 
 -- One craft of recipeID was made: it goes to the oldest entry still needing it. Entries for
@@ -148,7 +178,7 @@ function Queue.Crafted(recipeID, rec, plannedOnly)
   if not q then return end
   for i, x in ipairs(q) do
     if x.recipeID == recipeID and Queue.CraftsLeft(x, rec) > 0 and not (plannedOnly and x.who) then
-      x.made = (x.made or 0) + 1
+      x.madeItems, x.made = Queue.MadeItems(x) + math.max(1, type(rec) == "table" and rec.y or 1), nil
       if not x.who and Queue.CraftsLeft(x, rec) == 0 then table.remove(q, i) end
       NS.Fire("QUEUE_UPDATED")
       return

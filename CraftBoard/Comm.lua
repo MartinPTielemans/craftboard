@@ -80,6 +80,7 @@ local rosterCache, rosterAt = nil, 0
 local started = false
 local busyNow = false     -- effective busy (manual, or auto in a dungeon / in combat)
 local sentBusy = {}       -- [dist] = busy flag carried by the last hello sent there
+local sentCd = {}         -- [dist] = cooldown signature (CooldownSig) of the last hello sent there
 local busyPending = false -- a busy hello is scheduled
 local loginHello = {}     -- [dist] = true once the login hello (l=true) went out there (or after a /reload)
 local backAlerted = {}    -- [peer] = time of the last back-online notice
@@ -406,18 +407,38 @@ end
 
 local SendMyPosts -- forward
 
--- Announce a busy change on every distribution whose last hello carried the other state.
-local function BusyFlush()
+-- My crafting cooldowns as the hello carries them, reduced to what peers act on: ready or not,
+-- and when it will be (to the quarter hour). A cast or a newly tracked cooldown changes it; the
+-- clock running down doesn't (peers count that down themselves).
+local function CooldownSig()
+  local cd = NS.Cooldowns and NS.Cooldowns.ForHello and NS.Cooldowns.ForHello(MAX_CD)
+  if type(cd) ~= "table" then return "" end
+  local ids, now = {}, time()
+  for id in pairs(cd) do ids[#ids + 1] = id end
+  sort(ids)
+  for i, id in ipairs(ids) do
+    local sec = cd[id]
+    ids[i] = id .. (sec == 0 and "r" or (":" .. floor((now + sec) / 900)))
+  end
+  return table.concat(ids, ",")
+end
+
+-- Announce a busy or cooldown change on every distribution whose last hello carried the other
+-- state (a quick hello: see SendHello's busy argument).
+local function StateFlush()
   busyPending = false
+  local sig = CooldownSig()
   for _, dist in ipairs({ "GUILD", "CHANNEL" }) do
-    if DistAvailable(dist) and (sentBusy[dist] or false) ~= busyNow then SendHello(dist, true) end
+    if DistAvailable(dist) and ((sentBusy[dist] or false) ~= busyNow or (sentCd[dist] or "") ~= sig) then
+      SendHello(dist, true)
+    end
   end
 end
 
-local function ScheduleBusyFlush(delay)
+local function ScheduleStateFlush(delay)
   if busyPending or not (C_Timer and C_Timer.After) then return end
   busyPending = true
-  C_Timer.After(delay, BusyFlush)
+  C_Timer.After(delay, StateFlush)
 end
 
 -- Hello per distribution, rate-limited per spec (<= 1 per ~10 min per distribution).
@@ -440,7 +461,7 @@ function SendHello(dist, busy)
       wait = 30
     end
     if wait > 0 then
-      ScheduleBusyFlush(wait)
+      ScheduleStateFlush(wait)
       return
     end
   elseif last and now - last < HELLO_MIN_GAP then
@@ -474,6 +495,7 @@ function SendHello(dist, busy)
     lastHelloAt = now
     lastHelloHash = h
     sentBusy[dist] = busyNow
+    sentCd[dist] = CooldownSig()
     loginHello[dist] = true
     -- A busy-only hello doesn't repeat the posts, unless it is the first hello there.
     if not busy or not last then SendMyPosts(dist) end
@@ -834,6 +856,39 @@ function SendRetract(id, dists, since)
 end
 
 -- Retracting one of my posts also retracts the linked orders posted for it.
+-- One of my posts is retracted: tombstone it, remember it for repeating with hellos (the newest
+-- few; older ones have reached most peers) and send the X.
+local function RetractMine(id)
+  local now = time()
+  Retracted()[id] = now
+  local mineX = MyRetracted()
+  mineX[id] = now
+  local n, oldest, oldT = 0, nil, nil
+  for rid, t in pairs(mineX) do
+    n = n + 1
+    if not oldT or t < oldT then oldest, oldT = rid, t end
+  end
+  if n > MAX_REPEATED_X then mineX[oldest] = nil end
+  SendRetract(id)
+end
+
+-- The whole chain of linked orders under a retracted request goes with it, however deep (a linked
+-- order can have linked orders of its own): mine are retracted for everyone, other players' are
+-- dropped here and tombstoned, so their late copies are dropped on arrival too.
+local function DropLinked(id, seen)
+  local db, me = DB(), MyKey()
+  if not db then return end
+  seen = seen or {}
+  seen[id] = true
+  for cid, c in pairs(db.posts) do
+    if type(c) == "table" and c.pa == id and not seen[cid] then
+      db.posts[cid] = nil
+      if c.from == me then RetractMine(cid) else Retracted()[cid] = Retracted()[cid] or time() end
+      DropLinked(cid, seen)
+    end
+  end
+end
+
 function Comm.Retract(id)
   local db, me = DB(), MyKey()
   if not (db and type(id) == "string") then return false end
@@ -841,25 +896,9 @@ function Comm.Retract(id)
   if not p then return false end
   db.posts[id] = nil
   if p.from == me then
-    Retracted()[id] = time()
-    local mineX = MyRetracted()
-    mineX[id] = time()
-    -- Repeated with every hello, so keep the newest few (older ones have reached most peers).
-    local n, oldest, oldT = 0, nil, nil
-    for rid, t in pairs(mineX) do
-      n = n + 1
-      if not oldT or t < oldT then oldest, oldT = rid, t end
-    end
-    if n > MAX_REPEATED_X then mineX[oldest] = nil end
-    SendRetract(id)
-    -- Its linked orders go too: mine are retracted for everyone; other players' are dropped
-    -- here (I never receive my own X, so nothing else would drop them on this client).
-    for cid, c in pairs(db.posts) do
-      if type(c) == "table" and c.pa == id then
-        db.posts[cid] = nil
-        if c.from == me then SendRetract(cid) end
-      end
-    end
+    RetractMine(id)
+    -- (I never receive my own X, so nothing else would drop its linked orders on this client.)
+    DropLinked(id)
   end
   Fire("POSTS_UPDATED")
   return true
@@ -1244,14 +1283,7 @@ function handlers.X(full, data)
       if not any then return end
     end
     Retracted()[id] = Retracted()[id] or time()
-    -- Its linked orders go with it: mine are retracted for everyone; other players' are dropped
-    -- here (their authors retract them too, or, if offline now, get them dropped on arrival).
-    local me = MyKey()
-    for cid, c in pairs(db.posts) do
-      if type(c) == "table" and c.pa == id then
-        if c.from == me then Comm.Retract(cid) else db.posts[cid] = nil end
-      end
-    end
+    DropLinked(id)
     Fire("POSTS_UPDATED")
   end
 end
@@ -1321,6 +1353,9 @@ local function Start()
   end
   if NS.RegisterCallback then
     pcall(NS.RegisterCallback, Comm, "RECIPES_UPDATED", OnRecipesUpdated)
+    -- A cast of a cooldown craft (or one newly tracked) reaches peers within seconds, not with the
+    -- next periodic hello: they would otherwise see it ready for up to ten minutes.
+    pcall(NS.RegisterCallback, Comm, "COOLDOWNS_UPDATED", function() ScheduleStateFlush(BUSY_DEBOUNCE) end)
   end
   InstallChatFilter()
   PrunePeers()
@@ -1382,7 +1417,7 @@ local function UpdateBusy(notify)
   local b = ComputeBusy()
   local changed = b ~= busyNow
   busyNow = b
-  if changed and started then ScheduleBusyFlush(BUSY_DEBOUNCE) end
+  if changed and started then ScheduleStateFlush(BUSY_DEBOUNCE) end
   if changed or notify then Fire("BUSY_UPDATED") end
 end
 

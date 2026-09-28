@@ -209,9 +209,11 @@ end
 -- For the hello: { [recipeID] = seconds until ready } for the current character, at most n
 -- groups: every recipe of a group goes out (peers show each transmute's state), but a group
 -- counts once, so shared transmutes don't crowd out other cooldowns.
+-- An empty table (not nil) when there is nothing to report, so peers clear what they had.
 function Cooldowns.ForHello(n)
   local c = MyChar()
-  if not (c and type(c.cd) == "table") then return nil end
+  if not c then return nil end
+  if type(c.cd) ~= "table" then return {} end
   local now, list = time(), {}
   for id, at in pairs(c.cd) do
     if type(id) == "number" and type(at) == "number" then
@@ -230,7 +232,7 @@ function Cooldowns.ForHello(n)
       count = count + 1
     end
   end
-  return count > 0 and out or nil
+  return out
 end
 
 -- Seconds until the crafter's cooldown for recipeID is ready (0 = ready), or nil when unknown

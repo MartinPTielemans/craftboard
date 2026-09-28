@@ -334,6 +334,30 @@ runTimers()
 eq(NS.L["Find"] ~= nil, true, "locale table")
 
 
+-- Review fixes: a partial delivery of a multi-item batch keeps the rest made; retracting a
+-- request drops its linked orders however deep; an empty cooldown list still goes out.
+do
+  local batch = { p = 202, o = 998, y = 200, r = { { 2318, 1 } } }
+  me.recipes[9901] = batch
+  local x = Q.Add({ recipeID = 9901, item = 998, qty = 250, who = "Bob-Forever", src = "batch" })
+  Q.Crafted(9901, batch); Q.Crafted(9901, batch)
+  Q.Delivered("Bob-Forever", 998, nil, 1)
+  eq(Q.CraftsLeft(x, batch), 0, "partial delivery keeps the rest of the batch made")
+  Q.Remove(x.id)
+  me.recipes[9901] = nil
+  local mine = NS.Me
+  db.posts["root"] = { id = "root", from = mine, item = 2304, qty = 1, t = time() }
+  db.posts["child"] = { id = "child", from = "Carl-Forever", item = 5, qty = 1, t = time(), pa = "root" }
+  db.posts["grandchild"] = { id = "grandchild", from = "Dora-Forever", item = 6, qty = 1, t = time(), pa = "child" }
+  NS.Comm.Retract("root")
+  check(db.posts["child"] == nil and db.posts["grandchild"] == nil, "retract drops the whole chain of linked orders")
+  local saved = me.cd
+  me.cd = nil
+  local h2 = NS.Cooldowns.ForHello(16)
+  check(type(h2) == "table" and next(h2) == nil, "no cooldowns: an empty list goes out, so peers clear theirs")
+  me.cd = saved
+end
+
 -- UI walk: build the window, open every tab, and select every row's card (requests of each
 -- kind, queue entries and the queue total, Plan and Find recipes), which runs the list, card,
 -- button and badge code with the data above. Frames draw nothing; this catches runtime errors.

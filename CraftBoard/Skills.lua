@@ -98,6 +98,9 @@ end
 -- client can't tell (no API, or nothing returned at all). Second value: every slot GetProfessions
 -- returned was read (the list can be trusted to be complete). GetProfessions' first two slots
 -- are the primary professions.
+local loginAt                    -- GetTime() at PLAYER_LOGIN
+NS.Register("PLAYER_LOGIN", function() loginAt = GetTime and GetTime() or nil end)
+
 local function ReadBook()
   if not (GetProfessions and GetProfessionInfo) then return nil end
   local ok, a, b, c, d, e, f = pcall(GetProfessions)
@@ -122,7 +125,13 @@ local function ReadBook()
       complete = false
     end
   end
-  if not any then return nil end
+  -- No slot at all: nothing learned, or a book still loading at login. Past the first half
+  -- minute it is a real (and complete) answer, so unlearning the last profession is noticed;
+  -- Update's second read a few seconds later still has to agree before anything is dropped.
+  if not any then
+    if not (GetTime and loginAt and GetTime() - loginAt > 30) then return nil end
+    return out, true
+  end
   return out, complete
 end
 

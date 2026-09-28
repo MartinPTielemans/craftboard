@@ -472,3 +472,4 @@ L["Open CraftBoard any time: its tab in the Professions window, the minimap butt
 L["Queue and craft"] = "Vormerken und herstellen"
 L["Queue crafts, then Craft next makes them. Buy missing reagents at vendors."] = "Merke Herstellungen vor, dann stellt \"Nächstes herstellen\" sie her. Fehlende Reagenzien kaufst du bei Händlern."
 L["Skill up smarter"] = "Berufe klüger steigern"
+L["%s would need %d; one request can ask for 1000 at most. Post fewer."] = "%s bräuchte %d; eine Anfrage kann höchstens 1000 anfordern. Fordere weniger an."
