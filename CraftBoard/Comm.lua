@@ -492,7 +492,8 @@ function SendHello(dist, busy)
   -- n must match the count part of h ("count:poly") so peers' empty-book shortcut is right.
   local n = tonumber(h:match("^(%d+):")) or CountTable(MyRecipes())
   local payload = { v = VERSION, profs = MyProfs(), n = n, h = h, b = busyNow or nil,
-    l = not loginHello[dist] or nil, cd = NS.Cooldowns and NS.Cooldowns.ForHello and NS.Cooldowns.ForHello(MAX_CD) or nil }
+    l = not loginHello[dist] or nil, cd = NS.Cooldowns and NS.Cooldowns.ForHello and NS.Cooldowns.ForHello(MAX_CD) or nil,
+    pg = 1 }
   local target = dist == "CHANNEL" and channelId or nil
   if Send("H", payload, dist, target, "BULK") then
     lastHello[dist] = now
@@ -532,7 +533,11 @@ end
 -- kept). The receiver stores the list, under this hash, only once every page is in: a partial
 -- list must never carry the full set's hash, or the missing recipes would never be asked for.
 -- A list that fits is sent exactly as before (no page fields), so older clients read it as ever.
-local function SendRecipes(dist, to)
+-- paged: the receiver announced it reads pages (hello pg=1). Pages only ever go by whisper to
+-- such a peer: an older client would store the first page as the whole list. Older clients get
+-- the single message they always got (names dropped, then trimmed to fit, as 0.9 did), and a
+-- list too big for one message isn't broadcast at all (FlushBatch then whispers each querier).
+local function SendRecipes(dist, to, paged)
   if not commObj.SendCommMessage then return false end
   if dist == "CHANNEL" then to = channelId end
   local h, profs, list = MyHash(), MyProfs(), BuildRecipeList(true)
@@ -540,6 +545,17 @@ local function SendRecipes(dist, to)
   if not text then return false end
   if size <= MAX_DECODED then
     return (pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK"))
+  end
+  if dist ~= "WHISPER" then return false end
+  if not paged then
+    local payload = { v = VERSION, h = h, profs = profs, list = BuildRecipeList(false) }
+    text, size = Encode(payload)
+    while text and size > MAX_DECODED and #payload.list > 1 do
+      local keep = floor(#payload.list * 0.75)
+      for k = #payload.list, keep + 1, -1 do payload.list[k] = nil end
+      text, size = Encode(payload)
+    end
+    return text ~= nil and (pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK"))
   end
   -- Pages: as many list entries as fit, the first page also carrying the professions.
   local pages, i = {}, 1
@@ -583,6 +599,16 @@ local function Touch(full)
   if not (type(p.seen) == "number" and now - p.seen < ONLINE_WINDOW) then FirePeersSoon() end
   p.seen = now
   return p
+end
+
+-- "165:111:150,185:51:75": a peer's professions, to tell whether they changed.
+local function ProfsKey(t)
+  local parts = {}
+  for id, v in pairs(type(t) == "table" and t or {}) do
+    if type(v) == "table" then parts[#parts + 1] = tostring(id) .. ":" .. tostring(v.rank) .. ":" .. tostring(v.max) end
+  end
+  sort(parts)
+  return table.concat(parts, ",")
 end
 
 local function CleanProfs(t)
@@ -1190,8 +1216,14 @@ function handlers.H(full, data)
     C_Timer.After(5, function() Comm.NoteBackOnline(full) end)
     C_Timer.After(20, function() Comm.NoteBackOnline(full) end)
   end
+  -- pg=1: this client reads recipe lists sent in pages (older ones take a single message only).
+  p.paging = data.pg == 1 or nil
   local profs = CleanProfs(data.profs)
-  if profs then p.profs = profs end
+  if profs then
+    -- New ranks with the same recipes (a skill-up): tooltips and lists showing them update.
+    if ProfsKey(profs) ~= ProfsKey(p.profs) then FirePeersSoon() end
+    p.profs = profs
+  end
   if (p.busy and true or false) ~= busy then
     p.busy = busy or nil
     Fire("PEERS_UPDATED")
@@ -1212,6 +1244,13 @@ end
 
 -- One R on each distribution the waiting queriers heard me on; anyone it can't reach gets
 -- their whisper after all.
+-- The peer's hello said it reads paged recipe lists.
+local function ReadsPages(full)
+  local db = DB()
+  local p = db and db.peers[full]
+  return type(p) == "table" and p.paging == true
+end
+
 local function FlushBatch()
   local b = batch
   batch = nil
@@ -1224,7 +1263,7 @@ local function FlushBatch()
     end
   end
   for peer, dist in pairs(b) do
-    if not sent[dist] then SendRecipes("WHISPER", ShortName(peer)) end
+    if not sent[dist] then SendRecipes("WHISPER", ShortName(peer), ReadsPages(peer)) end
   end
 end
 
@@ -1253,7 +1292,7 @@ function handlers.Q(full)
     batch[full] = dist
     return
   end
-  SendRecipes("WHISPER", ShortName(full))
+  SendRecipes("WHISPER", ShortName(full), ReadsPages(full))
 end
 
 function handlers.R(full, data)

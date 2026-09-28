@@ -198,12 +198,12 @@ local function Mats(s)
   return no or Has(s, MATS), not no and Has(s, MATS)
 end
 
--- How many, when the line says (1..200): a number right before a link ("5 [Item]", "5x
--- [Item]"), "x 5" right after one, else "5x" / "x5" anywhere.
+-- How many, when the line says (1..1000, what one request can ask for): a number right before a
+-- link ("5 [Item]", "5x [Item]"), "x 5" right after one, else "5x" / "x5" anywhere.
 local function Quantity(clean, s)
   local q = tonumber(clean:match("(%d+)%s*[xX]?%s*%[") or clean:match("%]%s*[xX]%s*(%d+)")
     or s:match(" (%d+) ?x ") or s:match(" x ?(%d+) ") or "")
-  if q and (q < 1 or q > 200) then return nil end
+  if q and (q < 1 or q > 1000) then return nil end
   return q
 end
 

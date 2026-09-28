@@ -358,6 +358,9 @@ do
   me.cd = saved
 end
 
+-- Quantities up to what one request can hold survive detection.
+eq((CW.Detect("LF 300x |Hitem:2304::|h[Light Armor Kit]|h") or {}).qty, 300, "a 300x ask keeps its quantity")
+
 -- "I no longer have mats" only changes the reagents; the ask stays.
 do
   CW.Add("LF |Hitem:2304::|h[Light Armor Kit]|h have mats", "Mats Person", "Trade")

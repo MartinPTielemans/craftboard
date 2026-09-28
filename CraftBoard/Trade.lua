@@ -262,14 +262,12 @@ local function Call(fn, ...)
   return ok and v or nil
 end
 
--- My Enchanting window is open and can craft rec right now: profession data ready, my own (not a
--- linked one), and the recipe's profession.
+-- My Enchanting window is open and can craft rec right now: my own profession (not a linked,
+-- guild or NPC view: Craft.OpenProfession checks those), ready, and the recipe's profession.
 local function CraftWindowFor(rec)
   if not (tradeSkillOpen and TSUI and TSUI.CraftRecipe and type(rec) == "table" and rec.p) then return false end
-  if Call(TSUI.IsTradeSkillLinked) then return false end
-  if TSUI.IsTradeSkillReady and not Call(TSUI.IsTradeSkillReady) then return false end
-  local info = Call(TSUI.GetBaseProfessionInfo)
-  return type(info) == "table" and info.professionID ~= nil and info.professionID == rec.p
+  local open = NS.Craft and NS.Craft.OpenProfession and NS.Craft.OpenProfession()
+  return open ~= nil and open == rec.p
 end
 
 -- Why the button is disabled, or nil when their slot 7 holds an item without an enchant yet.
@@ -474,7 +472,12 @@ end)
 -- Hidden as combat starts (still allowed in this event); set up again after it.
 NS.Register("PLAYER_REGEN_DISABLED", HideButton)
 NS.Register("PLAYER_REGEN_ENABLED", function()
-  if partner and Shown() then Trade.UpdateButton() end
+  if partner and Shown() then
+    Trade.UpdateButton()
+  else
+    -- The trade closed during combat, when the button couldn't be hidden: hide it now.
+    HideButton()
+  end
 end)
 NS.Register("TRADE_SKILL_SHOW", function()
   tradeSkillOpen = true
