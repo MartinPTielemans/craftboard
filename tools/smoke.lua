@@ -363,5 +363,17 @@ walk("badge and status", function() NS.UI.UpdateBadge(); NS.UI.RefreshStatus() e
 walk("hide", function() NS.UI.Hide() end)
 runTimers()
 
+-- CraftBoardAPI (for Town Square)
+local API = CraftBoardAPI
+check(type(API) == "table" and API.version == 1, "CraftBoardAPI v1 is global")
+check(API.AddChatSeen("LF enchanter for 15 agi 2h", "Tess Varn", "Trade") == true, "API: a crafting ask is added")
+local before = #CW.Seen()
+check(API.AddChatSeen("LF enchanter for 15 agi 2h", "Tess Varn", "Trade") == true and #CW.Seen() == before,
+  "API: the same ask twice adds one row")
+check(API.AddChatSeen("anyone going to DM?", "Tess Varn", "Trade") == false, "API: a group line isn't a crafting ask")
+walk("API: show requests for a sender", function() API.ShowRequests("Tess Varn") end)
+walk("API: find", function() API.Find("Linen Bag") end)
+runTimers()
+
 print(string.format("smoke (%s): %d passed, %d failed", LOCALE, passed, failures))
 os.exit(failures == 0 and 0 or 1)

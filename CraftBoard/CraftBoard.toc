@@ -45,4 +45,5 @@ Onboarding.lua
 Welcome.lua
 Hooks.lua
 Embed.lua
+API.lua
 Debug.lua
