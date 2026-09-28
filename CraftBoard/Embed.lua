@@ -56,6 +56,7 @@ local badgeCount = 0             -- other players' requests I can craft (UI.Requ
 local blizzTabs = {}             -- Blizzard's side tabs, top to bottom
 local hooked = {}                -- [frame] = true once its scripts are hooked
 local dimmed = {}                -- Blizzard selected-tab textures faded while our page is up
+local mouseOff = {}              -- Blizzard frames that stopped taking the mouse while our page is up
 local selectedAt = -1
 
 local function Now()
@@ -225,15 +226,41 @@ local function HeaderParts()
   }
 end
 
--- Fades (or restores, to the alpha each had) the selected marker of Blizzard's current tab and
--- the header parts above.
+-- Blizzard's recipe card (CraftingPage.SchematicForm, 360 px wide in its normal layout) can come
+-- up wider than the window on the first open after a reload, while its page initialises under
+-- ours. Our page covers the window, not what sticks out past its right edge: an outline of the
+-- card and an invisible area that took the mouse. While our page is up, a card that overflows is
+-- faded and stops taking the mouse (C calls, like the fading above; both restored by Dim).
+local function Overflow()
+  local cp = pf and pf.CraftingPage
+  local form = type(cp) == "table" and cp.SchematicForm
+  if type(form) ~= "table" or not (form.GetRight and form.IsVisible and form:IsVisible()) then return end
+  local fr, pr = form:GetRight(), pf:GetRight()
+  if not (fr and pr) or fr <= pr + 1 then return end
+  Fade(form)
+  if form.IsMouseEnabled and form.EnableMouse and form:IsMouseEnabled() then
+    form:EnableMouse(false)
+    mouseOff[#mouseOff + 1] = form
+  end
+end
+
+-- Fades (or restores, to the alpha each had) the selected marker of Blizzard's current tab, the
+-- header parts above and an overflowing recipe card.
 local function Dim(on)
   for i = #dimmed, 1, -1 do
     local r, a = dimmed[i][1], dimmed[i][2]
     r:SetAlpha(a)
     dimmed[i] = nil
   end
+  -- Mouse back on (out of combat only; in combat it waits for the next Dim, see PLAYER_REGEN_ENABLED).
+  if not (InCombatLockdown and InCombatLockdown()) then
+    for i = #mouseOff, 1, -1 do
+      mouseOff[i]:EnableMouse(true)
+      mouseOff[i] = nil
+    end
+  end
   if not on then return end
+  if not (InCombatLockdown and InCombatLockdown()) then Overflow() end
   for _, f in ipairs(blizzTabs) do
     local s = f.SelectedTexture
     if type(s) == "table" and s.IsShown and s:IsShown() then Fade(s) end
@@ -241,6 +268,11 @@ local function Dim(on)
   local parts = HeaderParts()
   for i = 1, 4 do Fade(parts[i]) end
 end
+
+-- A restore that combat held back.
+NS.Register("PLAYER_REGEN_ENABLED", function()
+  if #mouseOff > 0 then Dim(built and page and page:IsShown() or false) end
+end)
 
 local function SetSelected(on)
   if tab and tab.cbSelected then tab.cbSelected:SetShown(on) end
@@ -290,7 +322,12 @@ end
 -- Blizzard changing its page on its own right after we selected ours (a deferred refresh from
 -- the opener) must not undo the selection; a click on a Blizzard tab always does.
 local function AutoDeselect()
-  if Now() - selectedAt >= GUARD then Embed.Deselect() end
+  if Now() - selectedAt >= GUARD then
+    Embed.Deselect()
+  elseif built and page:IsShown() and C_Timer and C_Timer.After then
+    -- Blizzard's page came up under ours: check its recipe card once it is laid out.
+    C_Timer.After(0, function() if page:IsShown() then SetSelected(true) end end)
+  end
 end
 
 local function OnBlizzardTab()
@@ -519,15 +556,18 @@ function Embed.Select()
   Raise()
   ctl.Show()
   SetSelected(true)
-  -- Blizzard's deferred refresh of the page it just opened may lift its frames; level up again
-  -- (and fade what it showed) once it has run.
+  -- Blizzard's deferred refresh of the page it just opened may lift its frames or lay out its
+  -- recipe card late; level up again (and fade what it showed) once it has run, and once more
+  -- after its first layout passes.
   if C_Timer and C_Timer.After then
-    C_Timer.After(0, function()
-      if page:IsShown() then
-        Raise()
-        SetSelected(true)
-      end
-    end)
+    for _, delay in ipairs({ 0, 0.3, 1 }) do
+      C_Timer.After(delay, function()
+        if page:IsShown() then
+          Raise()
+          SetSelected(true)
+        end
+      end)
+    end
   end
   return true
 end
