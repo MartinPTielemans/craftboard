@@ -598,6 +598,9 @@ end
 
 -- Any message marks the peer as seen now. One who wasn't seen within ONLINE_WINDOW just came
 -- online: PEERS_UPDATED, so "N crafters online" and the green names follow.
+-- Peers' online state as last checked ([full] = true/false; CheckOnline, below).
+local lastOnline = {}
+
 local function Touch(full)
   local db = DB()
   if not db then return nil end
@@ -611,14 +614,19 @@ local function Touch(full)
   local now = time()
   if not (type(p.seen) == "number" and now - p.seen < ONLINE_WINDOW) then FirePeersSoon() end
   p.seen = now
+  -- Heard from just now: online, as the update this fires shows them (a later logoff is a change).
+  lastOnline[full] = true
   return p
 end
 
--- "165:111:150,185:51:75": a peer's professions, to tell whether they changed.
+-- "165:111:150:Leatherworking,...": a peer's professions, to tell whether they changed (a new
+-- client language renames them).
 local function ProfsKey(t)
   local parts = {}
   for id, v in pairs(type(t) == "table" and t or {}) do
-    if type(v) == "table" then parts[#parts + 1] = tostring(id) .. ":" .. tostring(v.rank) .. ":" .. tostring(v.max) end
+    if type(v) == "table" then
+      parts[#parts + 1] = tostring(id) .. ":" .. tostring(v.rank) .. ":" .. tostring(v.max) .. ":" .. tostring(v.name)
+    end
   end
   sort(parts)
   return table.concat(parts, ",")
@@ -721,10 +729,9 @@ local function OnlineOf(full, p, roster, now)
   return type(p) == "table" and type(p.seen) == "number" and now - p.seen < ONLINE_WINDOW or false
 end
 
--- Peers' online state as last checked. A change nobody sends a message about (a friend or guild
--- member logging on or off, a peer not heard from within ONLINE_WINDOW) fires PEERS_UPDATED, so
--- the request count, badges and Find's order follow.
-local lastOnline = {}
+-- A change of online state nobody sends a message about (a friend or guild member logging on or
+-- off, a peer not heard from within ONLINE_WINDOW) fires PEERS_UPDATED, so the request count,
+-- badges and Find's order follow.
 local function CheckOnline()
   local db = DB()
   if not (db and type(db.peers) == "table") then return end

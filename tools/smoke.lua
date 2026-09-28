@@ -491,5 +491,10 @@ walk("API: show requests for a sender", function() API.ShowRequests("Tess Varn")
 walk("API: find", function() API.Find("Linen Bag") end)
 runTimers()
 
+-- Forgetting other players takes the private trade history with it.
+db.crafted = { ["Bob-Forever"] = { m = 2, t = 1 } }
+NS.Options.ForgetPeers()
+eq(next(db.crafted), nil, "forgetting players clears the crafted history")
+
 print(string.format("smoke (%s): %d passed, %d failed", LOCALE, passed, failures))
 os.exit(failures == 0 and 0 or 1)

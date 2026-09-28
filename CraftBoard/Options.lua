@@ -37,8 +37,11 @@ function Options.ForgetPeers()
     if type(p) == "table" and IsMine(p.from) then kept[id] = p end
   end
   CraftBoardDB.posts = kept
+  -- The private "crafted for you" history is about other players too.
+  CraftBoardDB.crafted = {}
   NS.Fire("PEERS_UPDATED")
   NS.Fire("POSTS_UPDATED")
+  NS.Fire("CRAFTED_UPDATED")
   NS.Print(L["Forgot other players' data."])
 end
 

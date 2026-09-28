@@ -5460,10 +5460,17 @@ NS.Register("TRADE_SKILL_CLOSE", function() scheduleRefresh() end)
 
 -- Once a minute while the window is up: cooldown times on crafter rows count down (Find: only
 -- the few visible rows are re-filled), request ages and dimming move on (Requests), and the
--- status line follows players coming and going.
+-- status line follows players coming and going. Shown or not, the request count behind the
+-- badges is taken again: requests age out without an event (chat asks stop counting after ten
+-- minutes, posts expire after a day).
 local lastOnline
 if C_Timer and C_Timer.NewTicker then
   C_Timer.NewTicker(60, function()
+    if not (UI.IsShown() and activeTab == 2) then
+      reqs.countDirty = true
+      if UI.RequestCount then UI.RequestCount() end
+      if UI.UpdateBadge then UI.UpdateBadge() end
+    end
     if not UI.IsShown() then return end
     local _, online = PeerCounts()
     if online ~= lastOnline then
