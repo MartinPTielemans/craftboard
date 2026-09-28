@@ -168,27 +168,29 @@ function Merchant.Plan()
   local plan, total = {}, 0
   local info = { notSold = {}, poor = {}, full = false }
   local rows = NS.Queue and NS.Queue.Totals and NS.Queue.Totals(true) or {}
-  local short, order, slotOf, accepted = {}, {}, {}, {}
+  -- Short slots: { id = its own item, ids = every item it accepts, want = items short }. Items
+  -- bought a moment ago count once, for the first slot that takes them.
+  local shorts, accepted, pend = {}, {}, {}
+  for id, n in pairs(pending) do pend[id] = n end
   for _, row in ipairs(rows) do
     local id = row.itemID
-    if type(id) == "number" and not short[id] then
+    if type(id) == "number" then
       local ids = { id }
       for _, alt in ipairs(type(row.alts) == "table" and row.alts or {}) do
         if type(alt) == "number" and alt ~= id then ids[#ids + 1] = alt end
       end
       local want = (tonumber(row.need) or 0) - (tonumber(row.have) or 0)
-      for _, x in ipairs(ids) do want = want - (pending[x] or 0) end
+      for _, x in ipairs(ids) do
+        local got = math.min(math.max(0, want), pend[x] or 0)
+        if got > 0 then want, pend[x] = want - got, pend[x] - got end
+      end
       if want > 0 then
-        short[id] = want
-        order[#order + 1] = id
-        for _, x in ipairs(ids) do
-          slotOf[x] = slotOf[x] or id
-          accepted[x] = true
-        end
+        shorts[#shorts + 1] = { id = id, ids = ids, want = want }
+        for _, x in ipairs(ids) do accepted[x] = true end
       end
     end
   end
-  if #order == 0 or not GetMerchantNumItems then return plan, total, info end
+  if #shorts == 0 or not GetMerchantNumItems then return plan, total, info end
   local money = Money()
   local free, room, special = BagRoom(accepted)
   local band = bit and bit.band
@@ -205,64 +207,67 @@ function Merchant.Plan()
     end
     return out
   end
-  -- Which of this merchant's items fills each short slot: the slot's own item when it is sold
-  -- (for gold), else the first accepted tier that is.
+  -- Where this merchant sells each accepted item for gold, then what each short slot buys: its own
+  -- item when sold here, else the first accepted tier that is. Slots buying the same item add up.
   local n = tonumber(GetMerchantNumItems()) or 0
-  local pick = {}
+  local soldAt, wantAt = {}, {}
   for index = 1, n do
     local itemID = ItemID(index)
-    local slot = itemID and slotOf[itemID]
-    if slot and (not pick[slot] or (itemID == slot and ItemID(pick[slot]) ~= slot)) then
+    if itemID and accepted[itemID] and not soldAt[itemID] then
       local price, _, _, purchasable, extended = ItemInfo(index)
-      if price and price > 0 and purchasable and not extended then pick[slot] = index end
+      if price and price > 0 and purchasable and not extended then soldAt[itemID] = index end
     end
   end
-  local listed = {}
+  for _, sh in ipairs(shorts) do
+    local index
+    for _, x in ipairs(sh.ids) do
+      index = soldAt[x]
+      if index then break end
+    end
+    if index then
+      wantAt[index] = (wantAt[index] or 0) + sh.want
+    else
+      info.notSold[#info.notSold + 1] = sh.id
+    end
+  end
   for index = 1, n do
-    local itemID = ItemID(index)
-    local slot = itemID and slotOf[itemID]
-    local want = slot and pick[slot] == index and short[slot]
-    if want then
-      local price, stack, avail, purchasable, extended = ItemInfo(index)
-      if price and price > 0 and purchasable and not extended then
-        listed[slot] = true
-        stack = math.max(1, stack)
-        local bundles = math.ceil(want / stack)
-        if avail >= 0 then bundles = math.min(bundles, avail) end
-        local afford = math.floor((money - total) / price)
-        if afford < bundles then
-          bundles = math.max(0, afford)
-          info.poor[#info.poor + 1] = itemID
-        end
-        local size = StackSize(itemID, index)
-        local bags = free and SpecialFor(itemID) or {}
-        if free then
-          local slots = free
-          for _, b in ipairs(bags) do slots = slots + b.n end
-          local fits = math.floor(((room[itemID] or 0) + slots * size) / stack)
-          if fits < bundles then
-            bundles = math.max(0, fits)
-            info.full = true
-          end
-        end
-        if bundles > 0 then
-          local count = bundles * stack
-          if free then
-            local need = math.ceil(math.max(0, count - (room[itemID] or 0)) / size)
-            for _, b in ipairs(bags) do
-              local take = math.min(b.n, need)
-              b.n, need = b.n - take, need - take
-            end
-            free = free - need
-          end
-          plan[#plan + 1] = { index = index, itemID = itemID, count = count, stack = stack, cost = bundles * price }
-          total = total + bundles * price
+    local want = wantAt[index]
+    local itemID = want and ItemID(index)
+    if itemID then
+      local price, stack, avail = ItemInfo(index)
+      stack = math.max(1, stack)
+      local bundles = math.ceil(want / stack)
+      if avail >= 0 then bundles = math.min(bundles, avail) end
+      local afford = math.floor((money - total) / price)
+      if afford < bundles then
+        bundles = math.max(0, afford)
+        info.poor[#info.poor + 1] = itemID
+      end
+      local size = StackSize(itemID, index)
+      local bags = free and SpecialFor(itemID) or {}
+      if free then
+        local slots = free
+        for _, b in ipairs(bags) do slots = slots + b.n end
+        local fits = math.floor(((room[itemID] or 0) + slots * size) / stack)
+        if fits < bundles then
+          bundles = math.max(0, fits)
+          info.full = true
         end
       end
+      if bundles > 0 then
+        local count = bundles * stack
+        if free then
+          local need = math.ceil(math.max(0, count - (room[itemID] or 0)) / size)
+          for _, b in ipairs(bags) do
+            local take = math.min(b.n, need)
+            b.n, need = b.n - take, need - take
+          end
+          free = free - need
+        end
+        plan[#plan + 1] = { index = index, itemID = itemID, count = count, stack = stack, cost = bundles * price }
+        total = total + bundles * price
+      end
     end
-  end
-  for _, id in ipairs(order) do
-    if not listed[id] then info.notSold[#info.notSold + 1] = id end
   end
   return plan, total, info
 end

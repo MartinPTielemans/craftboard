@@ -570,10 +570,83 @@ end
 -- Every reagent of a craft list with have/need, needs summed over the list:
 -- list { {record=, qty= (output items)}, ... } -> { {itemID=, need=, have=, alts=}, ... } in first-seen order.
 -- (alts: the reagent slot's other quality tiers, as in SlotCount.)
+-- Shares what the bags and bank hold between reagent rows ({ ids = accepted items, need = }) so
+-- that as many needs as possible are covered, whatever order the rows come in: a row short of
+-- items takes them from a stack another row uses when that row can switch to a tier nobody else
+-- needs (augmenting paths over rows and items). Sets each row's have: what it was given plus
+-- what is still spare of its items (have >= need exactly when the row is covered).
+local function Share(rows)
+  local left, flow, got = {}, {}, {}
+  for i, r in ipairs(rows) do
+    flow[i], got[i] = {}, 0
+    for _, id in ipairs(r.ids) do
+      if left[id] == nil then left[id] = Inventory.Count(id) end
+    end
+  end
+  -- Rows accepting each item, to find who could give one back.
+  local takers = {}
+  for i, r in ipairs(rows) do
+    for _, id in ipairs(r.ids) do
+      takers[id] = takers[id] or {}
+      takers[id][#takers[id] + 1] = i
+    end
+  end
+  -- One augmenting path for row i: from its items, through rows that hold one of them and
+  -- accept another, to an item with some left. Returns how many items moved.
+  local function Augment(i)
+    local prev, queue = {}, {}
+    for _, id in ipairs(rows[i].ids) do
+      if not prev[id] then prev[id], queue[#queue + 1] = { row = i }, id end
+    end
+    local head = 1
+    while head <= #queue do
+      local id = queue[head]
+      head = head + 1
+      if left[id] > 0 then
+        local amount = math.min(rows[i].need - got[i], left[id])
+        local cur = id
+        while prev[cur].from do
+          amount = math.min(amount, flow[prev[cur].row][prev[cur].from])
+          cur = prev[cur].from
+        end
+        cur = id
+        left[id] = left[id] - amount
+        while true do
+          local step = prev[cur]
+          flow[step.row][cur] = (flow[step.row][cur] or 0) + amount
+          if not step.from then break end
+          flow[step.row][step.from] = flow[step.row][step.from] - amount
+          cur = step.from
+        end
+        got[i] = got[i] + amount
+        return amount
+      end
+      for _, j in ipairs(takers[id] or {}) do
+        if j ~= i and (flow[j][id] or 0) > 0 then
+          for _, other in ipairs(rows[j].ids) do
+            if not prev[other] then prev[other], queue[#queue + 1] = { row = j, from = id }, other end
+          end
+        end
+      end
+    end
+    return 0
+  end
+  for i, r in ipairs(rows) do
+    while got[i] < r.need do
+      if Augment(i) <= 0 then break end
+    end
+  end
+  for i, r in ipairs(rows) do
+    local have = got[i]
+    for _, id in ipairs(r.ids) do have = have + left[id] end
+    r.have = have
+  end
+end
+
 -- Reagent slots that accept the same items (one item, or the same quality tiers in any order)
 -- add up into one row: { itemID=, need=, have=, alts= (the other accepted items) }. What the
--- bags and bank hold is shared out between rows, the row accepting fewest items first, so a stack
--- two rows could use (overlapping tiers) isn't counted for both.
+-- bags and bank hold is shared out between rows (Share), so a stack two rows could use
+-- (overlapping tiers) isn't counted for both.
 function Inventory.Totals(list)
   local rows, byKey = {}, {}
   for _, e in ipairs(list or {}) do
@@ -606,27 +679,7 @@ function Inventory.Totals(list)
       end
     end
   end
-  local pool = {}
-  local order = {}
-  for i, r in ipairs(rows) do order[i] = r end
-  table.sort(order, function(a, b)
-    if #a.ids ~= #b.ids then return #a.ids < #b.ids end
-    return a.n < b.n
-  end)
-  for _, r in ipairs(order) do
-    local have = 0
-    for _, id in ipairs(r.ids) do
-      if pool[id] == nil then pool[id] = Inventory.Count(id) end
-      have = have + pool[id]
-    end
-    r.have = have
-    local take = math.min(r.need, have)
-    for _, id in ipairs(r.ids) do
-      local t = math.min(take, pool[id])
-      pool[id], take = pool[id] - t, take - t
-      if take <= 0 then break end
-    end
-  end
+  Share(rows)
   for _, r in ipairs(rows) do r.ids, r.n = nil, nil end
   return rows
 end

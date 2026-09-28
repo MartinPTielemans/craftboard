@@ -302,8 +302,31 @@ do
     { record = { r = { { 5001, 3 } } }, qty = 1 },
     { record = { r = { { 5001, 3, alts = { 5002 } } } }, qty = 1 },
   })
-  check(#t == 2 and t[1].have == 4 and t[2].have == 1, "overlapping tiers share the stack")
+  check(#t == 2 and t[1].have == 3 and t[2].have == 1, "overlapping tiers share the stack")
+  -- {b,a} and {b,c} with one a and one b: both covered, whichever row comes first.
+  NS.Inventory.Count = function(id) return (id == 5001 or id == 5002) and 1 or 0 end
+  t = NS.Inventory.Totals({
+    { record = { r = { { 5002, 1, alts = { 5001 } } } }, qty = 1 },
+    { record = { r = { { 5002, 1, alts = { 5003 } } } }, qty = 1 },
+  })
+  check(#t == 2 and t[1].have >= 1 and t[2].have >= 1, "a row switches tiers so another row is covered")
   NS.Inventory.Count = count
+end
+
+-- Buy missing: two short slots that the same sold tier fills buy it for both.
+do
+  local totals = NS.Queue.Totals
+  NS.Queue.Totals = function()
+    return { { itemID = 6001, alts = { 6002 }, need = 3, have = 0 }, { itemID = 6003, alts = { 6002 }, need = 2, have = 0 } }
+  end
+  GetMerchantNumItems = function() return 1 end
+  GetMerchantItemID = function() return 6002 end
+  GetMerchantItemInfo = function() return "x", nil, 10, 1, -1, true, nil, false end
+  GetMoney = function() return 100000 end
+  local plan, _, info = NS.Merchant.Plan()
+  check(#plan == 1 and plan[1].count == 5 and #info.notSold == 0, "a sold tier covers every slot it fits")
+  NS.Queue.Totals = totals
+  GetMerchantNumItems, GetMerchantItemID, GetMerchantItemInfo, GetMoney = nil, nil, nil, nil
 end
 
 -- Queued from a chat ask, then posted to the board: the queued craft moves to the post.
