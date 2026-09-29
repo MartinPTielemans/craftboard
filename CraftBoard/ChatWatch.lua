@@ -313,8 +313,10 @@ local function BuildIndex()
   local itemName = NS.Inventory and NS.Inventory.ItemName
   local function take(c, current, key)
     if type(c) ~= "table" or type(c.recipes) ~= "table" then return end
+    local tradeable = NS.Recipes and NS.Recipes.IsTradeable
     for id, rec in pairs(c.recipes) do
-      if type(rec) == "table" and type(id) == "number" then
+      -- Bind-on-Pickup and quest items can't be made for someone else (as in Find).
+      if type(rec) == "table" and type(id) == "number" and (not tradeable or tradeable(rec)) then
         local e = { recipeID = id, current = current, prof = rec.p, char = key }
         if type(rec.n) == "string" and not index[lower(rec.n)] then index[lower(rec.n)] = e end
         if type(rec.o) == "number" and not byItem[rec.o] then byItem[rec.o] = e end

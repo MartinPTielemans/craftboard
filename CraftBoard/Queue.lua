@@ -143,6 +143,7 @@ function Queue.Delivered(who, item, recipeID, count)
       -- A delivery bigger than this row carries over to their next row for the same craft.
       local take = math.min(count, x.qty)
       x.qty, count, changed = x.qty - take, count - take, true
+      x.delivered = (x.delivered or 0) + take
       -- What was handed over was made already: it no longer counts as made-and-waiting (by the
       -- item, so handing over part of a 200-arrow batch keeps the rest of it made).
       local made = Queue.MadeItems(x)
@@ -199,7 +200,7 @@ end
 -- alias, so it still reads as queued when the post goes away first. Returns the entry or nil.
 -- Also after that post went away and they posted again (the chat alias still matches); never
 -- from a post that is still on the board.
--- qty: the post's quantity, which the craft takes over while none of it is made yet.
+-- qty: the post's quantity, which the craft takes over while none of it is made or handed over.
 function Queue.Adopt(who, itemID, src, qty)
   if type(who) ~= "string" or type(itemID) ~= "number" or src == nil or Queue.Get(src) then return nil end
   local posts = type(CraftBoardDB) == "table" and type(CraftBoardDB.posts) == "table" and CraftBoardDB.posts or {}
@@ -208,7 +209,9 @@ function Queue.Adopt(who, itemID, src, qty)
     local chat = Chat(x.src) and x.src or (Chat(x.alias) and not posts[x.src] and x.alias) or nil
     if x.who and x.item == itemID and chat and NS.SamePlayer and NS.SamePlayer(x.who, who) then
       x.src, x.alias = src, chat
-      if type(qty) == "number" and Queue.MadeItems(x) <= 0 then x.qty = Queue.ClampQty(x.recipeID, qty) end
+      if type(qty) == "number" and Queue.MadeItems(x) <= 0 and (x.delivered or 0) <= 0 then
+        x.qty = Queue.ClampQty(x.recipeID, qty)
+      end
       NS.Fire("QUEUE_UPDATED")
       return x
     end

@@ -368,6 +368,11 @@ do
   Q.Adopt("Bob-Forever", 2304, "post:bob:2", 5)
   check(Q.Get("post:bob:2") == c and Q.Has("chat:Bob-Forever:Light Armor Kit") and c.qty == 5,
     "a repost takes the queued craft over, with its quantity")
+  -- Two handed over already: a later post doesn't bring the delivered ones back.
+  Q.Delivered("Bob-Forever", 2304, nil, 2)
+  db.posts["post:bob:2"] = nil
+  Q.Adopt("Bob-Forever", 2304, "post:bob:3", 5)
+  check(Q.Get("post:bob:3") == c and c.qty == 3, "adoption keeps what was handed over")
   Q.Remove(c.id)
 end
 -- They take back "have mats": the queued craft needs the reagents again.

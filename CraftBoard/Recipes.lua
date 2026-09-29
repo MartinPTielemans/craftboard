@@ -739,12 +739,17 @@ function Recipes.Search(text)
 
   -- Find is about what can be made for someone else, so Bind-on-Pickup outputs are
   -- left out entirely (they still show on the Mine tab and are never shared with peers).
+  -- My characters count only where their crafts can reach someone here: this realm and faction.
   local myNames = {}
+  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+  local reachable = NS.Inventory and NS.Inventory.Reachable
   for _, ch in ipairs(Recipes.AllMyChars()) do
     myNames[ch.name] = true
-    for recipeID, rec in pairs(ch.recipes) do
-      if Recipes.IsTradeable(rec) then
-        add(recipeID, { name = ch.name, mine = true, online = ch.isMe, sameRealm = ch.sameRealm })
+    if ch.isMe or not reachable or reachable(ch.name, chars[ch.name]) then
+      for recipeID, rec in pairs(ch.recipes) do
+        if Recipes.IsTradeable(rec) then
+          add(recipeID, { name = ch.name, mine = true, online = ch.isMe, sameRealm = ch.sameRealm })
+        end
       end
     end
   end

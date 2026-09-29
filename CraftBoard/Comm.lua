@@ -1344,9 +1344,10 @@ end
 
 local handlers = {}
 
--- Recipe lists wanted while sending wasn't possible (combat, chat lockdown): pendingQ[full] =
--- the hash they announced. Asked for every 15 s once sending is possible, while that peer's list
--- is still not that one.
+-- Recipe lists wanted while sending wasn't possible (combat, chat lockdown) or while a query to
+-- that peer was still inside QUERY_GAP: pendingQ[full] = the hash they announced. Asked for
+-- (checked every 15 s) once sending is possible and the gap is over, while that peer's list is
+-- still not that one.
 local pendingQ, pendingQTimer = {}, false
 local function RetryQueries()
   pendingQTimer = false
@@ -1355,12 +1356,10 @@ local function RetryQueries()
     local p = db and db.peers[full]
     if type(p) ~= "table" or p.hash == h then
       pendingQ[full] = nil
-    elseif CanSend() then
+    elseif CanSend() and not (queried[full] and now - queried[full] < QUERY_GAP) then
       pendingQ[full] = nil
-      if not (queried[full] and now - queried[full] < QUERY_GAP) then
-        queried[full] = now
-        Send("Q", { v = VERSION }, "WHISPER", ShortName(full), "NORMAL")
-      end
+      queried[full] = now
+      Send("Q", { v = VERSION }, "WHISPER", ShortName(full), "NORMAL")
     end
   end
   if next(pendingQ) and C_Timer and C_Timer.After then
@@ -1439,8 +1438,7 @@ function handlers.H(full, data)
     return
   end
   local now = time()
-  if queried[full] and now - queried[full] < QUERY_GAP then return end
-  if not CanSend() then
+  if (queried[full] and now - queried[full] < QUERY_GAP) or not CanSend() then
     pendingQ[full] = h
     if not pendingQTimer and C_Timer and C_Timer.After then
       pendingQTimer = true
