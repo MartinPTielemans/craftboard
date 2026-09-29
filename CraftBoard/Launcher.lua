@@ -127,7 +127,8 @@ local function Summary(tt)
         other[#other + 1] = S.ReadyText(p.name, r)
       elseif r and r.ready then
         train[#train + 1] = p.name .. " (" .. tostring(r.title) .. ")"
-      elseif type(t) == "table" and type(t.next) == "number" and type(p.rank) == "number" and p.rank >= t.next then
+      elseif type(t) == "table" and ((type(t.available) == "number" and t.available > 0)
+        or (type(t.next) == "number" and type(p.rank) == "number" and p.rank >= t.next)) then
         train[#train + 1] = p.name .. " (" .. L["new recipes"] .. ")"
       end
     end

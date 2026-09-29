@@ -375,11 +375,14 @@ end
 
 local SendHello -- forward
 
-local function JoinRealmChannel(attempt)
+-- urgent: the player just turned sharing on: the channel hears me at once (not after the gap
+-- between hellos).
+local function JoinRealmChannel(attempt, urgent)
   attempt = attempt or 1
   if not RealmChannelOn() then return end
   if ResolveChannel() then
     HideChannelFromChat()
+    if urgent and started then SendHello("CHANNEL", nil, true) end
     return
   end
   if JoinChannelByName then pcall(JoinChannelByName, CHANNEL_NAME) end
@@ -388,9 +391,9 @@ local function JoinRealmChannel(attempt)
       HideChannelFromChat()
       FirePeersSoon()
       -- Login hello may have gone out to GUILD only because the channel wasn't ready yet.
-      if started then SendHello("CHANNEL") end
+      if started then SendHello("CHANNEL", nil, urgent) end
     elseif attempt < 5 then
-      C_Timer.After(10, function() JoinRealmChannel(attempt + 1) end)
+      C_Timer.After(10, function() JoinRealmChannel(attempt + 1, urgent) end)
     end
   end)
 end
@@ -539,11 +542,13 @@ function SendHello(dist, busy, urgent)
     return
   end
   if not CanSend() then
-    if not helloPending[dist] then
-      helloPending[dist] = true
+    -- An urgent hello waits on its own (an ordinary one may already be waiting out the gap).
+    local key = urgent and ("urgent:" .. dist) or dist
+    if not helloPending[key] then
+      helloPending[key] = true
       C_Timer.After(30, function()
-        helloPending[dist] = nil
-        SendHello(dist)
+        helloPending[key] = nil
+        SendHello(dist, busy, urgent)
       end)
     end
     return
@@ -1933,11 +1938,13 @@ end
 function Comm.SetRealmChannel(on)
   local db = DB()
   if not db then return end
-  if (db.realmChannel and true or false) ~= (on and true or false) then FirePeersSoon() end
+  local changed = (db.realmChannel and true or false) ~= (on and true or false)
+  if changed then FirePeersSoon() end
   db.realmChannel = on and true or false
   if on then
     retractJoined = false
-    JoinRealmChannel(1)
+    -- Turned on just now: the channel hears me at once.
+    JoinRealmChannel(1, changed)
   else
     if LeaveChannelByName and ResolveChannel() then pcall(LeaveChannelByName, CHANNEL_NAME) end
     channelId = nil

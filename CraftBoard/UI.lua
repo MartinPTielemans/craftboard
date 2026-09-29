@@ -1646,7 +1646,7 @@ local function MyProfRank(profID)
   if profID == nil or type(CraftBoardDB) ~= "table" or type(CraftBoardDB.chars) ~= "table" then return nil end
   local function capOf(c)
     local p = type(c) == "table" and type(c.profs) == "table" and c.profs[profID]
-    if type(p) ~= "table" then return nil end
+    if type(p) ~= "table" or p.gone then return nil end   -- unlearned: its old cap says nothing
     local m = p.max or p[3]
     return type(m) == "number" and m or nil
   end
@@ -2319,14 +2319,16 @@ function AdvertiseChoice()
   return "Trade"
 end
 
--- Joined channel id for "General" / "Trade" ("General - Orgrimmar", "Trade - City"), or nil.
+-- Joined channel id for "General" / "Trade" ("General - Orgrimmar", "Trade - City", Forever's
+-- "Trade (Services) - English"), or nil. Only the server channel's own name forms: a custom
+-- channel such as "Trade Guild" never gets the ad.
 local function PublicChannelId(choice)
   local bases = { strlower(ChannelLabel(choice)), strlower(choice) }
   local function matches(n)
     if type(n) ~= "string" then return false end
     n = strlower(n)
     for _, b in ipairs(bases) do
-      if n == b or n:sub(1, #b + 1) == b .. " " then return true end
+      if n == b or n:sub(1, #b + 3) == b .. " - " or n:sub(1, #b + 2) == b .. " (" then return true end
     end
     return false
   end
