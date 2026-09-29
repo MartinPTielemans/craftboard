@@ -595,9 +595,9 @@ end
 -- A list that fits is sent exactly as before (no page fields), so older clients read it as ever.
 -- paged: the receiver announced it reads pages (hello pg=1). Pages only ever go by whisper to
 -- such a peer: an older client would store the first page as the whole list. Older clients get
--- a single message (names dropped, then trimmed to fit, as 0.9 did, but a trimmed list carries
--- its own hash), and a list too big for one message isn't broadcast at all (FlushBatch then
--- whispers each querier).
+-- the single message they always got (names dropped, then trimmed to fit, as 0.9 did: all they
+-- can hold), and a list too big for one message isn't broadcast at all (FlushBatch then whispers
+-- each querier).
 local function SendRecipes(dist, to, paged)
   if not commObj.SendCommMessage then return false end
   if dist == "CHANNEL" then to = channelId end
@@ -611,17 +611,11 @@ local function SendRecipes(dist, to, paged)
   if not paged then
     local payload = { v = VERSION, h = h, profs = profs, list = BuildRecipeList(false) }
     text, size = Encode(payload)
-    local R = NS.Recipes
+    -- Trimmed, it still carries the full hash: an older client can only ever hold one message,
+    -- so asking again would bring back the same list with every hello and never the rest.
     while text and not Fits(text, size) and #payload.list > 1 do
       local keep = floor(#payload.list * 0.75)
       for k = #payload.list, keep + 1, -1 do payload.list[k] = nil end
-      -- A trimmed list goes under its own hash, never the full set's: the peer then knows it
-      -- doesn't have them all (and asks again with a later hello).
-      if R and R.HashIDs then
-        local ids = {}
-        for i, e in ipairs(payload.list) do ids[i] = e[1] end
-        payload.h = tostring(R.HashIDs(ids))
-      end
       text, size = Encode(payload)
     end
     return Fits(text, size) and (pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK")) or false
@@ -1308,7 +1302,9 @@ function Comm.NoteBackOnline(full)
   for id, p in pairs(db.posts) do
     if type(p) == "table" and p.from == full then
       local mine = Comm.Offered(id)
-      local recipeID, _, charKey, current = MyRecipeFor(p.item)
+      local recipeID, rec, charKey, current = MyRecipeFor(p.item)
+      -- Bind-on-Pickup and quest outputs can't be made for them (as on the Requests tab).
+      if recipeID and NS.Recipes and NS.Recipes.IsTradeable and not NS.Recipes.IsTradeable(rec) then recipeID = nil end
       if (mine or recipeID) and (not best or (p.t or 0) > (best.t or 0)) then
         best, offered = p, mine
         alt = recipeID and not current and charKey or nil
@@ -1959,7 +1955,7 @@ function Comm.SetGuildShare(on)
   if was == nil then was = db.guildShare ~= false end
   db.guildShare, guildShareWas = on, on
   if was ~= on then FirePeersSoon() end
-  if on and not was then SendHello("GUILD") end
+  if on and not was then SendHello("GUILD", nil, true) end
 end
 
 function Comm.ChannelId()
