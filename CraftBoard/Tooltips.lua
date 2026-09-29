@@ -22,14 +22,11 @@ local function On()
   return not (type(CraftBoardDB) == "table" and CraftBoardDB.groupTooltips == false)
 end
 
--- The peer record of a group member: its own key first, else any key naming the same player.
+-- The peer record of a group member, by its exact key (a legacy first-name key would match any
+-- "First Surname" on the realm).
 local function PeerOf(peers, full)
   local p = peers[full]
-  if type(p) == "table" then return p end
-  for name, q in pairs(peers) do
-    if type(q) == "table" and NS.SamePlayer(name, full) then return q end
-  end
-  return nil
+  return type(p) == "table" and p or nil
 end
 
 local function Rebuild()

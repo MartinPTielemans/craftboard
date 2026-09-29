@@ -2969,7 +2969,7 @@ function R.Craft(e)
   if e.queueTotal then
     NS.Craft.Next()
   elseif e.queue then
-    NS.Craft.Do(e.queue.recipeID, NS.Queue.CraftsLeft(e.queue, e.rec))
+    NS.Craft.Do(e.queue.recipeID, NS.Queue.CraftsLeft(e.queue, e.rec), e.queue.id)
   end
 end
 

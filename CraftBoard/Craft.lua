@@ -110,7 +110,8 @@ function Craft.CanCraft(recipeID)
 end
 
 -- Crafts recipeID `count` times (capped by what my bags allow). A click handler only.
-function Craft.Do(recipeID, count)
+-- entryID: the queue row whose Craft was clicked (its casts are credited there first).
+function Craft.Do(recipeID, count, entryID)
   local ok, why, times = Craft.CanCraft(recipeID)
   if not ok then
     if why then NS.Print(why) end
@@ -122,7 +123,7 @@ function Craft.Do(recipeID, count)
     NS.Print(L["The client refused to craft that."])
     return false
   end
-  batch = { recipeID = recipeID, left = count, t = time() }
+  batch = { recipeID = recipeID, left = count, t = time(), entry = entryID }
   NS.Fire("CRAFT_UPDATED")
   return true
 end
@@ -158,7 +159,7 @@ function Craft.Next()
     NS.Print(L["Nothing in your queue can be crafted right now."])
     return false
   end
-  return Craft.Do(x.recipeID, n)
+  return Craft.Do(x.recipeID, n, x.id)
 end
 
 -- What this character crafted lately: chars[Me].made[itemID] = time of the last craft (kept a
@@ -225,11 +226,12 @@ NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
       if type(t) ~= "number" or now - t > MADE_TTL then made[id] = nil end
     end
   end
+  local entry = batch and batch.recipeID == spellID and batch.entry or nil
   if batch and batch.recipeID == spellID then
     batch.left, batch.t = batch.left - 1, time()
     if batch.left <= 0 then batch = nil end
   end
-  if NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(spellID, rec) end
+  if NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(spellID, rec, nil, nil, nil, entry) end
   -- A varying yield: the queue got the minimum; the bags say what came out (next bag update).
   if rec.yMax then
     local c = yieldCheck[spellID]

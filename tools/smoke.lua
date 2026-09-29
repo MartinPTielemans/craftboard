@@ -453,6 +453,12 @@ do
   Q.Crafted(9902, vy, nil, 3)
   check(Q.CraftsLeft(a, vy) == 0 and Q.CraftsLeft(b, vy) == 0, "spare items from a cast carry to the next entry")
   Q.Remove(a.id); Q.Remove(b.id)
+  -- Casts started from a row's Craft are credited to that row first, not the oldest.
+  local r1 = Q.Add({ recipeID = 9902, item = 997, qty = 2, who = "Alice-Forever", src = "row1" })
+  local r2 = Q.Add({ recipeID = 9902, item = 997, qty = 2, who = "Bob-Forever", src = "row2" })
+  Q.Crafted(9902, vy, nil, nil, nil, r2.id)
+  check(Q.MadeItems(r2) == 1 and Q.MadeItems(r1) == 0, "the clicked row gets its craft")
+  Q.Remove(r1.id); Q.Remove(r2.id)
   -- A planned entry counts casts: a varying yield's extra items only go to orders.
   local plan = Q.Add({ recipeID = 9902, item = 997, qty = 5, src = "plan:9902" })
   Q.Crafted(9902, vy); Q.Crafted(9902, vy, nil, 2, true)

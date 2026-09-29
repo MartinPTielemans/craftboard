@@ -1639,15 +1639,33 @@ function handlers.P(full, data)
   if pa and Retracted()[pa] then return end
   local count, total = 0, 0
   local oldestId, oldestT
+  local me = MyKey()
   for pid, p in pairs(db.posts) do
     total = total + 1
     if type(p) == "table" then
       if p.from == full then count = count + 1 end
-      if not oldestT or (p.t or 0) < oldestT then oldestId, oldestT = pid, p.t or 0 end
+      -- Room is made from other players' posts, never mine.
+      if p.from ~= me and (not oldestT or (p.t or 0) < oldestT) then oldestId, oldestT = pid, p.t or 0 end
     end
   end
   if count >= MAX_POSTS_PER_SENDER then return end
-  if total >= MAX_POSTS and oldestId then db.posts[oldestId] = nil end
+  if total >= MAX_POSTS and oldestId then
+    -- The oldest goes, tombstoned, with other players' linked orders under it (however deep), so
+    -- none of them is left looking like a request of its own.
+    local gone = { [oldestId] = true }
+    db.posts[oldestId] = nil
+    Retracted()[oldestId] = Retracted()[oldestId] or time()
+    local more = true
+    while more do
+      more = false
+      for cid, c in pairs(db.posts) do
+        if type(c) == "table" and c.pa ~= nil and gone[c.pa] and c.from ~= me then
+          db.posts[cid], gone[cid], more = nil, true, true
+          Retracted()[cid] = Retracted()[cid] or time()
+        end
+      end
+    end
+  end
   -- Expiry uses our receive time: peers' clocks can't be trusted.
   local now = time()
   local st = type(data.t) == "number" and data.t or now

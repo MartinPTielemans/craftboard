@@ -227,27 +227,36 @@ end
 -- items: what the cast made, when known (a varying yield's extra); else the recipe's yield.
 -- ordersOnly: only entries for a player (a varying yield's extra items fill orders; a planned
 -- entry counts casts, each at the recipe's usual yield).
-function Queue.Crafted(recipeID, rec, plannedOnly, items, ordersOnly)
+-- entryID: the row whose Craft started these casts: it is credited first, then the oldest.
+function Queue.Crafted(recipeID, rec, plannedOnly, items, ordersOnly, entryID)
   local q = List()
   if not q then return end
   local left = items or math.max(1, type(rec) == "table" and rec.y or 1)
   local changed = false
+  local function Takes(x)
+    return x.recipeID == recipeID and Queue.CraftsLeft(x, rec) > 0 and not (plannedOnly and x.who)
+      and not (ordersOnly and not x.who)
+  end
+  -- Credits x; true when a planned entry is done (and leaves the queue).
+  local function Credit(x)
+    local made = Queue.MadeItems(x)
+    local give = math.min(left, math.max(0, (x.qty or 0) - made))
+    x.madeItems, x.made = made + give, nil
+    left, changed = left - give, true
+    return not x.who and Queue.CraftsLeft(x, rec) == 0
+  end
+  if entryID ~= nil then
+    for i, x in ipairs(q) do
+      if x.id == entryID then
+        if Takes(x) and Credit(x) then table.remove(q, i) end
+        break
+      end
+    end
+  end
   local i = 1
   while i <= #q and left > 0 do
     local x = q[i]
-    local removed = false
-    if x.recipeID == recipeID and Queue.CraftsLeft(x, rec) > 0 and not (plannedOnly and x.who)
-      and not (ordersOnly and not x.who) then
-      local made = Queue.MadeItems(x)
-      local give = math.min(left, math.max(0, (x.qty or 0) - made))
-      x.madeItems, x.made = made + give, nil
-      left, changed = left - give, true
-      if not x.who and Queue.CraftsLeft(x, rec) == 0 then
-        table.remove(q, i)
-        removed = true
-      end
-    end
-    if not removed then i = i + 1 end
+    if Takes(x) and Credit(x) then table.remove(q, i) else i = i + 1 end
   end
   if changed then NS.Fire("QUEUE_UPDATED") end
 end
