@@ -11,10 +11,30 @@ for f in $(find CraftBoard -name '*.lua' -not -path '*/Libs/*'); do
 done
 [ $fail = 0 ] && echo "syntax ok"
 
+# Forward references: a name read as a global in a file that declares a top-level local of the
+# same name (read before the local exists, it is nil at run time). Needs LuaJIT's bytecode
+# listing; a local that aliases the global of the same name ("local type = type") is fine.
+if command -v luajit >/dev/null 2>&1; then
+  fwd=0
+  g=$(mktemp); l=$(mktemp)
+  for f in $(find CraftBoard -name '*.lua' -not -path '*/Libs/*'); do
+    luajit -bl "$f" 2>/dev/null | grep -o 'GGET.*"[A-Za-z_][A-Za-z_0-9]*"' | sed 's/.*"\(.*\)"/\1/' | sort -u > "$g"
+    grep -oE "^local (function )?[A-Za-z_][A-Za-z_0-9]*(, *[A-Za-z_][A-Za-z_0-9]*)*" "$f" \
+      | sed -E 's/^local (function )?//' | tr ',' '\n' | tr -d ' ' | sort -u > "$l"
+    for name in $(comm -12 "$g" "$l"); do
+      b='[^A-Za-z0-9_]'
+      grep -qE "^local ([^=]*$b)?$name($b[^=]*)?=(.*$b)?$name($b|\$)" "$f" && continue
+      echo "$f: '$name' is used before its local is declared"; fwd=1; fail=1
+    done
+  done
+  rm -f "$g" "$l"
+  [ $fwd = 0 ] && echo "forward references ok"
+fi
+
 # Locales: every L["..."] used in the addon must be listed in Locales.lua's enUS table,
 # and every listed key should still be used somewhere.
 used=$(mktemp); listed=$(mktemp)
-cat $(find CraftBoard -name '*.lua' -not -path '*/Libs/*') | grep -vE '^[[:space:]]*--' \
+cat $(find CraftBoard -name '*.lua' -not -path '*/Libs/*' -not -name 'Locales_*.lua') | grep -vE '^[[:space:]]*--' \
   | grep -oE 'L\["([^"\\]|\\.)*"\]' | sed -E 's/^L\["(.*)"\]$/\1/' | sort -u > "$used"
 sed -n '/^local enUS = {/,/^}/p' CraftBoard/Locales.lua \
   | grep -E '^[[:space:]]*"' | sed -E 's/^[[:space:]]*"(.*)",[[:space:]]*$/\1/' | sort -u > "$listed"
@@ -28,4 +48,13 @@ if [ -n "$unused" ]; then
 fi
 [ -z "$missing$unused" ] && echo "locales ok ($(wc -l < "$used" | tr -d ' ') keys)"
 rm -f "$used" "$listed"
+
+# Translations: keys must be enUS keys with the same placeholders (reports untranslated ones).
+out=$(lua tools/check-locales.lua) || fail=1
+echo "$out" | grep -v "^    untranslated: "
+
+# Smoke test: every file loads against stubbed WoW APIs and the testable behaviour holds, in every locale.
+for loc in enUS deDE frFR esES esMX; do
+  lua tools/smoke.lua $loc || fail=1
+done
 exit $fail

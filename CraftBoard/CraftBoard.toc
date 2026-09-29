@@ -1,6 +1,10 @@
 ## Interface: 16001
 ## Title: CraftBoard
-## Notes: Realm-wide crafting order board. Who can craft what, and what you can craft yourself.
+## Notes: Crafting companion for Forever: plan your leveling, craft and queue, find crafters.
+## Notes-deDE: Handwerksbegleiter für Forever: Berufe gezielt steigern, herstellen und vormerken, Handwerker finden.
+## Notes-frFR: Compagnon d'artisanat pour Forever : planifier sa progression, fabriquer, trouver des artisans.
+## Notes-esES: Compañero de profesiones para Forever: planifica tu progreso, fabrica y encuentra artesanos.
+## Notes-esMX: Compañero de profesiones para Forever: planifica tu progreso, fabrica y encuentra artesanos.
 ## Author: mpt
 ## Version: 0.9.4
 ## SavedVariables: CraftBoardDB
@@ -20,15 +24,26 @@ Libs\LibDBIcon-1.0\lib.xml
 
 Core.lua
 Locales.lua
+Locales_deDE.lua
+Locales_frFR.lua
+Locales_esES.lua
 Options.lua
 Launcher.lua
 Recipes.lua
 Inventory.lua
+Cooldowns.lua
+Skills.lua
+Queue.lua
+Craft.lua
 Comm.lua
 ChatWatch.lua
+Trade.lua
+Merchant.lua
 UI.lua
+Tooltips.lua
 Onboarding.lua
 Welcome.lua
 Hooks.lua
 Embed.lua
+API.lua
 Debug.lua

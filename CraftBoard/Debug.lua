@@ -1,5 +1,6 @@
 -- Developer aid: dump the visual structure of a Blizzard frame into saved data so the
--- look can be reproduced exactly. `/cb dump [FrameName]` (default ProfessionsFrame).
+-- look can be reproduced exactly. `/cb dump [FrameName]` (default: the window under the mouse)
+-- keeps only the latest dump (CraftBoardDB.dumps, with the font list); `/cb dump clear` drops it.
 local ADDON, NS = ...
 
 local MAX_NODES = 4000
@@ -118,8 +119,8 @@ end
 local function DumpObject(f, name)
   local list = {}
   describe(f, 0, list)
-  CraftBoardDB.dumps = CraftBoardDB.dumps or {}
-  CraftBoardDB.dumps[name] = { when = time(), build = select(2, GetBuildInfo()), nodes = list }
+  -- The new dump replaces the last one: saved variables don't grow with every capture.
+  CraftBoardDB.dumps = { [name] = { when = time(), build = select(2, GetBuildInfo()), nodes = list } }
   local fonts = {}
   for _, n in ipairs({ "GameFontNormal", "GameFontHighlight", "GameFontNormalLarge", "GameFontHighlightSmall",
                        "GameFontNormalSmall", "GameFontDisable", "GameFontNormalMed2", "GameFontNormalMed3",
@@ -135,9 +136,19 @@ local function DumpObject(f, name)
   NS.Print(string.format("dumped %d nodes of %s; /reload to write it to disk", #list, name))
 end
 
+-- `/cb dump clear`: forget the stored dump.
+function NS.DumpClear()
+  if type(CraftBoardDB) == "table" then CraftBoardDB.dumps = nil end
+  NS.Print("dump cleared; /reload to write it to disk")
+end
+
 -- `/cb dump [FrameName]`: with a name, dump that global frame. Without one, wait 3 s and
 -- dump the window under the mouse (so the frame's real name need not be known).
 function NS.DumpFrame(name)
+  if name == "clear" then
+    NS.DumpClear()
+    return
+  end
   if name and name ~= "" then
     local f = _G[name]
     if not f then NS.Print("no frame named " .. name .. "; try /cb frames or hover it and use /cb dump"); return end

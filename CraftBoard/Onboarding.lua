@@ -1,9 +1,12 @@
--- CraftBoard Onboarding: three first-run tips on the window, using Blizzard's HelpTip.
--- Each tip is shown at most once (CraftBoardDB.tips[key] = true when shown; Options' "Show tips
--- again" clears the table). Without HelpTip on this client, nothing is shown.
+-- CraftBoard Onboarding: four first-run tips on the window, using Blizzard's HelpTip.
+-- Each tip is shown at most once (CraftBoardDB.tips[key] = true when shown; the "Show tips
+-- again" setting clears the table and opens CraftBoard on Find). Without HelpTip on this client,
+-- nothing is shown.
 --   scan     window opens and this character has no recorded recipes -> the Find list
 --   shared   recipes were recorded this session and the window is shown -> the status line
 --   request  a recipe is picked in Find after "shared" has gone -> the Post request button
+--   plan     the window is shown, this character has recorded recipes and no other tip is up
+--            -> the Plan tab
 -- UI calls Onboarding.Check("shown") when the window opens and Check("selected") when the player
 -- picks a recipe; RECIPES_UPDATED is watched here. Anchors come from UI.TipAnchors, i.e. from
 -- whichever host shows CraftBoard (standalone window or its tab in the Professions window).
@@ -17,6 +20,7 @@ local TEXT = {
   scan = L["Open each of your profession windows once. CraftBoard records your recipes as you do."],
   shared = L["Your recipes are now shared with guildmates and realm players who run CraftBoard. Everyone on the board appears in Find."],
   request = L["Post a request to the board, or whisper a crafter directly."],
+  plan = L["Plan shows your recipes by skill-up color and what to craft next."],
 }
 
 local showing = {}       -- [key] = parent frame the tip was shown on (this session)
@@ -144,7 +148,7 @@ local function Show(key, parent, anchor, targetPoint, buttonAction)
     onAcknowledgeCallback = function()
       showing[key] = nil
       if key == "scan" then HideOpenButton() end
-      if tour and key ~= "request" then C_Timer.After(0.2, function() Onboarding.Check("shown") end) end
+      if tour and key ~= "plan" then C_Timer.After(0.2, function() Onboarding.Check("shown") end) end
     end,
     onHideCallback = function()
       showing[key] = nil
@@ -191,8 +195,17 @@ function Onboarding.Check(context)
     return
   end
   if not tips.request and (context == "selected" or (tour and context == "shown")) and tips.shared and not IsShowing("shared")
-    and a.findTab and a.post then
+    and not IsShowing("plan") and a.findTab and a.post then
     Show("request", a.findPanel, a.post, "TopEdgeCenter")
+    return
+  end
+  -- Plan: once there is something to plan with, on its own. In the tour it comes last.
+  if not tips.plan and context ~= "selected" and a.planTab and MyRecipeCount() > 0
+    and (not tour or tips.request)
+    and not (IsShowing("scan") or IsShowing("shared") or IsShowing("request")) then
+    -- Side tabs hang off the window's right edge; the top tabs inside the Professions window
+    -- get the tip underneath.
+    Show("plan", a.frame, a.planTab, a.embedded and "BottomEdgeCenter" or "RightEdgeCenter")
   end
 end
 
@@ -208,7 +221,12 @@ function Onboarding.Reset()
   HideOpenButton()
   if type(CraftBoardDB) == "table" then CraftBoardDB.tips = {} end
   tour = true
-  if NS.UI and NS.UI.Show then NS.UI.Show() end
+  -- The first tip is on the Find tab.
+  if NS.UI and NS.UI.ShowTab then
+    NS.UI.ShowTab(1)
+  elseif NS.UI and NS.UI.Show then
+    NS.UI.Show()
+  end
   Onboarding.Check("shown")
 end
 

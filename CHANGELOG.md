@@ -6,6 +6,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+CraftBoard 1.0: from a crafting-order board to a crafting companion for Forever.
+
+### Added
+- Find: "Hide what I can craft" in the Filter menu leaves out what you can get without anyone
+  else: what this character makes, and items your characters on this realm and faction make and
+  can mail you. An enchant only an alt knows stays listed (without a scroll it has to be put on
+  your gear in person), with the other players who know it. Professions with nothing left drop
+  out of the menu while it is on.
+- Plan tab: your professions with their learned recipes by skill-up colour (orange, yellow,
+  green, grey), ready ones first. The card says how many crafts reach the next milestone, when you
+  can train the next rank, and which reagents the planned crafts need (with what your alts hold).
+  Queue adds the planned crafts to your queue; Craft makes them while that profession's window is
+  open, one click per batch.
+- Craft and Craft next on the queue: make a queued craft, or the next one your bags allow, from
+  the Requests tab while the profession window is open.
+- Mats across alts: CraftBoard remembers bags and bank per character; reagent slots show "+12 on
+  alts" and item tooltips say which alt holds how many.
+- Reagent tooltips: how many of your recipes use the item and what your queue needs of it.
+- Recipe tooltips: which of your characters know the recipe, can learn it, or need more skill.
+- Buy missing mats: at a merchant, one button buys the vendor reagents your queue still lacks.
+- Cooldown-ready notice and trainer reminders (one quiet chat line each; options).
+- The minimap button's tooltip sums it up: requests you can craft, the queue, ready cooldowns,
+  trainable ranks.
+- Welcome window rewritten for the wider focus.
+- Requests tab reworked: rows show what is wanted (item icon and name, "3x" for more than one)
+  and who asked, in a muted "Bob · 8m". New group order: "You can craft" (board requests and chat
+  asks one of your characters can make, ready ones first), "My queue", "Open requests", "Seen in
+  chat", "My requests". Rows older than 10 minutes are dimmed. A Filter with "Only what I can
+  craft", a right-click menu on every row, and a count on the Requests tab.
+- The request card says whether you know the recipe (or which alt does), whether they bring the
+  mats, what you are missing, and how often they asked. The chat line is only quoted when it says
+  more than the title. Asking again for the same thing updates the one row instead of adding one.
+- Crafter queue: "Queue" on a request you can craft; "My queue" lists them with an "All reagents"
+  row summing everything against your bags and bank. A trade that hands the craft over takes it
+  off the queue.
+- Multi-crafter chains: when a craft needs an intermediate someone else makes (for example an
+  Elixir of Lesser Defense for Toughened Leather Gloves), reagent tooltips name who makes it,
+  "Post linked orders" asks the board for it, and Post request in Find posts those linked orders
+  with the request. Linked orders show on each other's cards and are retracted together.
+- Cooldown sharing: transmutes, Mooncloth and other crafting cooldowns show as "ready" or time
+  left next to crafters in Find; `/cb cd` lists your characters' cooldowns.
+- One-click enchant: when your trade partner asked for an enchant you know (queued, or seen in
+  chat), a button under the trade window casts it on their item in "Will not be traded". It
+  waits while the enchant's reagents aren't in your bags.
+- Private "crafted for you" counts, read from completed trades and shown on crafter and request
+  tooltips. Never sent anywhere.
+- "Back online" notice: one quiet chat line when a player whose request you can craft, or offered
+  on, logs back in (option, default on).
+- Group tooltips: in a party or raid, item tooltips name the group members who can craft the item
+  and their tooltips list their professions (option, default on).
+- Gamepad controls in the window: D-pad moves through the list, A whispers or offers, B closes,
+  shoulder buttons switch tabs (option, default on; only with gamepad mode enabled).
+- Full German, French and Spanish translations.
+
+### Changed
+- Players on your ignore list no longer appear as crafters, board requests or chat asks.
+- Requests: requests from players who are offline are dimmed, listed last and left out of the
+  count; Offer only appears for requests you can craft; a player who both posts and asks in chat
+  is listed once; your alts' requests show under My requests (retract them on that alt). The list
+  no longer moves while the mouse is over it. Offering shows "Offered" for ten minutes.
+- Chat detection: "can anyone make [X]?", "who can craft [X]?", "need enchanter", "5x [item]" and
+  "bring mats" are understood; crafter adverts, guild recruitment, LFG lines and item links for
+  things nobody crafts are no longer taken for requests; "nvm, found one" removes the ask.
+- Plan: a "Best next" pick per profession (from what your bags allow), Blizzard's skill-up marks, honest estimates for yellow
+  and green recipes, notices at the cap and when colors are out of date, and a bar for every
+  profession (gathering ones too). The Craft button opens the profession window when it is
+  closed and says "Crafting..." while a batch runs; a picked recipe stays picked under filters.
+- Craft checks cooldowns, required tools and the reagents in your bags (not the bank).
+- Queue: shows what is made ("2/5", "made · Bob"); reagent totals and Buy missing count only
+  what is still to make and skip crafts whose player brings the reagents.
+- Tooltips: alt counts only on reagents, per alt; recipe tooltips group "Known by", "Can learn"
+  (naming a specialization, reputation or level it can't check for an alt), "Needs level" and
+  "Needs more skill"; only characters on your realm and faction count as alts.
+- Buy missing reagents: stays clear of the Buyback tab, checks money and bag space, and reports
+  what actually arrived.
+- The one-click enchant button works with the Enchanting window open (crafting through the API)
+  or closed (a macro), and says why it is disabled.
+- Trainer reminders know book and quest ranks for Cooking, First Aid and Fishing; trainers'
+  waiting recipes are remembered. Transmutes that share a cooldown are one notice.
+- Settings are grouped into sections; "Forget other players' data" asks first and keeps your own
+  requests. The welcome window shows once more for the 1.0 changes.
+- Auto-busy covers dungeons and raids only (addon messages can't go out in combat).
+- /cb find, /cb requests, /cb plan, /cb chars and /cb forget; /cb opens the Professions-window tab
+  even before a profession window was opened this session.
+- Whispers from Find and Requests now open the chat box with the text typed in, for you to send.
+  Only Offer and Advertise send straight away, and their tooltips say so.
+
+### Fixed
+- Chat watching kept the last 40 Trade lines in your saved variables; they are deleted now and
+  only kept when you turn on `/cb chatdebug log`.
+- "Back online" notices no longer fire after a /reload.
+- Forever names: `UnitName` returns the surname there, not the realm. Your character is now
+  keyed "First Surname" (saved data and your open posts move over on first login), party
+  members and trade partners are read the same way, and a player who shares your first name is
+  no longer taken for you (#4).
+- "Seen in chat" quoted Forever's item links as "cnIQ1:[Light Leather]": its named quality colour
+  codes are now stripped everywhere (chat lines, peer data, the tuning log).
+
 ## [0.9.4] - 2026-09-27
 
 ### Added

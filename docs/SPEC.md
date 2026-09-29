@@ -30,7 +30,8 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
    Also `CraftBoardDB.chars[Me].profs[profID] = {name, rank, max}`. API: `NS.Recipes.Scan()`,
    `NS.Recipes.Mine()` → table, `NS.Recipes.Search(text)` → list of {recipeID, name, outputItemID, crafters={...}} across my chars and peers.
 3. `Inventory.lua` — `NS.Inventory.Count(itemID)` (bags+bank), `NS.Inventory.CanCraft(recipe)` →
-   `{ready=bool, missing={ {itemID, need, have}... } }`, `NS.Inventory.ShoppingList(recipeIDs)`.
+   `{ready=bool, reagents=, missing={ {itemID, need, have}... }, times=}` (count = output items, turned
+   into crafts by the recipe's yield), `NS.Inventory.Totals(list)` (reagents summed over crafts).
 4. `Comm.lua` — sync layer (see protocol). API: `NS.Comm.Broadcast()`, `NS.Comm.Peers()` →
    `{ [name-realm] = {recipes={[recipeID]=true}, profs={...}, seen=time, online=bool} }`,
    `NS.Comm.Request(itemID, qty, toName)` (sends a whisper), `NS.Comm.PostRequest(itemID, qty, note)`
@@ -41,7 +42,8 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
    fires `CHAT_SEEN_UPDATED`. Never sends anything. Shown as "Seen in chat" on Requests.
 5. `UI.lua` — one window that reproduces the client's own Professions window exactly
    (atlases, fonts, offsets captured in `docs/professionsframe-dump.txt`; `/cb dump` recaptures).
-   Two side tabs: **Find** (grouped recipe list under Blizzard category headers, search + Filter
+   Three tabs (side tabs standalone, top tabs inside ProfessionsFrame): **Plan** (1.0, see below),
+   **Find** (grouped recipe list under Blizzard category headers, search + Filter
    dropdown, recipe card with reagent slots have/need, a "Missing: ..." line for my own short
    recipes, crafters, Whisper and Post request) and **Requests** (open board posts). A one-line
    board status ("N crafters online · M open requests") sits where Blizzard shows the skill bar;
@@ -59,17 +61,39 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
    Option "Open CraftBoard inside the Professions window" (default on). Hooks.lua's buttons
    are hidden while the tab exists.
 
+## 1.0 modules (2026-09-28)
+- `Skills.lua` — profession ranks from the profession book (`GetProfessions`), trainer reminders,
+  `Skills.Ranks()` / `Skills.NextRank(profID)`.
+- `Cooldowns.lua` — crafting cooldowns per character, shared in the hello, ready notice.
+- `Queue.lua` — crafts I'll make (`chars[Me].queue`), summed reagents, `made` counts from casts.
+- `Craft.lua` — Craft / Craft next through `C_TradeSkillUI.CraftRecipe` from a click, only with
+  that profession's window open on my own character.
+- `Trade.lua` — crafted-for-you counts, queue delivery, one-click enchant button.
+- `Merchant.lua` — "Buy missing reagents" for the queue's vendor reagents (leaving out crafts
+  whose player brings the reagents), checked against money, stock and bag space.
+- `Tooltips.lua` — group crafters, reagent use / queue needs / alt counts, recipe items vs. my
+  characters.
+- Inventory keeps `chars[key].bags` and `.bank` (reagent-like items only; the bank as last seen,
+  topped up from the client's cached counts at login) for counts on alts of the same realm and
+  faction.
+- UI has a third tab, Plan (recipes by skill-up colour from `rec.d`, saved at each scan).
+
 ## Protocol (Comm.lua) — prefix `CBRD`, version byte first
 Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonChannel.
-- `H` hello: `{v=1, profs={[profID]=rank}, n=#recipes, h=hash, b=true?}` on login/channel join and every
-  10 min (jittered); `b` (busy) is optional and also triggers an extra hello within ~5 s when it changes. Recipients whose stored hash differs reply `Q` (query) to that sender only.
-- `Q` query → sender answers `R` recipes: `{v=1, list={recipeID,...}, h=hash}` (recipe IDs only,
+- `H` hello: `{v=1, profs={[profID]={n=name,r=rank,m=max}}, n=#recipes, h=hash, b=true?, l=true?, cd={[recipeID]=secs}?}`
+  on login/channel join and every 10 min (jittered); `b` (busy) is optional and also triggers an
+  extra hello within ~5 s when it changes; `l` marks the first hello after login (back-online
+  notice); `cd` carries crafting cooldowns as seconds until ready. Recipients whose stored hash differs reply `Q` (query) to that sender only.
+- `Q` query → sender answers `R` recipes: `{v=1, list={{id,name,outputItemID,profID},...}, h=hash, profs=}` (names
+  dropped, then the list truncated, to fit 8 KB compressed;
   compact). Whisper-distribution replies are fine (AceComm whisper → "WHISPER" addon msg).
-- `P` post: `{v=1, id=<sender..time>, item=itemID, qty=n, note=<=60 chars, t=time}`; `X` retract.
+- `P` post: `{v=1, id=<sender..time>, item=itemID, qty=n, note=<=60 chars, t=time, pa=parent id?}`;
+  `X` retract. `pa` links an order for an intermediate to the request it is for.
   Posts expire after 24h locally.
 - Two distributions: GUILD always (if in guild), CHANNEL when `CraftBoardDB.realmChannel` is on
   (default on). Channel name `CraftBoardF` (hidden from chat: leave it out of chat frames).
-- Rate limit: hello ≤1/10min, full list ≤1/min per peer; ignore malformed / oversize input.
+- Rate limit: hello ≤1/10min per distribution (busy changes: ≤1/15 s), full list ≤1/min per peer;
+  ignore malformed / oversize input; exact duplicates (guild + channel) are dropped before counting.
 
 ## Non-goals (v0.1)
 No gold/tips in protocol, no cross-faction, no auction-house integration, no combat anything.
