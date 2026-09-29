@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 CraftBoard 1.0: from a crafting-order board to a crafting companion for Forever.
 
 ### Added
-- Find: "Hide what I can craft" in the Filter menu leaves out recipes you or your characters on
-  this realm and faction already know, so only crafts you need someone else for are listed.
-  Professions with nothing left drop out of the menu while it is on.
+- Find: "Hide what I can craft" in the Filter menu leaves out what you can get without anyone
+  else: what this character makes, and items your characters on this realm and faction make and
+  can mail you. An enchant only an alt knows stays listed (without a scroll it has to be put on
+  your gear in person), with the other players who know it. Professions with nothing left drop
+  out of the menu while it is on.
 - Plan tab: your professions with their learned recipes by skill-up colour (orange, yellow,
   green, grey), ready ones first. The card says how many crafts reach the next milestone, when you
   can train the next rank, and which reagents the planned crafts need (with what your alts hold).

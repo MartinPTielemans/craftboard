@@ -142,7 +142,7 @@ local enUS = {
   "My queue",
   "Only what I can craft",
   "Hide what I can craft",
-  "Leaves out recipes you or your characters on this realm and faction already know, so only crafts you need someone else for are listed.",
+  "Leaves out what this character can make, and items your characters on this realm and faction can make and mail you. An enchant only an alt knows stays: without a scroll it has to be put on your gear by someone who is there.",
   "You can craft everything here yourself.",
   "You can craft everything matching \"%s\" yourself.",
   "Nothing you can craft right now.",

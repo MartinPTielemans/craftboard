@@ -1819,7 +1819,9 @@ local function StatusText(u)
     if not u.alt and u.peersN == 0 then return "" end
     return L["you"]
   end
-  if u.alt then return u.alt end
+  -- An enchant only an alt knows, with "Hide what I can craft" on: who else can put it on my
+  -- gear matters (the alt still shows when nobody else knows it).
+  if u.alt and not (u.outputItemID == nil and u.peersN > 0 and find.HideMine()) then return u.alt end
   if u.onlineN == 1 then return u.onlineName end
   if u.onlineN > 1 then return format(L["%d online"], u.onlineN) end
   if u.peersN == 1 then return GREY .. u.peerName .. "|r" end
@@ -1986,8 +1988,8 @@ local function SetProf(id)
   UI.FilterFind(false)
 end
 
--- Find's "Hide what I can craft" (CraftBoardDB.ui.findHideMine): recipes this character or a
--- reachable alt knows are left out, so the list holds what I'd need someone else for.
+-- Find's "Hide what I can craft" (CraftBoardDB.ui.findHideMine): what I can get without anyone
+-- else is left out, so the list holds what I'd need someone else for.
 function find.HideMine()
   local db = UIDB()
   return db ~= nil and db.findHideMine == true
@@ -1999,9 +2001,11 @@ function find.SetHideMine(on)
   UI.FilterFind(false)
 end
 
--- One of my characters can make it (u.alt is set only for alts on this realm and faction).
+-- I can get it myself: this character makes it, or an alt on this realm and faction (u.alt)
+-- makes an item it can mail me. An alt's enchant with no item (no scroll) doesn't count: it is
+-- cast on the gear in a trade, and my gear can't go to my alt.
 function find.CanMakeMyself(u)
-  return u.me or u.alt ~= nil
+  return u.me or (u.alt ~= nil and u.outputItemID ~= nil)
 end
 
 local SetPortrait   -- Window section
@@ -2422,7 +2426,7 @@ function find.Entries()
   local profs = ProfEntries(find)
   return function()
     local e = { { kind = "check", text = L["Hide what I can craft"],
-      tip = L["Leaves out recipes you or your characters on this realm and faction already know, so only crafts you need someone else for are listed."],
+      tip = L["Leaves out what this character can make, and items your characters on this realm and faction can make and mail you. An enchant only an alt knows stays: without a scroll it has to be put on your gear by someone who is there."],
       get = find.HideMine, set = function() find.SetHideMine(not find.HideMine()) end },
       { kind = "divider" } }
     for _, x in ipairs(profs()) do e[#e + 1] = x end

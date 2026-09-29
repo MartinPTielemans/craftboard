@@ -637,8 +637,15 @@ do
   db.ui.findHideMine = true
   walk("find: hide what I can craft", function() NS.UI.FilterFind(false) end)
   check(not shows(2152) and shows(18560), "hiding what I can craft keeps only others' recipes")
+  -- An alt's item can be mailed to me (hidden); an alt's enchant can't reach my gear (stays).
+  local alt = db.chars["Bankalt-Forever"]
+  alt.recipes[9501] = { p = 333, n = "Enchant Boots - Minor Speed", e = true, r = {} }
+  alt.recipes[9502] = { p = 165, n = "Alt Armor Kit", o = 2305, r = {} }
+  NS.UI.RefreshFind()
+  check(shows(9501) and not shows(9502), "an alt's enchant stays, an alt's item is hidden")
+  alt.recipes[9501], alt.recipes[9502] = nil, nil
   db.ui.findHideMine = nil
-  NS.UI.FilterFind(false)
+  NS.UI.RefreshFind()
 end
 walk("badge and status", function() NS.UI.UpdateBadge(); NS.UI.RefreshStatus() end)
 walk("hide", function() NS.UI.Hide() end)

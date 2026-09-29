@@ -24,8 +24,8 @@ CurseForge app and WowUp under the Forever game version.
   nobody can hand those over.
 - **Find.** Search any item and see everyone who can craft it, grouped by category like
   Blizzard's list. Reagents show what you have and what is missing. "Hide what I can craft" in the
-  Filter menu leaves out what you or your alts already make, so only crafts you need someone else
-  for are listed.
+  Filter menu leaves out what you or your alts can already provide (an alt's enchant stays, since
+  it can't reach your gear), so only crafts you need someone else for are listed.
 - **Requests.** Post an order with a quantity and a note. Crafters see it on the board and offer
   with one click.
 - **Seen in chat.** Players asking for a crafter in Trade or General ("LF enchanter", "WTB [item]")
