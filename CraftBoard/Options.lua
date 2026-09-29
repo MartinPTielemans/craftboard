@@ -20,11 +20,11 @@ local categoryID                                -- modern / canvas path
 local legacyPanel                               -- InterfaceOptions path
 
 -- A post's sender is one of my characters (the one I'm playing, or another CraftBoard knows).
+-- By exact name only: another player's cached post can carry an old first-name-only sender that
+-- matches mine.
 local function IsMine(from)
   if type(from) ~= "string" then return false end
-  if NS.IsMe and NS.IsMe(from) then return true end
-  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars
-  return chars and type(chars[from]) == "table" or false
+  return (NS.MyCharKey and NS.MyCharKey(from)) ~= nil
 end
 
 -- Clears every known crafter and every request from other players (my own requests stay), then

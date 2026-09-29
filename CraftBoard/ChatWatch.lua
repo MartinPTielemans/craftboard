@@ -715,6 +715,9 @@ local function PublicChannel(baseName, channelName, zoneChannelID)
   local head = base:match("^([^%s%-%(]+)") or base
   local server = ServerChannels()
   if server[base] then return head, base end
+  -- A custom channel (no zone channel ID) under a server channel's name ("Trade - Guild"): not
+  -- watched, unless the server lists that very name.
+  if zoneChannelID == 0 then return nil end
   if head == "Trade" or head == "General" or head == "LookingForGroup" then return head, base end
   for name in pairs(server) do
     if base:sub(1, #name) == name then return head, base end

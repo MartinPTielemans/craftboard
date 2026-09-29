@@ -5513,6 +5513,10 @@ end
 function UI.Refresh()
   if not (host and host:IsVisible()) then
     dirty = true
+    -- The broker and an embedded tab still show the request count: recount it for them.
+    reqs.countDirty = true
+    if UI.RequestCount then UI.RequestCount() end
+    UI.UpdateBadge()
     return
   end
   dirty = false

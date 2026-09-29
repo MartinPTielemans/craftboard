@@ -226,6 +226,9 @@ NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
       if type(t) ~= "number" or now - t > MADE_TTL then made[id] = nil end
     end
   end
+  -- A batch nothing was heard from for a while is over (a cast that never started, or one that
+  -- ended without a failure event): its queue row isn't credited with later casts.
+  if batch and time() - batch.t >= 6 then batch = nil end
   local entry = batch and batch.recipeID == spellID and batch.entry or nil
   if batch and batch.recipeID == spellID then
     batch.left, batch.t = batch.left - 1, time()
