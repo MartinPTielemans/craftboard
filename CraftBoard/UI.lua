@@ -436,7 +436,7 @@ local function QtyBox(name, parent)
   if HasTemplate("NumericInputSpinnerTemplate") then
     local ok, e = pcall(CreateFrame, "EditBox", name, parent, "NumericInputSpinnerTemplate")
     if ok and e then
-      if e.SetMinMaxValues then pcall(e.SetMinMaxValues, e, 1, 999) end
+      if e.SetMinMaxValues then pcall(e.SetMinMaxValues, e, 1, 1000) end
       if e.SetValue then pcall(e.SetValue, e, 1) end
       if (e:GetText() or "") == "" then e:SetText("1") end
       return e, true
@@ -5069,13 +5069,14 @@ do
 -- "Requests (2)": other players' requests I can craft. Top tabs carry it in their label; side
 -- tabs get a small number in the icon's corner.
 function UI.UpdateBadge()
-  if not tabs[2] then return end
   -- The Requests tab just counted while it is the one showing.
-  local n = activeTab == 2 and reqs.count or (UI.RequestCount and UI.RequestCount()) or 0
+  local n = tabs[2] and activeTab == 2 and reqs.count or (UI.RequestCount and UI.RequestCount()) or 0
   if n == UI.badgeCount then return end
   UI.badgeCount = n
-  -- Embed.lua's CraftBoard tab and the minimap button show the same count.
+  -- Embed.lua's CraftBoard tab and the minimap button show the same count, also before the
+  -- window's own tabs are built.
   NS.Fire("BADGE_UPDATED", n)
+  if not tabs[2] then return end
   local label = n > 0 and format(L["%s (%d)"], TAB_NAMES[2], n) or TAB_NAMES[2]
   local side = tabs[2]
   if side.cbIcon then

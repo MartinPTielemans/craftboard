@@ -379,6 +379,11 @@ do
   db.posts["post:bob:2"] = nil
   Q.Adopt("Bob-Forever", 2304, "post:bob:3", 5)
   check(Q.Get("post:bob:3") == c and c.qty == 3, "adoption keeps what was handed over")
+  -- Made already, then posted with a bigger total: the rest is owed too, the made one stays made.
+  c.madeItems = 1
+  db.posts["post:bob:3"] = nil
+  Q.Adopt("Bob-Forever", 2304, "post:bob:4", 7)
+  check(Q.Get("post:bob:4") == c and c.qty == 5 and Q.MadeItems(c) == 1, "a bigger post total reaches a started craft")
   Q.Remove(c.id)
 end
 -- They take back "have mats": the queued craft needs the reagents again.
