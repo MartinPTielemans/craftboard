@@ -238,8 +238,10 @@ local function MigrateIdentity()
     if type(chars[new]) ~= "table" then chars[new] = chars[old] end
     chars[old] = nil
   end
+  -- Only posts made here (mine = true): another player's cached post can carry the same
+  -- first-name-only sender when they share my first name.
   for _, p in pairs(type(CraftBoardDB.posts) == "table" and CraftBoardDB.posts or {}) do
-    if type(p) == "table" and p.from == old then p.from = new end
+    if type(p) == "table" and p.mine and p.from == old then p.from = new end
   end
 end
 

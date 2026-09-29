@@ -128,13 +128,17 @@ fire("ADDON_LOADED", "CraftBoard")
 local db = CraftBoardDB
 -- An older version keyed this character by first name only; login migrates it.
 db.chars["Raion-Forever"] = { recipes = {}, profs = {}, busy = true }
-db.posts["Raion-Forever:9:1"] = { id = "Raion-Forever:9:1", from = "Raion-Forever", item = 1, qty = 1, t = time() }
+db.posts["Raion-Forever:9:1"] = { id = "Raion-Forever:9:1", from = "Raion-Forever", item = 1, qty = 1, t = time(), mine = true }
+-- Another player's cached post under the same first-name-only key (they share my first name).
+db.posts["other:1"] = { id = "other:1", from = "Raion-Forever", item = 1, qty = 1, t = time() }
 fire("PLAYER_LOGIN")
 
 -- Identity and names
 eq(NS.Me, "Raion Lyzl-Forever", "NS.Me has the surname")
 check(db.chars["Raion-Forever"] == nil and db.chars[NS.Me].busy == true, "legacy character data migrated")
 eq(db.posts["Raion-Forever:9:1"].from, NS.Me, "my old post migrated")
+eq(db.posts["other:1"].from, "Raion-Forever", "another player's post under the old key stays theirs")
+db.posts["other:1"] = nil
 check(NS.IsMe("Raion Lyzl-Forever") and NS.IsMe("Raion-Forever"), "IsMe: full and first-name-only")
 check(not NS.IsMe("Raion Other-Forever"), "IsMe: a namesake is not me")
 check(not NS.SamePlayer("Lollo Causto-Forever", "Lollo Other-Forever"), "SamePlayer: different surnames")

@@ -1477,8 +1477,10 @@ function handlers.H(full, data)
   end
   if p.hash == h then return end
   if data.n <= 0 then
-    -- Nothing to fetch; record the empty book without a round trip.
+    -- Nothing to fetch; record the empty book without a round trip. A query still open for an
+    -- older list is closed with it, so a late answer can't bring the recipes back.
     p.recipes, p.hash = {}, h
+    queried[full], queriedHash[full], pagesIn[full], pendingQ[full] = nil, nil, nil, nil
     Fire("PEERS_UPDATED")
     return
   end

@@ -155,7 +155,11 @@ end
 function Cooldowns.FromTradeSkill()
   local c = MyChar()
   if not (c and type(c.recipes) == "table" and TSUI and TSUI.GetRecipeCooldown) then return end
-  if TSUI.IsTradeSkillLinked and TSUI.IsTradeSkillLinked() then return end
+  -- Another's recipes (a linked, guild or NPC view) say nothing about my cooldowns.
+  if (TSUI.IsTradeSkillLinked and TSUI.IsTradeSkillLinked()) or (TSUI.IsTradeSkillGuild and TSUI.IsTradeSkillGuild())
+    or (TSUI.IsNPCCrafting and TSUI.IsNPCCrafting()) then
+    return
+  end
   local marked = false
   for id, rec in pairs(c.recipes) do
     if type(rec) == "table" and not rec.cdr then

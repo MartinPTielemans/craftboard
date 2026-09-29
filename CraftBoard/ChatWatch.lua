@@ -119,8 +119,9 @@ local function KnownOutputs()
   -- recipes nobody advertises any more).
   local db = type(CraftBoardDB) == "table" and CraftBoardDB
   local cat = db and type(db.recipeNames) == "table" and db.recipeNames or {}
-  for _, p in pairs(db and type(db.peers) == "table" and db.peers or {}) do
-    for id in pairs(type(p) == "table" and type(p.recipes) == "table" and p.recipes or {}) do
+  for name, p in pairs(db and type(db.peers) == "table" and db.peers or {}) do
+    local ignored = NS.IsIgnored and NS.IsIgnored(name)
+    for id in pairs(not ignored and type(p) == "table" and type(p.recipes) == "table" and p.recipes or {}) do
       local e = cat[id]
       if type(e) == "table" and type(e.o) == "number" then set[e.o] = true end
     end
@@ -779,6 +780,7 @@ end
 -- add crafted items. Players I ignore drop out.
 if NS.RegisterCallback then
   NS.RegisterCallback(ChatWatch, "IGNORE_UPDATED", function()
+    outputs = nil
     for k in pairs(seen) do
       if NS.IsIgnored(k) then seen[k] = nil end
     end
