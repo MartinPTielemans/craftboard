@@ -626,6 +626,20 @@ NS.UI.ShowTab(3)
 for _, id in ipairs({ 2152, 7443, 17187 }) do walk("plan card " .. id, function() NS.UI.SelectPlan(id, true) end) end
 NS.UI.ShowTab(1)
 for _, id in ipairs({ 2152, 7443, 17187 }) do walk("find card " .. id, function() NS.UI.SelectRecipe(id) end) end
+-- "Hide what I can craft": my Light Armor Kit leaves Find, the peer's Mooncloth stays.
+do
+  local function shows(id)
+    for _, x in ipairs(NS.UI.FindShown()) do if x == id then return true end end
+    return false
+  end
+  NS.UI.RefreshFind()
+  check(shows(2152) and shows(18560), "Find lists my recipes and a peer's")
+  db.ui.findHideMine = true
+  walk("find: hide what I can craft", function() NS.UI.FilterFind(false) end)
+  check(not shows(2152) and shows(18560), "hiding what I can craft keeps only others' recipes")
+  db.ui.findHideMine = nil
+  NS.UI.FilterFind(false)
+end
 walk("badge and status", function() NS.UI.UpdateBadge(); NS.UI.RefreshStatus() end)
 walk("hide", function() NS.UI.Hide() end)
 runTimers()

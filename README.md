@@ -23,7 +23,9 @@ CurseForge app and WowUp under the Forever game version.
   shared with other CraftBoard users on your realm. Bind-on-Pickup crafts are never shared, since
   nobody can hand those over.
 - **Find.** Search any item and see everyone who can craft it, grouped by category like
-  Blizzard's list. Reagents show what you have and what is missing.
+  Blizzard's list. Reagents show what you have and what is missing. "Hide what I can craft" in the
+  Filter menu leaves out what you or your alts already make, so only crafts you need someone else
+  for are listed.
 - **Requests.** Post an order with a quantity and a note. Crafters see it on the board and offer
   with one click.
 - **Seen in chat.** Players asking for a crafter in Trade or General ("LF enchanter", "WTB [item]")

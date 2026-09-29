@@ -141,6 +141,10 @@ local enUS = {
   -- Requests tab: groups, rows, card
   "My queue",
   "Only what I can craft",
+  "Hide what I can craft",
+  "Leaves out recipes you or your characters on this realm and faction already know, so only crafts you need someone else for are listed.",
+  "You can craft everything here yourself.",
+  "You can craft everything matching \"%s\" yourself.",
   "Nothing you can craft right now.",
   "Right-click for actions",
   "%s (%d)",

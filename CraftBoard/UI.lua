@@ -1986,6 +1986,24 @@ local function SetProf(id)
   UI.FilterFind(false)
 end
 
+-- Find's "Hide what I can craft" (CraftBoardDB.ui.findHideMine): recipes this character or a
+-- reachable alt knows are left out, so the list holds what I'd need someone else for.
+function find.HideMine()
+  local db = UIDB()
+  return db ~= nil and db.findHideMine == true
+end
+
+function find.SetHideMine(on)
+  local db = UIDB()
+  if db then db.findHideMine = on and true or nil end
+  UI.FilterFind(false)
+end
+
+-- One of my characters can make it (u.alt is set only for alts on this realm and faction).
+function find.CanMakeMyself(u)
+  return u.me or u.alt ~= nil
+end
+
 local SetPortrait   -- Window section
 
 -- Portrait: the selected profession's icon, else CraftBoard's own. Standalone window only:
@@ -2399,10 +2417,27 @@ function UI.UpdateAdvertise()
   find.advertise:SetEnabled(find.itemID ~= nil and AdvertiseChoice() ~= "Off")
 end
 
+-- Find's filter menu: the "Hide what I can craft" check, then the professions.
+function find.Entries()
+  local profs = ProfEntries(find)
+  return function()
+    local e = { { kind = "check", text = L["Hide what I can craft"],
+      tip = L["Leaves out recipes you or your characters on this realm and faction already know, so only crafts you need someone else for are listed."],
+      get = find.HideMine, set = function() find.SetHideMine(not find.HideMine()) end },
+      { kind = "divider" } }
+    for _, x in ipairs(profs()) do e[#e + 1] = x end
+    return e
+  end
+end
+
 local function BuildFind(p)
   find.refilter = function(keep) UI.FilterFind(keep) end
-  local d = BuildColumns(p, find, "CraftBoardFindScroll", FillFindEntry, ProfEntries(find),
-    function() return find.prof == nil end, function() SetProf(nil) end)
+  local d = BuildColumns(p, find, "CraftBoardFindScroll", FillFindEntry, find.Entries(),
+    function() return find.prof == nil and not find.HideMine() end, function()
+      local db = UIDB()
+      if db then db.findProf, db.findHideMine = nil, nil end
+      UI.FilterFind(false)
+    end)
 
   find.none = Placeholder(d, L["Select a recipe to see who can craft it."])
   local body = CreateFrame("Frame", nil, d)
@@ -2651,14 +2686,34 @@ end
 function UI.FilterFind(keepScroll)
   if not find.list then return end
   local db = UIDB()
+  -- With "Hide what I can craft", only professions with something left in them are offered.
+  local hideMine = find.HideMine()
+  if hideMine then
+    local left = {}
+    for _, u in ipairs(universe) do
+      if u.prof ~= nil and not find.CanMakeMyself(u) then left[u.prof] = true end
+    end
+    find.profs = {}
+    for _, pr in ipairs(universeProfs) do
+      if left[pr.id] then find.profs[#find.profs + 1] = pr end
+    end
+  else
+    find.profs = universeProfs
+  end
   find.prof = ValidProf(find.profs, db and db.findProf)
   local text = strtrim(find.search:GetText() or "")
   local searching = #text >= 2
   find.searching = searching
   local prof = find.prof
-  local candidates = {}
+  local candidates, hidden = {}, {}
   for _, u in ipairs(universe) do
-    if prof == nil or u.prof == prof then candidates[#candidates + 1] = u end
+    if prof == nil or u.prof == prof then
+      if hideMine and find.CanMakeMyself(u) then
+        hidden[#hidden + 1] = u
+      else
+        candidates[#candidates + 1] = u
+      end
+    end
   end
 
   local results = {}
@@ -2698,7 +2753,15 @@ function UI.FilterFind(keepScroll)
     if #universe == 0 then
       emptyText = EMPTY_RECIPES
     elseif searching then
-      emptyText = format(L["No known crafter for \"%s\"."], text)
+      -- Hidden by "Hide what I can craft": say so rather than "no crafter".
+      local mine = false
+      for _, u in ipairs(hidden) do
+        if Matches(u, Tokens(text)) then mine = true break end
+      end
+      emptyText = mine and format(L["You can craft everything matching \"%s\" yourself."], text)
+        or format(L["No known crafter for \"%s\"."], text)
+    elseif #hidden > 0 then
+      emptyText = L["You can craft everything here yourself."]
     end
   end
   find.list:SetItems(items, emptyText, keepScroll)
@@ -2715,8 +2778,14 @@ end
 function UI.RefreshFind(keepScroll)
   if not find.list then return end
   BuildUniverse()
-  find.profs = universeProfs
   UI.FilterFind(keepScroll)
+end
+
+-- The recipe IDs Find lists right now (in order).
+function UI.FindShown()
+  local out = {}
+  for _, u in ipairs(find.results or {}) do out[#out + 1] = u.recipeID end
+  return out
 end
 
 -- Requests tab --------------------------------------------------------------
