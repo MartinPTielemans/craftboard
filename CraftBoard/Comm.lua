@@ -267,6 +267,12 @@ local function Encode(tbl)
   return LibDeflate:EncodeForWoWAddonChannel(comp), #comp
 end
 
+-- An encoded message the receiver's Decode accepts: compressed within MAX_DECODED and the text
+-- within MAX_RAW.
+local function Fits(text, size)
+  return type(text) == "string" and type(size) == "number" and size <= MAX_DECODED and #text <= MAX_RAW
+end
+
 local function Decode(text)
   if not (LibSerialize and LibDeflate) then return nil end
   if type(text) ~= "string" or #text > MAX_RAW then return nil end
@@ -556,42 +562,61 @@ local function SendRecipes(dist, to, paged)
   local h, profs, list = MyHash(), MyProfs(), BuildRecipeList(true)
   local text, size = Encode({ v = VERSION, h = h, profs = profs, list = list })
   if not text then return false end
-  if size <= MAX_DECODED then
+  if Fits(text, size) then
     return (pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK"))
   end
   if dist ~= "WHISPER" then return false end
   if not paged then
     local payload = { v = VERSION, h = h, profs = profs, list = BuildRecipeList(false) }
     text, size = Encode(payload)
-    while text and size > MAX_DECODED and #payload.list > 1 do
+    while text and not Fits(text, size) and #payload.list > 1 do
       local keep = floor(#payload.list * 0.75)
       for k = #payload.list, keep + 1, -1 do payload.list[k] = nil end
       text, size = Encode(payload)
     end
-    return text ~= nil and (pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK"))
+    return Fits(text, size) and (pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK")) or false
   end
-  -- Pages: as many list entries as fit, the first page also carrying the professions.
-  local pages, i = {}, 1
+  -- Pages: as many list entries as fit, the first page also carrying the professions. Sized with
+  -- the largest page numbers, then every page is encoded as sent and checked again; a page that
+  -- still doesn't fit makes the pages smaller and the whole list is paged again.
+  local function Paginate(per)
+    local pages, i = {}, 1
+    while i <= #list do
+      local n = min(per, #list - i + 1)
+      local chunk, ptext, psize
+      repeat
+        chunk = {}
+        for k = i, i + n - 1 do chunk[#chunk + 1] = list[k] end
+        ptext, psize = Encode({ v = VERSION, h = h, profs = #pages == 0 and profs or nil, list = chunk,
+          pg = MAX_PAGES, pgs = MAX_PAGES })
+        if not Fits(ptext, psize) and n > 1 then n = max(1, floor(n * 0.75)) else break end
+      until false
+      if not ptext then return nil end
+      pages[#pages + 1] = chunk
+      i = i + n
+      if #pages > MAX_PAGES then return nil end
+    end
+    return pages
+  end
   local per = max(1, floor(#list * MAX_DECODED / size * 0.8))
-  while i <= #list do
-    local n = min(per, #list - i + 1)
-    local chunk, ptext, psize
-    repeat
-      chunk = {}
-      for k = i, i + n - 1 do chunk[#chunk + 1] = list[k] end
-      ptext, psize = Encode({ v = VERSION, h = h, profs = #pages == 0 and profs or nil, list = chunk })
-      if ptext and psize > MAX_DECODED and n > 1 then n = max(1, floor(n * 0.75)) else break end
-    until false
-    if not ptext then return false end
-    pages[#pages + 1] = chunk
-    i = i + n
-    if #pages > MAX_PAGES then return false end
+  for _ = 1, 3 do
+    local pages = Paginate(per)
+    if not pages then return false end
+    local texts = {}
+    for pg, chunk in ipairs(pages) do
+      local ptext, psize = Encode({ v = VERSION, h = h, profs = pg == 1 and profs or nil, list = chunk, pg = pg, pgs = #pages })
+      if not Fits(ptext, psize) then texts = nil break end
+      texts[pg] = ptext
+    end
+    if texts then
+      for _, ptext in ipairs(texts) do
+        if not pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. ptext, dist, to, "BULK") then return false end
+      end
+      return true
+    end
+    per = max(1, floor(per * 0.75))
   end
-  for pg, chunk in ipairs(pages) do
-    local ptext = Encode({ v = VERSION, h = h, profs = pg == 1 and profs or nil, list = chunk, pg = pg, pgs = #pages })
-    if not (ptext and pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. ptext, dist, to, "BULK")) then return false end
-  end
-  return true
+  return false
 end
 
 -- Peers -----------------------------------------------------------------

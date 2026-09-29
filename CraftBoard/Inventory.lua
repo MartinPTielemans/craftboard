@@ -383,18 +383,31 @@ local function CachedBankCount(itemID)
   return math.max(0, (tonumber(all) or 0) - (tonumber(bags) or 0))
 end
 
--- At login: the saved bank counts of my recipes' reagents, from the client's cache. Only counts
--- above zero are taken (zero may just mean "not loaded"). True when a count changed.
-local function RefreshBankFromCache()
+-- The saved bank counts from the client's cache: at login for my recipes' reagents and whatever
+-- is saved; after a bag change with the bank closed (a craft can use the reagent bank) for what is
+-- saved. A zero only clears a saved count when the cache shows the bank loaded (another of these
+-- items is there); before that it may just mean "not loaded yet". True when a count changed.
+local function RefreshBankFromCache(savedOnly)
   local c = MyRecord()
   if not c then return false end
   local bank = type(c.bank) == "table" and c.bank or {}
-  local changed = false
-  for id in pairs(Inventory.ReagentSet()) do
+  local ids = {}
+  for id in pairs(bank) do ids[id] = true end
+  if not savedOnly then
+    for id in pairs(Inventory.ReagentSet()) do ids[id] = true end
+  end
+  local counts, loaded = {}, false
+  for id in pairs(ids) do
     local n = CachedBankCount(id)
+    counts[id] = n
+    if n > 0 then loaded = true end
+  end
+  local changed = false
+  for id, n in pairs(counts) do
     if n > 0 and bank[id] ~= n then
-      bank[id] = n
-      changed = true
+      bank[id], changed = n, true
+    elseif n == 0 and loaded and bank[id] ~= nil then
+      bank[id], changed = nil, true
     end
   end
   c.bank = bank
@@ -440,6 +453,11 @@ local bagPending = false
 local function BagsChanged()
   bagPending = false
   local ok, changed = pcall(RecordItems)
+  -- Crafting draws on the reagent bank too: its saved counts follow the cache.
+  if not bankOpen then
+    local ok2, bankChanged = pcall(RefreshBankFromCache, true)
+    if ok2 and bankChanged then changed = true end
+  end
   if not ok or changed then NS.Fire("INVENTORY_UPDATED") end
 end
 
