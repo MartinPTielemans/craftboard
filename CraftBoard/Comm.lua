@@ -920,15 +920,6 @@ function SendMyPosts(dist)
   local db, me = DB(), MyKey()
   if not (db and me) then return end
   local now = time()
-  for id, p in pairs(db.posts) do
-    if type(p) == "table" and p.from == me and type(p.t) == "number" and now - p.t < POST_TTL then
-      local target = dist == "CHANNEL" and channelId or nil
-      if Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa }, dist, target, "BULK") then
-        p.sentTo = p.sentTo or {}
-        p.sentTo[dist] = true
-      end
-    end
-  end
   -- My retractions still within the post lifetime all stay; each hello repeats the newest half
   -- of MAX_REPEATED_X and a rotating share of the older ones, so the burst stays bounded and
   -- every tombstone keeps reaching peers who were away.
@@ -952,6 +943,17 @@ function SendMyPosts(dist)
   end
   for _, id in ipairs(send) do
     Send("X", { v = VERSION, id = id }, dist, dist == "CHANNEL" and channelId or nil, "BULK")
+  end
+  -- Then the live posts: a peer still holding retracted ones at the per-sender limit has room
+  -- for them once the retractions above are in.
+  for id, p in pairs(db.posts) do
+    if type(p) == "table" and p.from == me and type(p.t) == "number" and now - p.t < POST_TTL then
+      local target = dist == "CHANNEL" and channelId or nil
+      if Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa }, dist, target, "BULK") then
+        p.sentTo = p.sentTo or {}
+        p.sentTo[dist] = true
+      end
+    end
   end
 end
 
@@ -1499,11 +1501,44 @@ end
 -- ignore it (handlers.R). Only peers on this version join a batch: before it, R was read by
 -- whisper only (their hello's pg=1 came with reading broadcast lists), so older ones are
 -- whispered as ever.
+-- Queries that came in while sending wasn't possible (combat, chat lockdown): pendingR[peer] =
+-- when they asked. Answered by whisper once sending works, while the asker still reads the
+-- answer (QUERY_TTL); anyone past that gets a hello instead, which makes them ask again.
+local pendingR, pendingRTimer = {}, false
+local function RetryAnswers()
+  pendingRTimer = false
+  if not CanSend() then
+    if next(pendingR) and C_Timer and C_Timer.After then
+      pendingRTimer = true
+      C_Timer.After(15, RetryAnswers)
+    end
+    return
+  end
+  local now, stale = time(), false
+  for peer, t in pairs(pendingR) do
+    pendingR[peer] = nil
+    if now - t <= QUERY_TTL - 15 then
+      answered[peer] = now
+      SendRecipes("WHISPER", ShortName(peer), ReadsPages(peer))
+    else
+      stale = true
+    end
+  end
+  if stale then SendHello() end
+end
+
 function handlers.Q(full)
   Touch(full)
   local now = time()
   if answered[full] and now - answered[full] < ANSWER_GAP then return end
-  if not CanSend() then return end
+  if not CanSend() then
+    pendingR[full] = now
+    if not pendingRTimer and C_Timer and C_Timer.After then
+      pendingRTimer = true
+      C_Timer.After(15, RetryAnswers)
+    end
+    return
+  end
   answered[full] = now
   for i = #queryTimes, 1, -1 do
     if now - queryTimes[i] > R_BATCH_WINDOW then table.remove(queryTimes, i) end
