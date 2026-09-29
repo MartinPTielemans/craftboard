@@ -358,7 +358,8 @@ end
 do
   local c = Q.Add({ recipeID = 2152, item = 2304, qty = 1, who = "Bob-Forever", src = "chat:Bob-Forever:Light Armor Kit" })
   Q.Adopt("Bob-Forever", 2304, "post:bob:1")
-  check(Q.Has("post:bob:1") and not Q.Has("chat:Bob-Forever:Light Armor Kit"), "a posted chat ask keeps its queued craft")
+  check(Q.Has("post:bob:1") and Q.Has("chat:Bob-Forever:Light Armor Kit") and Q.Get("post:bob:1") == c,
+    "a posted chat ask keeps its queued craft (the chat ask still points at it)")
   Q.Remove(c.id)
 end
 -- They take back "have mats": the queued craft needs the reagents again.
@@ -527,6 +528,7 @@ end
 eq(NS.Comm.StripPrices("will pay 50 silver"), "will pay", "silver amounts leave a note")
 eq(NS.Comm.StripPrices("25c or 2 gold, tip 5"), "or, tip", "copper, gold and tip amounts leave a note")
 eq(NS.Comm.StripPrices("need 20 copper bars"), "need 20 copper bars", "copper bars are an item, not a price")
+eq(NS.Comm.StripPrices("10 oro y propina 5"), "y propina", "other languages' coin and tip amounts leave a note")
 
 -- Recipe tooltips: Blizzard's "Requires %s (%d)" becomes a pattern (a "^" with a start offset
 -- anchors at that offset in Lua 5.1, which the parser relies on) that reads profession and skill.

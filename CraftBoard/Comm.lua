@@ -206,7 +206,20 @@ end
 -- Prices off a post note ("5g", "50 s", "1.5g", "10 gold", "50 silver", "25c", "gold", the
 -- number in "tip 5"), trimmed: the board carries no gold amounts. "will tip" stays, and so do
 -- item names ("20 copper bars", "gold ore", "Silver Rod").
-local COIN = { g = true, s = true, c = true, gold = true, silver = true, copper = true }
+local COIN = { g = true, s = true, c = true, gold = true, silver = true, copper = true,
+  -- The other shipped languages' coin words (a note can come from any client).
+  silber = true, kupfer = true, argent = true, cuivre = true, oro = true, plata = true, cobre = true }
+-- The client's own coin words and symbols ("%d Gold", "g"; "%d or", "po" on French clients).
+for _, key in ipairs({ "GOLD_AMOUNT", "SILVER_AMOUNT", "COPPER_AMOUNT",
+  "GOLD_AMOUNT_SYMBOL", "SILVER_AMOUNT_SYMBOL", "COPPER_AMOUNT_SYMBOL" }) do
+  local v = _G[key]
+  if type(v) == "string" then
+    local w = v:gsub("|T.-|t", ""):gsub("%%%d*%$?d", ""):match("^%s*(.-)%s*$")
+    if w and w ~= "" and not w:find("[%s%%]") and w:find("^%a+$") then COIN[w:lower()] = true end
+  end
+end
+-- "tip 5" in each shipped language: the amount goes, the word stays.
+local TIP = { tip = true, tips = true, trinkgeld = true, pourboire = true, propina = true }
 local METAL_ITEM = { bar = true, bars = true, ore = true, ores = true, rod = true, rods = true, tube = true,
   tubes = true, wire = true, nugget = true, nuggets = true, powder = true, dust = true, ring = true,
   rings = true, band = true, bands = true, necklace = true, pendant = true }
@@ -223,8 +236,10 @@ local function StripPrices(s)
   s = s:gsub("%f[%a]([gG][oO][lL][dD])%f[%A]()", function(_, pos)
     if not ItemAfter(pos) then return " " end
   end)
-  s = s:gsub("(%f[%a][tT][iI][pP][sS]?)%s*:?%s*%d+[%.,]?%d*", "%1 ")
-    :gsub("%(%s*%)", " ")
+  s = s:gsub("%f[%a](%a+)%s*:?%s*%d+[%.,]?%d*", function(word)
+    if TIP[word:lower()] then return word .. " " end
+  end)
+  s = s:gsub("%(%s*%)", " ")
   s = s:gsub("%s+", " "):gsub(" ([,;:%.!%?%)])", "%1")
     :gsub("^[%s,;:%-%+/&]+", ""):gsub("[%s,;:%-%+/&]+$", "")
   return s
@@ -1426,9 +1441,15 @@ local function ReadsPages(full)
 end
 
 local function FlushBatch()
+  if not batch then return end
+  -- Combat or chat lockdown began while it waited: the batch waits too (queries that come in
+  -- meanwhile join it), then goes out.
+  if not CanSend() and C_Timer and C_Timer.After then
+    C_Timer.After(15, FlushBatch)
+    return
+  end
   local b = batch
   batch = nil
-  if not b then return end
   batchAt = time()
   local sent = {}
   for _, dist in pairs(b) do
