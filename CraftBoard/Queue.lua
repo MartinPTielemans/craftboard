@@ -26,7 +26,8 @@ local counter = 0
 function Queue.Add(e)
   local q = List()
   if not (q and type(e) == "table" and type(e.recipeID) == "number") then return nil end
-  for _, x in ipairs(q) do
+  -- Entries for recipes this character no longer knows are dropped first (they don't take room).
+  for _, x in ipairs(Queue.Entries()) do
     if e.src and x.src == e.src then return x, false end
   end
   if #q >= MAX then return nil, "full" end
@@ -176,8 +177,7 @@ end
 
 -- The queue has room for another entry.
 function Queue.IsFull()
-  local q = List()
-  return q ~= nil and #q >= MAX
+  return List() ~= nil and #Queue.Entries() >= MAX
 end
 
 -- The entry queued from a request (by its list id), or nil.
@@ -203,20 +203,32 @@ function Queue.Adopt(who, itemID, src)
   return nil
 end
 
--- One craft of recipeID was made: it goes to the oldest entry still needing it. Entries for
--- nobody (planned crafts from the Plan tab) are done when fully made; entries for a player
--- wait for the trade (Queue.Delivered).
+-- One craft of recipeID was made: its items go to the oldest entry still needing them, and what
+-- that entry doesn't need to the next one for the same recipe. Entries for nobody (planned
+-- crafts from the Plan tab) are done when fully made; entries for a player wait for the trade
+-- (Queue.Delivered).
 -- plannedOnly: only entries for nobody (enchant casts, which trades complete for players).
--- items: what the cast made, when known (a varying-yield recipe); else the recipe's yield.
+-- items: what the cast made, when known (a varying yield's extra); else the recipe's yield.
 function Queue.Crafted(recipeID, rec, plannedOnly, items)
   local q = List()
   if not q then return end
-  for i, x in ipairs(q) do
+  local left = items or math.max(1, type(rec) == "table" and rec.y or 1)
+  local changed = false
+  local i = 1
+  while i <= #q and left > 0 do
+    local x = q[i]
+    local removed = false
     if x.recipeID == recipeID and Queue.CraftsLeft(x, rec) > 0 and not (plannedOnly and x.who) then
-      x.madeItems, x.made = Queue.MadeItems(x) + (items or math.max(1, type(rec) == "table" and rec.y or 1)), nil
-      if not x.who and Queue.CraftsLeft(x, rec) == 0 then table.remove(q, i) end
-      NS.Fire("QUEUE_UPDATED")
-      return
+      local made = Queue.MadeItems(x)
+      local give = math.min(left, math.max(0, (x.qty or 0) - made))
+      x.madeItems, x.made = made + give, nil
+      left, changed = left - give, true
+      if not x.who and Queue.CraftsLeft(x, rec) == 0 then
+        table.remove(q, i)
+        removed = true
+      end
     end
+    if not removed then i = i + 1 end
   end
+  if changed then NS.Fire("QUEUE_UPDATED") end
 end

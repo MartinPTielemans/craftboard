@@ -341,6 +341,12 @@ do
   local items = 0
   for _, e in ipairs(plan) do items = items + e.count end
   check(items == 2 and #plan == 2, "a slot moves to another tier when a limited one runs out")
+  -- Its own item costs more than I have; another accepted tier is affordable: that one is bought.
+  NS.Queue.Totals = function() return { { itemID = 6201, alts = { 6202 }, need = 2, have = 0 } } end
+  sold = { 6201, 6202 }
+  GetMerchantItemInfo = function(i) return "x", nil, i == 1 and 1000000 or 10, 1, -1, true, nil, false end
+  plan = NS.Merchant.Plan()
+  check(#plan == 1 and plan[1].itemID == 6202 and plan[1].count == 2, "an unaffordable tier gives way to an affordable one")
   NS.Queue.Totals = totals
   GetMerchantNumItems, GetMerchantItemID, GetMerchantItemInfo, GetMoney = nil, nil, nil, nil
 end
@@ -422,6 +428,15 @@ do
   eq(Q.CraftsLeft(x, batch), 0, "partial delivery keeps the rest of the batch made")
   Q.Remove(x.id)
   me.recipes[9901] = nil
+  -- A cast that makes more than the oldest entry needs: the rest goes to the next one.
+  local vy = { p = 171, o = 997, y = 1, yMax = 3, r = { { 2318, 1 } } }
+  me.recipes[9902] = vy
+  local a = Q.Add({ recipeID = 9902, item = 997, qty = 2, who = "Bob-Forever", src = "vy1" })
+  local b = Q.Add({ recipeID = 9902, item = 997, qty = 1, who = "Bob-Forever", src = "vy2" })
+  Q.Crafted(9902, vy, nil, 3)
+  check(Q.CraftsLeft(a, vy) == 0 and Q.CraftsLeft(b, vy) == 0, "spare items from a cast carry to the next entry")
+  Q.Remove(a.id); Q.Remove(b.id)
+  me.recipes[9902] = nil
   local mine = NS.Me
   db.posts["root"] = { id = "root", from = mine, item = 2304, qty = 1, t = time() }
   db.posts["child"] = { id = "child", from = "Carl-Forever", item = 5, qty = 1, t = time(), pa = "root" }

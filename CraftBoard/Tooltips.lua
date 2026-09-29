@@ -43,13 +43,15 @@ local function Rebuild()
     if p then
       byPeer[m] = p
       local short = NS.ShortName(m)
+      local listed = {}   -- this member's outputs so far (several recipes can make one item)
       for id in pairs(type(p.recipes) == "table" and p.recipes or {}) do
         local e = cat[id]
         local out = type(e) == "table" and e.o
-        if type(out) == "number" then
+        if type(out) == "number" and not listed[out] then
+          listed[out] = true
           local list = byItem[out] or {}
           byItem[out] = list
-          if list[#list] ~= short then list[#list + 1] = short end
+          list[#list + 1] = short
         end
       end
     end

@@ -4169,6 +4169,10 @@ end
 -- craft, then how many crafts that covers, then fewest reagents per point. None when nothing is
 -- craftable (it would promise a craft the button can't make). No prices involved.
 function P.Best(list, pr)
+  -- At the cap no craft gives a point (the card says to train the next rank instead).
+  if type(pr) == "table" and type(pr.rank) == "number" and type(pr.max) == "number" and pr.rank >= pr.max then
+    return nil
+  end
   local best, bestKey
   for _, e in ipairs(list) do
     local per = e.ready and e.diff.per and e.diff.per > 0 and PerCraft(e.rec, e.diff) or nil

@@ -192,27 +192,25 @@ function Merchant.Plan()
   end
   if #shorts == 0 or not GetMerchantNumItems then return plan, total, info end
   local money = Money()
-  local free, room, special = BagRoom(accepted)
+  local free0, room, special0 = BagRoom(accepted)
   local band = bit and bit.band
   local familyOf = (C_Item and C_Item.GetItemFamily) or GetItemFamily
-  -- Free slots of the profession bags this item may go in (they are used first).
-  local function SpecialFor(itemID)
+  -- Free slots of the profession bags (in `special`) this item may go in (they are used first).
+  local function SpecialFor(special, itemID)
     local out = {}
     if not (band and familyOf) then return out end
     local ok, fam = pcall(familyOf, itemID)
     fam = ok and tonumber(fam) or 0
     if fam == 0 then return out end
-    for _, b in ipairs(special or {}) do
+    for _, b in ipairs(special) do
       if b.n > 0 and band(fam, b.family) ~= 0 then out[#out + 1] = b end
     end
     return out
   end
   -- Where this merchant sells each accepted item for gold, and how many it has (whole bundles;
-  -- unlimited stock is plenty). Then the short slots share what is sold: each slot its own item
-  -- first, then its other tiers, moving to another tier when a limited one runs out
-  -- (Inventory.Share). Slots buying the same item add up.
+  -- unlimited stock is plenty).
   local n = tonumber(GetMerchantNumItems()) or 0
-  local soldAt, stock, wantAt = {}, {}, {}
+  local soldAt, stock = {}, {}
   for index = 1, n do
     local itemID = ItemID(index)
     if itemID and accepted[itemID] and not soldAt[itemID] then
@@ -233,53 +231,77 @@ function Merchant.Plan()
     if #ids == 0 then info.notSold[#info.notSold + 1] = sh.id end
     share[#share + 1] = { ids = ids, need = sh.want }
   end
-  local flow = NS.Inventory and NS.Inventory.Share
-    and NS.Inventory.Share(share, function(id) return stock[id] or 0 end) or {}
-  for i in ipairs(share) do
-    for id, got in pairs(flow[i] or {}) do
-      if got > 0 then wantAt[soldAt[id]] = (wantAt[soldAt[id]] or 0) + got end
-    end
-  end
-  for index = 1, n do
-    local want = wantAt[index]
-    local itemID = want and ItemID(index)
-    if itemID then
-      local price, stack, avail = ItemInfo(index)
-      stack = math.max(1, stack)
-      local bundles = math.ceil(want / stack)
-      -- Limited stock is counted in items; each purchase takes a bundle of them.
-      if avail >= 0 then bundles = math.min(bundles, math.floor(avail / stack)) end
-      local afford = math.floor((money - total) / price)
-      if afford < bundles then
-        bundles = math.max(0, afford)
-        info.poor[#info.poor + 1] = itemID
-      end
-      local size = StackSize(itemID, index)
-      local bags = free and SpecialFor(itemID) or {}
-      if free then
-        local slots = free
-        for _, b in ipairs(bags) do slots = slots + b.n end
-        local fits = math.floor(((room[itemID] or 0) + slots * size) / stack)
-        if fits < bundles then
-          bundles = math.max(0, fits)
-          info.full = true
+  -- The purchases for wantAt ([index] = items): plan, total, poor, full, and cut[itemID] = the
+  -- items really bought when money or bag space took some of what was wanted.
+  local function Purchases(wantAt)
+    local out, spent, poor, full, cut = {}, 0, {}, false, {}
+    local free, special = free0, {}
+    for i, b in ipairs(special0 or {}) do special[i] = { family = b.family, n = b.n } end
+    for index = 1, n do
+      local want = wantAt[index]
+      local itemID = want and ItemID(index)
+      if itemID then
+        local price, stack = ItemInfo(index)
+        stack = math.max(1, stack)
+        local bundles = math.ceil(want / stack)
+        local afford = math.floor((money - spent) / price)
+        if afford < bundles then
+          bundles = math.max(0, afford)
+          poor[#poor + 1] = itemID
         end
-      end
-      if bundles > 0 then
-        local count = bundles * stack
+        local size = StackSize(itemID, index)
+        local bags = free and SpecialFor(special, itemID) or {}
         if free then
-          local need = math.ceil(math.max(0, count - (room[itemID] or 0)) / size)
-          for _, b in ipairs(bags) do
-            local take = math.min(b.n, need)
-            b.n, need = b.n - take, need - take
+          local slots = free
+          for _, b in ipairs(bags) do slots = slots + b.n end
+          local fits = math.floor(((room[itemID] or 0) + slots * size) / stack)
+          if fits < bundles then
+            bundles = math.max(0, fits)
+            full = true
           end
-          free = free - need
         end
-        plan[#plan + 1] = { index = index, itemID = itemID, count = count, stack = stack, cost = bundles * price }
-        total = total + bundles * price
+        if bundles * stack < want then cut[itemID] = bundles * stack end
+        if bundles > 0 then
+          local count = bundles * stack
+          if free then
+            local need = math.ceil(math.max(0, count - (room[itemID] or 0)) / size)
+            for _, b in ipairs(bags) do
+              local take = math.min(b.n, need)
+              b.n, need = b.n - take, need - take
+            end
+            free = free - need
+          end
+          out[#out + 1] = { index = index, itemID = itemID, count = count, stack = stack, cost = bundles * price }
+          spent = spent + bundles * price
+        end
       end
     end
+    return out, spent, poor, full, cut
   end
+  -- The short slots share what is sold: each slot its own item first, then its other tiers,
+  -- moving to another tier when a limited one runs out (Inventory.Share); slots buying the same
+  -- item add up. When money or bag space cuts an item short, the share is made again with that
+  -- item capped, so the slots it can't fill move to a tier that can still be bought.
+  local cap = {}
+  local poor, full
+  for _ = 1, 4 do
+    local flow = NS.Inventory and NS.Inventory.Share
+      and NS.Inventory.Share(share, function(id) return math.min(stock[id] or 0, cap[id] or math.huge) end) or {}
+    local wantAt = {}
+    for i in ipairs(share) do
+      for id, got in pairs(flow[i] or {}) do
+        if got > 0 then wantAt[soldAt[id]] = (wantAt[soldAt[id]] or 0) + got end
+      end
+    end
+    local cut
+    plan, total, poor, full, cut = Purchases(wantAt)
+    local again = false
+    for id, got in pairs(cut) do
+      if cap[id] == nil or got < cap[id] then cap[id], again = got, true end
+    end
+    if not again then break end
+  end
+  info.poor, info.full = poor, full
   return plan, total, info
 end
 
