@@ -3899,8 +3899,10 @@ local function Annotate()
         if s.qty and x.askQty == nil then
           x.askQty = s.qty
         elseif s.qty and s.qty ~= x.askQty then
+          -- The ask is their total: what was handed over already comes off it.
           x.askQty = s.qty
-          Q.SetQty(x, s.qty)
+          local left = s.qty - (tonumber(x.delivered) or 0)
+          if left > 0 then Q.SetQty(x, left) end
         end
         if Q.SetMats then Q.SetMats(x, s.mats) end
       end

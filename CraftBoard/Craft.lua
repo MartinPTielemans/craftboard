@@ -192,7 +192,7 @@ end
 -- Recipes with a varying yield (rec.yMax): the count in my bags before a cast, then what it
 -- really made once the items land, beyond the minimum the queue was credited with. Casts that
 -- succeed before the bags update are measured together: yieldCheck[recipeID] = { rec=, before=
--- (the first cast's count), casts= }.
+-- (the first cast's count), casts=, entry= (the queue row the batch was started from) }.
 local yieldBefore, yieldCheck = {}, {}
 
 local function BagCount(itemID)
@@ -238,7 +238,7 @@ NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
     if c then
       c.casts = c.casts + 1
     elseif yieldBefore[spellID] then
-      yieldCheck[spellID] = { rec = rec, before = yieldBefore[spellID], casts = 1 }
+      yieldCheck[spellID] = { rec = rec, before = yieldBefore[spellID], casts = 1, entry = entry }
     end
     yieldBefore[spellID] = nil
   end
@@ -262,7 +262,7 @@ NS.Register("BAG_UPDATE_DELAYED", function()
     local now = BagCount(c.rec.o)
     if now and c.before then
       local extra = (now - c.before) - c.casts * math.max(1, c.rec.y or 1)
-      if extra > 0 and NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(recipeID, c.rec, nil, extra, true) end
+      if extra > 0 and NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(recipeID, c.rec, nil, extra, true, c.entry) end
     end
   end
 end)
