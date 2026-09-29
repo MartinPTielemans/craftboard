@@ -105,10 +105,13 @@ end
 local function KnownOutputs()
   if outputs then return outputs end
   local set = {}
-  for _, c in pairs(MyChars()) do
-    if type(c) == "table" and type(c.recipes) == "table" then
+  -- My characters that can craft for someone here (this realm and faction), what can be traded.
+  local reachable = NS.Inventory and NS.Inventory.Reachable
+  local tradeable = NS.Recipes and NS.Recipes.IsTradeable
+  for key, c in pairs(MyChars()) do
+    if type(c) == "table" and type(c.recipes) == "table" and (key == NS.Me or not reachable or reachable(key, c)) then
       for _, rec in pairs(c.recipes) do
-        if type(rec) == "table" and type(rec.o) == "number" then set[rec.o] = true end
+        if type(rec) == "table" and type(rec.o) == "number" and (not tradeable or tradeable(rec)) then set[rec.o] = true end
       end
     end
   end

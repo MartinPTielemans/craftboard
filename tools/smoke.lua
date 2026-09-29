@@ -566,6 +566,9 @@ eq(NS.Comm.StripPrices("will pay 50 silver"), "will pay", "silver amounts leave 
 eq(NS.Comm.StripPrices("25c or 2 gold, tip 5"), "or, tip", "copper, gold and tip amounts leave a note")
 eq(NS.Comm.StripPrices("need 20 copper bars"), "need 20 copper bars", "copper bars are an item, not a price")
 eq(NS.Comm.StripPrices("10 oro y propina 5"), "y propina", "other languages' coin and tip amounts leave a note")
+-- Notes are cut on whole UTF-8 characters.
+eq(NS.Comm.PostNote(string.rep("a", 59) .. "\195\169\195\169"), string.rep("a", 59) .. "\195\169",
+  "a note is cut on whole characters")
 
 -- Recipe tooltips: Blizzard's "Requires %s (%d)" becomes a pattern (a "^" with a start offset
 -- anchors at that offset in Lua 5.1, which the parser relies on) that reads profession and skill.

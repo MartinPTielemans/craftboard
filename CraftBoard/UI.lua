@@ -3902,7 +3902,11 @@ local function Annotate()
           -- The ask is their total: what was handed over already comes off it.
           x.askQty = s.qty
           local left = s.qty - (tonumber(x.delivered) or 0)
-          if left > 0 then Q.SetQty(x, left) end
+          if left > 0 then
+            Q.SetQty(x, left)
+          elseif Q.Remove then
+            Q.Remove(x.id)      -- what was handed over already covers the new total
+          end
         end
         if Q.SetMats then Q.SetMats(x, s.mats) end
       end

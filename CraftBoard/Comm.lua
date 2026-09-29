@@ -72,6 +72,7 @@ local lastHelloHash = nil
 local lastHelloAt = nil
 local helloPending = {}   -- [dist] = true while a deferred hello is scheduled
 local queried = {}        -- [peer] = time we sent Q
+local queriedHash = {}    -- [peer] = the hash that Q asked for (only its answer closes the query)
 local answered = {}       -- [peer] = time we sent R
 local seenMsg = {}        -- [dedupe key] = time
 local inbound = {}        -- [peer] = {t=, c=}
@@ -197,11 +198,34 @@ local function IsMe(full)
 end
 
 -- Strip WoW escape sequences ("|c", "|H", "|T"...) from anything a peer sends us.
+-- s cut to at most maxBytes bytes without splitting a UTF-8 character.
+local function CutBytes(s, maxBytes)
+  if #s <= maxBytes then return s end
+  local i = maxBytes
+  while i > 0 do
+    local b = s:byte(i + 1) or 0
+    if b < 128 or b >= 192 then break end   -- the next byte starts a character: cut here
+    i = i - 1
+  end
+  return s:sub(1, i)
+end
+
+-- s cut to at most maxChars UTF-8 characters.
+local function CutChars(s, maxChars)
+  local n, i = 0, 1
+  while i <= #s do
+    n = n + 1
+    if n > maxChars then return s:sub(1, i - 1) end
+    local c = s:byte(i)
+    i = i + (c < 0x80 and 1 or c < 0xE0 and 2 or c < 0xF0 and 3 or 4)
+  end
+  return s
+end
+
 local function CleanString(s, maxLen)
   if type(s) ~= "string" then return nil end
   s = NS.StripCodes(s):gsub("|", ""):gsub("%c", "")
-  if #s > maxLen then s = s:sub(1, maxLen) end
-  return s
+  return CutBytes(s, maxLen)
 end
 
 -- Prices off a post note ("5g", "50 s", "1.5g", "10 gold", "50 silver", "25c", "gold", the
@@ -483,10 +507,11 @@ end
 -- Hello per distribution, rate-limited per spec (<= 1 per ~10 min per distribution).
 -- If we're inside the gap, schedule one deferred hello instead of dropping it.
 -- busy: sent to announce a busy change, allowed every BUSY_MIN_GAP instead.
-function SendHello(dist, busy)
+-- urgent: skip the ordinary gap between hellos (a one-off recovery, not the periodic hello).
+function SendHello(dist, busy, urgent)
   if not dist then
-    SendHello("GUILD")
-    SendHello("CHANNEL")
+    SendHello("GUILD", busy, urgent)
+    SendHello("CHANNEL", busy, urgent)
     return
   end
   if not DistAvailable(dist) then return end
@@ -503,7 +528,7 @@ function SendHello(dist, busy)
       ScheduleStateFlush(wait)
       return
     end
-  elseif last and now - last < HELLO_MIN_GAP then
+  elseif last and now - last < HELLO_MIN_GAP and not urgent then
     if not helloPending[dist] then
       helloPending[dist] = true
       C_Timer.After(HELLO_MIN_GAP - (now - last) + 1, function()
@@ -1000,9 +1025,11 @@ end
 -- A note without prices, trimmed, at most MAX_NOTE characters ("" when nothing is left).
 local function PostNote(note)
   local s = StripPrices(CleanString(note, 255) or "")
-  if #s > MAX_NOTE then s = s:sub(1, MAX_NOTE):gsub("%s+$", "") end
+  local cut = CutChars(s, MAX_NOTE)
+  if cut ~= s then s = cut:gsub("%s+$", "") end
   return s
 end
+Comm.PostNote = PostNote
 
 -- parent: id of one of my posts this one is an intermediate for (a linked order). Linked
 -- orders posted with their parent in the same click skip the few-seconds gap. note may be
@@ -1353,7 +1380,7 @@ local function SweepDedupe()
     if now - b.t > INBOUND_WINDOW then inbound[k] = nil end
   end
   for k, t in pairs(queried) do
-    if now - t > QUERY_TTL then queried[k] = nil end
+    if now - t > QUERY_TTL then queried[k], queriedHash[k] = nil, nil end
   end
   for k, t in pairs(answered) do
     if now - t > ANSWER_GAP then answered[k] = nil end
@@ -1376,7 +1403,7 @@ local function RetryQueries()
       pendingQ[full] = nil
     elseif CanSend() and not (queried[full] and now - queried[full] < QUERY_GAP) then
       pendingQ[full] = nil
-      queried[full] = now
+      queried[full], queriedHash[full] = now, h
       Send("Q", { v = VERSION }, "WHISPER", ShortName(full), "NORMAL")
     end
   end
@@ -1464,7 +1491,7 @@ function handlers.H(full, data)
     end
     return
   end
-  queried[full] = now
+  queried[full], queriedHash[full] = now, h
   Send("Q", { v = VERSION }, "WHISPER", ShortName(full), "NORMAL")
 end
 
@@ -1496,7 +1523,7 @@ local function FlushBatch()
     end
     batchAsked[peer] = nil
   end
-  if stale then SendHello() end
+  if stale then SendHello(nil, nil, true) end
   if not next(b) then return end
   batchAt = time()
   local sent = {}
@@ -1540,7 +1567,7 @@ local function RetryAnswers()
       stale = true
     end
   end
-  if stale then SendHello() end
+  if stale then SendHello(nil, nil, true) end
 end
 
 function handlers.Q(full)
@@ -1631,7 +1658,9 @@ function handlers.R(full, data)
   end
   p.recipes = recipes
   p.hash = h
-  queried[full] = nil
+  -- The answer to the hash asked for closes the query; an older one (a slow answer to an
+  -- earlier query) is taken but leaves it open for the one asked for.
+  if queriedHash[full] == nil or queriedHash[full] == h then queried[full], queriedHash[full] = nil, nil end
   Fire("PEERS_UPDATED")
 end
 
