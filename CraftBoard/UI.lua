@@ -2744,10 +2744,8 @@ end
 
 -- One of my other characters wrote it: its key, else nil.
 function R.AltOf(name)
-  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
-  for key in pairs(chars) do
-    if key ~= NS.Me and NS.SamePlayer(key, name) then return key end
-  end
+  local key = NS.MyCharKey and NS.MyCharKey(name)
+  if key and key ~= NS.Me then return key end
   return nil
 end
 

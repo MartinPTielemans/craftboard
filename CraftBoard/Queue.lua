@@ -222,7 +222,9 @@ end
 -- (Queue.Delivered).
 -- plannedOnly: only entries for nobody (enchant casts, which trades complete for players).
 -- items: what the cast made, when known (a varying yield's extra); else the recipe's yield.
-function Queue.Crafted(recipeID, rec, plannedOnly, items)
+-- ordersOnly: only entries for a player (a varying yield's extra items fill orders; a planned
+-- entry counts casts, each at the recipe's usual yield).
+function Queue.Crafted(recipeID, rec, plannedOnly, items, ordersOnly)
   local q = List()
   if not q then return end
   local left = items or math.max(1, type(rec) == "table" and rec.y or 1)
@@ -231,7 +233,8 @@ function Queue.Crafted(recipeID, rec, plannedOnly, items)
   while i <= #q and left > 0 do
     local x = q[i]
     local removed = false
-    if x.recipeID == recipeID and Queue.CraftsLeft(x, rec) > 0 and not (plannedOnly and x.who) then
+    if x.recipeID == recipeID and Queue.CraftsLeft(x, rec) > 0 and not (plannedOnly and x.who)
+      and not (ordersOnly and not x.who) then
       local made = Queue.MadeItems(x)
       local give = math.min(left, math.max(0, (x.qty or 0) - made))
       x.madeItems, x.made = made + give, nil

@@ -129,11 +129,7 @@ end
 
 -- The trade partner is one of my own characters.
 local function MyCharacter(full)
-  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
-  for key in pairs(chars) do
-    if NS.SamePlayer(key, full) then return true end
-  end
-  return false
+  return NS.MyCharKey and NS.MyCharKey(full) ~= nil or false
 end
 
 local function Crafted()

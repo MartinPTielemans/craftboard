@@ -260,7 +260,7 @@ NS.Register("BAG_UPDATE_DELAYED", function()
     local now = BagCount(c.rec.o)
     if now and c.before then
       local extra = (now - c.before) - c.casts * math.max(1, c.rec.y or 1)
-      if extra > 0 and NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(recipeID, c.rec, nil, extra) end
+      if extra > 0 and NS.Queue and NS.Queue.Crafted then NS.Queue.Crafted(recipeID, c.rec, nil, extra, true) end
     end
   end
 end)

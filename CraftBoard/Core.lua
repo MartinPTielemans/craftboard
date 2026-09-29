@@ -161,6 +161,16 @@ function NS.SamePlayer(a, b)
   return na:match("^(%S+)") == nb:match("^(%S+)")
 end
 
+-- The saved character (CraftBoardDB.chars key) this name is, or nil. Exact: a key still saved
+-- under a first name only (an alt not logged in since surnames came) is never taken for someone
+-- "First Surname" who merely shares that first name.
+function NS.MyCharKey(name)
+  local full = NS.FullName(name)
+  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+  if full and type(chars[full]) == "table" then return full end
+  return nil
+end
+
 -- A name ("Name", "Name-Realm", "First Surname-Realm") is my current character.
 function NS.IsMe(full)
   if type(full) ~= "string" or full == "" then return false end

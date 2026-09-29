@@ -448,6 +448,16 @@ do
   Q.Crafted(9902, vy, nil, 3)
   check(Q.CraftsLeft(a, vy) == 0 and Q.CraftsLeft(b, vy) == 0, "spare items from a cast carry to the next entry")
   Q.Remove(a.id); Q.Remove(b.id)
+  -- A planned entry counts casts: a varying yield's extra items only go to orders.
+  local plan = Q.Add({ recipeID = 9902, item = 997, qty = 5, src = "plan:9902" })
+  Q.Crafted(9902, vy); Q.Crafted(9902, vy, nil, 2, true)
+  eq(Q.CraftsLeft(plan, vy), 4, "extra items don't use up planned casts")
+  Q.Remove(plan.id)
+  -- A saved alt under its old first-name key isn't taken for someone sharing that first name.
+  db.chars["Oldalt-Forever"] = { recipes = {}, profs = {} }
+  check(NS.MyCharKey("Oldalt Stranger-Forever") == nil and NS.MyCharKey("Oldalt-Forever") == "Oldalt-Forever",
+    "saved characters are recognized by their exact name")
+  db.chars["Oldalt-Forever"] = nil
   me.recipes[9902] = nil
   local mine = NS.Me
   db.posts["root"] = { id = "root", from = mine, item = 2304, qty = 1, t = time() }

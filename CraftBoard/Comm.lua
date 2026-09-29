@@ -875,6 +875,8 @@ local function PrunePosts()
     if type(p) ~= "table" or type(p.t) ~= "number" or p.t < cutoff then
       db.posts[id] = nil
       gone[id] = true
+      -- Tombstoned too: a linked order of it that reaches me later is dropped on arrival.
+      Retracted()[id] = Retracted()[id] or time()
     end
   end
   -- A linked order goes with its expired parent (however deep the chain): mine are retracted for
@@ -885,8 +887,6 @@ local function PrunePosts()
     for id, p in pairs(db.posts) do
       if type(p) == "table" and p.pa ~= nil and gone[p.pa] then
         db.posts[id], gone[id], more = nil, true, true
-        -- The parent is tombstoned, so a late copy of this linked order is dropped on arrival.
-        Retracted()[p.pa] = Retracted()[p.pa] or time()
         if p.from == me and RetractMine then RetractMine(id, p.sentTo) end
       end
     end
