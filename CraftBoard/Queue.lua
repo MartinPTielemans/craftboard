@@ -197,12 +197,16 @@ end
 -- A player posted to the board what I had queued from their chat ask: the queued craft moves to
 -- the post (src), so the post reads as queued and isn't queued twice; the chat ask stays an
 -- alias, so it still reads as queued when the post goes away first. Returns the entry or nil.
+-- Also after that post went away and they posted again (the chat alias still matches); never
+-- from a post that is still on the board.
 function Queue.Adopt(who, itemID, src)
   if type(who) ~= "string" or type(itemID) ~= "number" or src == nil or Queue.Get(src) then return nil end
+  local posts = type(CraftBoardDB) == "table" and type(CraftBoardDB.posts) == "table" and CraftBoardDB.posts or {}
+  local function Chat(id) return type(id) == "string" and id:sub(1, 5) == "chat:" end
   for _, x in ipairs(Queue.Entries()) do
-    if x.who and x.item == itemID and type(x.src) == "string" and x.src:sub(1, 5) == "chat:"
-      and NS.SamePlayer and NS.SamePlayer(x.who, who) then
-      x.src, x.alias = src, x.src
+    local chat = Chat(x.src) and x.src or (Chat(x.alias) and not posts[x.src] and x.alias) or nil
+    if x.who and x.item == itemID and chat and NS.SamePlayer and NS.SamePlayer(x.who, who) then
+      x.src, x.alias = src, chat
       NS.Fire("QUEUE_UPDATED")
       return x
     end

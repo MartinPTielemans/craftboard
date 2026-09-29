@@ -863,13 +863,29 @@ end
 
 -- Posts -----------------------------------------------------------------
 
+local RetractMine -- forward (Retracting, below)
+
 local function PrunePosts()
   local db = DB()
   if not db then return end
   local cutoff = time() - POST_TTL
+  local gone = {}
   for id, p in pairs(db.posts) do
     if type(p) ~= "table" or type(p.t) ~= "number" or p.t < cutoff then
       db.posts[id] = nil
+      gone[id] = true
+    end
+  end
+  -- A linked order goes with its expired parent (however deep the chain): mine are retracted for
+  -- everyone, other players' are dropped here.
+  local me, more = MyKey(), next(gone) ~= nil
+  while more do
+    more = false
+    for id, p in pairs(db.posts) do
+      if type(p) == "table" and p.pa ~= nil and gone[p.pa] then
+        db.posts[id], gone[id], more = nil, true, true
+        if p.from == me and RetractMine then RetractMine(id, p.sentTo) end
+      end
     end
   end
   for _, tomb in ipairs({ Retracted(), MyRetracted() }) do
@@ -1111,7 +1127,7 @@ end
 -- Retracting one of my posts also retracts the linked orders posted for it.
 -- One of my posts is retracted: tombstone it, remember it for repeating with hellos and send
 -- the X.
-local function RetractMine(id, sentTo)
+function RetractMine(id, sentTo)
   local now = time()
   Retracted()[id] = now
   -- Kept for the post lifetime (PrunePosts drops expired ones); SendMyPosts takes turns with them.

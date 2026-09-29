@@ -146,8 +146,10 @@ me.profs[165] = { "Leatherworking", 87, 150 }
 me.recipes[2152] = { p = 165, n = "Light Armor Kit", o = 2304, r = { { 2318, 1 } }, d = 0 }
 me.recipes[7443] = { p = 333, n = "Enchant Chest - Minor Mana", e = true, r = { { 10940, 1 } } }
 db.recipeNames[2152] = { n = "Light Armor Kit", o = 2304, p = 165 }
--- A peer's recipe from the shared catalogue: its output (test item 1) counts as a crafted item in chat.
+-- A peer's recipe (resolved through the shared catalogue): its output (test item 1) counts as a
+-- crafted item in chat.
 db.recipeNames[18560] = { n = "Mooncloth", o = 1, p = 197 }
+db.peers["Tailor Peer-Forever"] = { recipes = { [18560] = true }, profs = {}, seen = time() }
 local names = { [2304] = "Light Armor Kit", [2318] = "Light Leather", [2320] = "Coarse Thread" }
 NS.Inventory.Count = function(id) return id == 2318 and 1 or 0 end
 NS.Inventory.ItemName = function(id) return names[id] end
@@ -227,6 +229,7 @@ check(CW.Add("nvm, LF lw", "Mira Vale", "Trade") == nil, "a line opening with 'n
 CW.Add("LF " .. KIT .. " pls", "Mira Vale", "Trade")
 check(CW.Add("LF " .. KIT .. ", nvm found one", "Mira Vale", "Trade") == nil and row("Mira Vale-Forever") == nil,
   "an ask that ends in 'nvm found one' is called off")
+check(CW.Add("LF " .. KIT .. " nvm, need enchanter", "Mira Vale", "Trade") ~= nil, "an ask after 'nvm' in the line stands")
 
 -- Channel labels (non-ASCII channel names, the client's chat type names) and the tuning log
 EnumerateServerChannels = function() return "Général", "Commerce" end
@@ -360,6 +363,9 @@ do
   Q.Adopt("Bob-Forever", 2304, "post:bob:1")
   check(Q.Has("post:bob:1") and Q.Has("chat:Bob-Forever:Light Armor Kit") and Q.Get("post:bob:1") == c,
     "a posted chat ask keeps its queued craft (the chat ask still points at it)")
+  -- That post is gone and they post again: the craft moves to the new post (never from a live one).
+  Q.Adopt("Bob-Forever", 2304, "post:bob:2")
+  check(Q.Get("post:bob:2") == c and Q.Has("chat:Bob-Forever:Light Armor Kit"), "a repost takes the queued craft over")
   Q.Remove(c.id)
 end
 -- They take back "have mats": the queued craft needs the reagents again.
@@ -447,6 +453,11 @@ do
   db.posts["grandchild"] = { id = "grandchild", from = "Dora-Forever", item = 6, qty = 1, t = time(), pa = "child" }
   NS.Comm.Retract("root")
   check(db.posts["child"] == nil and db.posts["grandchild"] == nil, "retract drops the whole chain of linked orders")
+  -- An expired parent takes its (younger) linked orders with it.
+  db.posts["old"] = { id = "old", from = "Carl-Forever", item = 2304, qty = 1, t = time() - 25 * 3600 }
+  db.posts["young"] = { id = "young", from = "Dora-Forever", item = 5, qty = 1, t = time(), pa = "old" }
+  NS.Comm.Requests()
+  check(db.posts["old"] == nil and db.posts["young"] == nil, "linked orders expire with their parent")
   local saved = me.cd
   me.cd = nil
   local h2 = NS.Cooldowns.ForHello(16)

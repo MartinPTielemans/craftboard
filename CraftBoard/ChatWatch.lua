@@ -112,9 +112,13 @@ local function KnownOutputs()
       end
     end
   end
-  local cat = type(CraftBoardDB) == "table" and CraftBoardDB.recipeNames
-  if type(cat) == "table" then
-    for _, e in pairs(cat) do
+  -- Peers' current recipe lists (the catalogue only turns their recipe IDs into items: it keeps
+  -- recipes nobody advertises any more).
+  local db = type(CraftBoardDB) == "table" and CraftBoardDB
+  local cat = db and type(db.recipeNames) == "table" and db.recipeNames or {}
+  for _, p in pairs(db and type(db.peers) == "table" and db.peers or {}) do
+    for id in pairs(type(p) == "table" and type(p.recipes) == "table" and p.recipes or {}) do
+      local e = cat[id]
       if type(e) == "table" and type(e.o) == "number" then set[e.o] = true end
     end
   end
@@ -548,21 +552,35 @@ local function WithoutMats(s)
   return s
 end
 
--- An ask comes after the last "nvm" / "found one" in the line ("nvm that, LF tailor"): the line
--- asks again rather than calling the ask off.
+-- The normalized line asks for a craft, as Detect reads it: an ask phrase, or a profession asked
+-- for ("need enchanter", "any lw", "enchanter needed", "LW wanted", "any first aid").
+local function Asks(s)
+  if Has(s, ASK) or s:find(" any first aid ", 1, true) then return true end
+  local words = {}
+  for w in s:gmatch("%S+") do words[#words + 1] = w end
+  for i = 1, #words do
+    if ProfAt(words, i) then
+      local before, after = words[i - 1], words[i + 1]
+      if before == "any" or before == "need" or before == "needs" or after == "needed" or after == "wanted" then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+-- An ask comes after the last "nvm" / "found one" in the line ("nvm that, LF tailor", "found
+-- one, need enchanter"): the line asks again rather than calling the ask off.
 local function AsksAfterDone(s)
-  local last = 0
+  local last, stop = 0, 0
   for i = 1, #DONE do
     local at = s:find(DONE[i], 1, true)
     while at do
-      if at > last then last = at end
+      if at > last then last, stop = at, at + #DONE[i] - 1 end
       at = s:find(DONE[i], at + 1, true)
     end
   end
-  for i = 1, #ASK do
-    if s:find(ASK[i], last + 1, true) then return true end
-  end
-  return false
+  return Asks(" " .. s:sub(stop))
 end
 
 local function Opens(s, list)
