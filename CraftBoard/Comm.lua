@@ -251,15 +251,19 @@ local METAL_ITEM = { bar = true, bars = true, ore = true, ores = true, rod = tru
 
 local function StripPrices(s)
   s = " " .. s .. " "
-  local function ItemAfter(pos)
+  -- The coin word starts an item's name: a metal item follows ("copper bars"), or it is written
+  -- as a name, capitalized and followed by another capitalized word ("2 Gold Power Cores").
+  local function ItemAfter(pos, word)
     local nxt = s:match("^%s*(%a+)", pos)
-    return nxt ~= nil and METAL_ITEM[nxt:lower()] == true
+    if nxt == nil then return false end
+    if METAL_ITEM[nxt:lower()] then return true end
+    return #word > 1 and word:match("^%u") ~= nil and nxt:match("^%u") ~= nil
   end
   s = s:gsub("(%d+[%.,]?%d*)%s*(%a+)()", function(_, unit, pos)
-    if COIN[unit:lower()] and not ItemAfter(pos) then return " " end
+    if COIN[unit:lower()] and not ItemAfter(pos, unit) then return " " end
   end)
-  s = s:gsub("%f[%a]([gG][oO][lL][dD])%f[%A]()", function(_, pos)
-    if not ItemAfter(pos) then return " " end
+  s = s:gsub("%f[%a]([gG][oO][lL][dD])%f[%A]()", function(word, pos)
+    if not ItemAfter(pos, word) then return " " end
   end)
   s = s:gsub("%f[%a](%a+)%s*:?%s*%d+[%.,]?%d*", function(word)
     if TIP[word:lower()] then return word .. " " end

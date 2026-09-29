@@ -569,6 +569,8 @@ end
 eq(NS.Comm.StripPrices("will pay 50 silver"), "will pay", "silver amounts leave a note")
 eq(NS.Comm.StripPrices("25c or 2 gold, tip 5"), "or, tip", "copper, gold and tip amounts leave a note")
 eq(NS.Comm.StripPrices("need 20 copper bars"), "need 20 copper bars", "copper bars are an item, not a price")
+eq(NS.Comm.StripPrices("need 2 Gold Power Cores"), "need 2 Gold Power Cores", "a coin word starting an item name stays")
+eq(NS.Comm.StripPrices("pay 5 Gold please"), "pay please", "a capitalized price still goes")
 eq(NS.Comm.StripPrices("10 oro y propina 5"), "y propina", "other languages' coin and tip amounts leave a note")
 -- Notes are cut on whole UTF-8 characters.
 eq(NS.Comm.PostNote(string.rep("a", 59) .. "\195\169\195\169"), string.rep("a", 59) .. "\195\169",

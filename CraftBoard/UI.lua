@@ -2319,9 +2319,19 @@ function AdvertiseChoice()
   return "Trade"
 end
 
+-- A joined channel is one of the server's (General, Trade...), not a custom one that merely has
+-- a similar name: the client gives server channels a zone channel ID. Unknown: yes.
+local function IsServerChannel(name)
+  local get = C_ChatInfo and C_ChatInfo.GetChannelInfoFromIdentifier
+  if not get then return true end
+  local ok, info = pcall(get, name)
+  if not ok or type(info) ~= "table" or type(info.zoneChannelID) ~= "number" then return true end
+  return info.zoneChannelID > 0
+end
+
 -- Joined channel id for "General" / "Trade" ("General - Orgrimmar", "Trade - City", Forever's
--- "Trade (Services) - English"), or nil. Only the server channel's own name forms: a custom
--- channel such as "Trade Guild" never gets the ad.
+-- "Trade (Services) - English"), or nil. Only the server channel's own name forms, and only a
+-- server channel: a custom "Trade Guild" or "Trade - Guild" never gets the ad.
 local function PublicChannelId(choice)
   local bases = { strlower(ChannelLabel(choice)), strlower(choice) }
   local function matches(n)
@@ -2337,12 +2347,12 @@ local function PublicChannelId(choice)
     local list = (function(...) return { n = select("#", ...), ... } end)(GetChannelList())
     for i = 1, list.n, 3 do
       local id, n, disabled = list[i], list[i + 1], list[i + 2]
-      if type(id) == "number" and id > 0 and not disabled and matches(n) then return id end
+      if type(id) == "number" and id > 0 and not disabled and matches(n) and IsServerChannel(n) then return id end
     end
   end
   if GetChannelName then
     local ok, id = pcall(GetChannelName, ChannelLabel(choice))
-    if ok and type(id) == "number" and id > 0 then return id end
+    if ok and type(id) == "number" and id > 0 and IsServerChannel(ChannelLabel(choice)) then return id end
   end
   return nil
 end
