@@ -2740,8 +2740,12 @@ function R.First(name)
 end
 
 -- My character playing now wrote it.
+-- Posted by this character: exactly my name (my old first-name-only posts were moved to it).
+-- Never by first name alone: another player's cached post can carry an old first-name-only
+-- sender that matches mine. (mine = true also marks my alts' posts, so it can't decide.)
 function R.IsMyPost(post)
-  return NS.SamePlayer(post.from, NS.Me)
+  local full = NS.FullName and NS.FullName(post.from)
+  return full ~= nil and full == NS.Me
 end
 
 -- One of my other characters wrote it: its key, else nil.
@@ -5358,9 +5362,9 @@ local function BuildParts(h)
     end
     if type(db.tab) == "number" and TAB_NAMES[db.tab] then
       activeTab = db.tab
-    elseif MyRecipeCount() > 0 and PeerCounts() == 0 then
-      -- First open with recipes recorded but nobody else on the board yet: Plan is the tab that
-      -- is useful alone.
+    elseif PeerCounts() == 0 and NS.Recipes and NS.Recipes.Mine and next(NS.Recipes.Mine()) ~= nil then
+      -- First open with this character's recipes recorded but nobody else on the board yet: Plan
+      -- (which plans this character) is the tab that is useful alone.
       activeTab = 3
     end
   end
