@@ -5031,7 +5031,7 @@ function ArrangeTabs(h)
   local top = hostOpts[h] and hostOpts[h].topTabs and true or false
   for _, t in ipairs(tabs) do t:SetShown(not top) end
   if top and not topTabs[1] then
-    UI.badgeCount = nil     -- new tab controls: the next UpdateBadge must label them
+    -- New tab controls carry no count yet (cbShown): the next UpdateBadge labels them.
     for i, label in ipairs(TAB_NAMES) do topTabs[i] = TopTab(h, i, label) end
   end
   local right = 0
@@ -5071,14 +5071,19 @@ do
 function UI.UpdateBadge()
   -- The Requests tab just counted while it is the one showing.
   local n = tabs[2] and activeTab == 2 and reqs.count or (UI.RequestCount and UI.RequestCount()) or 0
-  if n == UI.badgeCount then return end
-  UI.badgeCount = n
-  -- Embed.lua's CraftBoard tab and the minimap button show the same count, also before the
-  -- window's own tabs are built.
-  NS.Fire("BADGE_UPDATED", n)
-  if not tabs[2] then return end
+  if n ~= UI.badgeCount then
+    UI.badgeCount = n
+    -- Embed.lua's CraftBoard tab and the minimap button show the same count, also before the
+    -- window's own tabs are built.
+    NS.Fire("BADGE_UPDATED", n)
+  end
+  -- The window's tabs, each labelled once per count (cbShown), so tabs built after the count
+  -- was taken still get it.
+  local side, top = tabs[2], topTabs[2]
+  if not side or (side.cbShown == n and (not top or top.cbShown == n)) then return end
+  side.cbShown = n
+  if top then top.cbShown = n end
   local label = n > 0 and format(L["%s (%d)"], TAB_NAMES[2], n) or TAB_NAMES[2]
-  local side = tabs[2]
   if side.cbIcon then
     if not side.cbBadge then
       side.cbBadge = side:CreateFontString(nil, "OVERLAY", Font("NumberFontNormal", "GameFontHighlightSmall"))
@@ -5089,7 +5094,6 @@ function UI.UpdateBadge()
     side:SetText(label)
     if side.isPanelTab and PanelTemplates_TabResize then pcall(PanelTemplates_TabResize, side, 0) end
   end
-  local top = topTabs[2]
   if top then
     if top.cbLabel then
       top.cbLabel:SetText(label)

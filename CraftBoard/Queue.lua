@@ -210,8 +210,16 @@ function Queue.Adopt(who, itemID, src, qty)
     local chat = Chat(x.src) and x.src or (Chat(x.alias) and not posts[x.src] and x.alias) or nil
     if x.who and x.item == itemID and chat and NS.SamePlayer and NS.SamePlayer(x.who, who) then
       x.src, x.alias = src, chat
-      local left = type(qty) == "number" and qty - (tonumber(x.delivered) or 0) or 0
-      if left > 0 then x.qty = Queue.ClampQty(x.recipeID, left) end
+      if type(qty) == "number" then
+        local left = qty - (tonumber(x.delivered) or 0)
+        if left > 0 then
+          x.qty = Queue.ClampQty(x.recipeID, left)
+        else
+          -- What was handed over already covers the post: nothing is left to craft.
+          Queue.Remove(x.id)
+          return nil
+        end
+      end
       NS.Fire("QUEUE_UPDATED")
       return x
     end
