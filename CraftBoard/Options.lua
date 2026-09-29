@@ -337,8 +337,12 @@ local function RegisterVertical()
           -- Stored straight on CraftBoardDB.guildShare; turning it on announces me to the guild.
           setting = S.RegisterAddOnSetting(category, o[1], "guildShare", CraftBoardDB, bool, o[2], default)
           if S.SetOnValueChangedCallback then
-            pcall(S.SetOnValueChangedCallback, o[1], function(_, _, value)
-              if NS.Comm and NS.Comm.SetGuildShare then NS.Comm.SetGuildShare(value) end
+            -- The value is already saved when this runs (and the callback's arguments differ
+            -- between clients): read it back.
+            pcall(S.SetOnValueChangedCallback, o[1], function()
+              if NS.Comm and NS.Comm.SetGuildShare then
+                NS.Comm.SetGuildShare(not (type(CraftBoardDB) == "table" and CraftBoardDB.guildShare == false))
+              end
             end)
           end
         else

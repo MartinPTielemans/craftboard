@@ -813,6 +813,13 @@ end
 
 -- Deterministic cheap hash of my current char's shareable recipe ID set: "count:polyhash".
 -- The count equals the number of entries Comm sends (hello n / R list).
+-- The hash of exactly these recipe IDs (a list trimmed to fit one message).
+function Recipes.HashIDs(ids)
+  local copy = {}
+  for i, id in ipairs(ids) do copy[i] = id end
+  return IdHash(copy)
+end
+
 -- max: only the first max recipe IDs (in order), the ones a recipe list can carry: a list and
 -- the hash it is stored under always cover the same recipes.
 function Recipes.Hash(max)

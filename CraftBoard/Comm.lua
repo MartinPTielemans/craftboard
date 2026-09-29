@@ -570,8 +570,9 @@ end
 -- A list that fits is sent exactly as before (no page fields), so older clients read it as ever.
 -- paged: the receiver announced it reads pages (hello pg=1). Pages only ever go by whisper to
 -- such a peer: an older client would store the first page as the whole list. Older clients get
--- the single message they always got (names dropped, then trimmed to fit, as 0.9 did), and a
--- list too big for one message isn't broadcast at all (FlushBatch then whispers each querier).
+-- a single message (names dropped, then trimmed to fit, as 0.9 did, but a trimmed list carries
+-- its own hash), and a list too big for one message isn't broadcast at all (FlushBatch then
+-- whispers each querier).
 local function SendRecipes(dist, to, paged)
   if not commObj.SendCommMessage then return false end
   if dist == "CHANNEL" then to = channelId end
@@ -585,9 +586,17 @@ local function SendRecipes(dist, to, paged)
   if not paged then
     local payload = { v = VERSION, h = h, profs = profs, list = BuildRecipeList(false) }
     text, size = Encode(payload)
+    local R = NS.Recipes
     while text and not Fits(text, size) and #payload.list > 1 do
       local keep = floor(#payload.list * 0.75)
       for k = #payload.list, keep + 1, -1 do payload.list[k] = nil end
+      -- A trimmed list goes under its own hash, never the full set's: the peer then knows it
+      -- doesn't have them all (and asks again with a later hello).
+      if R and R.HashIDs then
+        local ids = {}
+        for i, e in ipairs(payload.list) do ids[i] = e[1] end
+        payload.h = tostring(R.HashIDs(ids))
+      end
       text, size = Encode(payload)
     end
     return Fits(text, size) and (pcall(commObj.SendCommMessage, commObj, PREFIX, "R" .. text, dist, to, "BULK")) or false
@@ -643,6 +652,7 @@ end
 -- (after my login) a change isn't news: the roster and friend list are still filling in.
 local lastOnline = {}
 local quietUntil = math.huge
+local OnlineNow -- forward: a peer's online state as shown (roster, friends, last heard)
 
 local function Touch(full)
   local db = DB()
@@ -657,8 +667,12 @@ local function Touch(full)
   local now = time()
   if not (type(p.seen) == "number" and now - p.seen < ONLINE_WINDOW) then FirePeersSoon() end
   p.seen = now
-  -- Heard from just now: online, as the update this fires shows them (a later logoff is a change).
-  lastOnline[full] = true
+  -- Their state as shown now (the roster or friend list may still say offline; its update to
+  -- online is then the change CheckOnline reports).
+  local on = true
+  if OnlineNow then on = OnlineNow(full, p) end
+  if lastOnline[full] ~= nil and lastOnline[full] ~= on then FirePeersSoon() end
+  lastOnline[full] = on
   return p
 end
 
@@ -775,6 +789,10 @@ end
 -- A change of online state nobody sends a message about (a friend or guild member logging on or
 -- off, a peer not heard from within ONLINE_WINDOW) fires PEERS_UPDATED, so the request count,
 -- badges and Find's order follow.
+function OnlineNow(full, p)
+  return OnlineOf(full, p, GuildRoster(), time()) and true or false
+end
+
 local function CheckOnline()
   local db = DB()
   if not (db and type(db.peers) == "table") then return end
