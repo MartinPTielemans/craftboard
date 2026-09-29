@@ -102,9 +102,10 @@ end
 -- At least one profession learned (primary or secondary). Without the API: assume yes.
 local function HasProfession()
   if type(GetProfessions) ~= "function" then return true end
-  local ok, a, b, c, d, e = pcall(GetProfessions)
+  -- All six slots, as Skills.ReadBook reads them (First Aid can come last).
+  local ok, a, b, c, d, e, f = pcall(GetProfessions)
   if not ok then return true end
-  return (a or b or c or d or e) ~= nil
+  return (a or b or c or d or e or f) ~= nil
 end
 
 -- Option "Open CraftBoard inside the Professions window" (CraftBoardDB.embed, default on).
