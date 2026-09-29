@@ -224,6 +224,9 @@ CW.Add("LF " .. KIT .. ", don't have mats", "Mira Vale", "Trade")
 check(not (row("Mira Vale-Forever") or {}).mats, "a new line's negation wins")
 check(CW.Add("nvm found one", "Mira Vale", "Trade") == nil and row("Mira Vale-Forever") == nil, "'nvm found one' drops the row")
 check(CW.Add("nvm, LF lw", "Mira Vale", "Trade") == nil, "a line opening with 'nvm' makes no row")
+CW.Add("LF " .. KIT .. " pls", "Mira Vale", "Trade")
+check(CW.Add("LF " .. KIT .. ", nvm found one", "Mira Vale", "Trade") == nil and row("Mira Vale-Forever") == nil,
+  "an ask that ends in 'nvm found one' is called off")
 
 -- Channel labels (non-ASCII channel names, the client's chat type names) and the tuning log
 EnumerateServerChannels = function() return "Général", "Commerce" end

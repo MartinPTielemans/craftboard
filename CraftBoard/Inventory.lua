@@ -312,6 +312,7 @@ local function BankIDs(skip)
 end
 
 local bankOpen = false
+local bankSeen = false    -- the bank was opened this session (the client's cache has it since)
 
 local function MyRecord()
   local db = type(CraftBoardDB) == "table" and CraftBoardDB
@@ -349,6 +350,7 @@ local function RecordItems()
   local now = time and time() or nil
   local bagList, bagSet = BagIDs()
   if bankOpen then
+    bankSeen = true
     local all = {}
     for _, bag in ipairs(BankIDs(bagSet)) do AddContainer(all, bag) end
     if not SameCounts(all, lastBank) then changed = true end
@@ -385,8 +387,10 @@ end
 
 -- The saved bank counts from the client's cache: at login for my recipes' reagents and whatever
 -- is saved; after a bag change with the bank closed (a craft can use the reagent bank) for what is
--- saved. A zero only clears a saved count when the cache shows the bank loaded (another of these
--- items is there); before that it may just mean "not loaded yet". True when a count changed.
+-- saved. A zero only clears a saved count when the cache is known to have the bank: another of
+-- these items shows there now, or this item showed there earlier this session (then it was used
+-- up, not "not loaded yet"). True when a count changed.
+local cachedSeen = {}     -- [itemID] = true: the cache reported some of it in the bank this session
 local function RefreshBankFromCache(savedOnly)
   local c = MyRecord()
   if not c then return false end
@@ -400,13 +404,13 @@ local function RefreshBankFromCache(savedOnly)
   for id in pairs(ids) do
     local n = CachedBankCount(id)
     counts[id] = n
-    if n > 0 then loaded = true end
+    if n > 0 then loaded, cachedSeen[id] = true, true end
   end
   local changed = false
   for id, n in pairs(counts) do
     if n > 0 and bank[id] ~= n then
       bank[id], changed = n, true
-    elseif n == 0 and loaded and bank[id] ~= nil then
+    elseif n == 0 and (loaded or cachedSeen[id] or bankSeen) and bank[id] ~= nil then
       bank[id], changed = nil, true
     end
   end

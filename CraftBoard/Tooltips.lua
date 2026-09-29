@@ -394,10 +394,17 @@ local function RecipeLines(itemID, lines, out)
   local function merge(set)
     for key in pairs(set or {}) do known[key] = true end
   end
-  if spellID then merge(knownByID[spellID]) end
-  local k1, k2 = Norm(spellName), Norm(taught)
-  if k1 then merge(knownBy[k1]) end
-  if k2 then merge(knownBy[k2]) end
+  -- The spell it teaches is a recipe we know of: that ID alone says who knows it (names can be
+  -- shared by several recipes making same-named items). Otherwise (a generic "learning" spell,
+  -- or none) the names decide.
+  local cat = type(CraftBoardDB) == "table" and type(CraftBoardDB.recipeNames) == "table" and CraftBoardDB.recipeNames or {}
+  if spellID and (knownByID[spellID] or cat[spellID]) then
+    merge(knownByID[spellID])
+  else
+    local k1, k2 = Norm(spellName), Norm(taught)
+    if k1 then merge(knownBy[k1]) end
+    if k2 then merge(knownBy[k2]) end
+  end
   local profName, required = RequiredSkill(lines)
   local reqs = profName and OtherRequirements(lines) or { other = {} }
   local reachable = NS.Inventory and NS.Inventory.Reachable

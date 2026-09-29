@@ -2913,6 +2913,8 @@ function R.AddToQueue(e)
   local recipeID, item, qty, who, mats = R.QueueTarget(e)
   if not (recipeID and NS.Queue) then return end
   local x, why = NS.Queue.Add({ recipeID = recipeID, item = item, qty = qty, who = who, src = e.id, mats = mats })
+  -- A chat ask's quantity as queued (Annotate follows it when the ask changes).
+  if x and e.chat and x.askQty == nil then x.askQty = qty end
   if x then
     NS.Print(format(L["Queued: %s for %s"], e.name, Short(who)))
   elseif why == "full" then
@@ -3889,10 +3891,17 @@ local function Annotate()
       end
       e.can = e.ready or e.readyAlt or false
       -- Asked again with another quantity ("LF 5x" after "LF 1x"), or they said they bring the
-      -- reagents (or no longer do): the queued craft follows.
+      -- reagents (or no longer do): the queued craft follows. Only a changed ask moves the
+      -- quantity (x.askQty: the ask's quantity last taken), so items already made or handed over
+      -- (Queue.Delivered lowers qty) aren't asked for again by the same old line.
       local x = Q and Q.Get and Q.Get(e.id)
       if x and x.who then
-        if s.qty and not x.madeItems then Q.SetQty(x, s.qty) end
+        if s.qty and x.askQty == nil then
+          x.askQty = s.qty
+        elseif s.qty and s.qty ~= x.askQty then
+          x.askQty = s.qty
+          Q.SetQty(x, s.qty)
+        end
         if Q.SetMats then Q.SetMats(x, s.mats) end
       end
       -- The count leaves out profession-only asks ("LF ench"): only asks for a recipe I know.

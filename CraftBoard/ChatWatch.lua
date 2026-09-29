@@ -548,6 +548,23 @@ local function WithoutMats(s)
   return s
 end
 
+-- An ask comes after the last "nvm" / "found one" in the line ("nvm that, LF tailor"): the line
+-- asks again rather than calling the ask off.
+local function AsksAfterDone(s)
+  local last = 0
+  for i = 1, #DONE do
+    local at = s:find(DONE[i], 1, true)
+    while at do
+      if at > last then last = at end
+      at = s:find(DONE[i], at + 1, true)
+    end
+  end
+  for i = 1, #ASK do
+    if s:find(ASK[i], last + 1, true) then return true end
+  end
+  return false
+end
+
 local function Opens(s, list)
   for i = 1, #list do
     if s:sub(1, #list[i]) == list[i] then return true end
@@ -570,8 +587,9 @@ function ChatWatch.Add(text, sender, channel, guild)
   -- "nvm found one" isn't a request; a line opening with it ("nvm, LF enchanter instead")
   -- doesn't make a new row either. Its reagent phrases aside: "I no longer have mats" only
   -- changes whether they bring them (below).
+  -- A line ending on it ("LF enchanter, nvm found one") calls the ask off as well.
   local d = WithoutMats(s)
-  if Has(d, CANCEL) or (Has(d, DONE) and (not hit or Opens(d, DONE))) then
+  if Has(d, CANCEL) or (Has(d, DONE) and (not hit or Opens(d, DONE) or not AsksAfterDone(d))) then
     if prev then
       seen[from] = nil
       FireSoon()
@@ -630,9 +648,14 @@ local function ServerChannels()
   return found
 end
 
+-- Server channels never watched, by their static zone channel ID (the event's zoneChannelID), as
+-- their names are localized: LocalDefense (22), WorldDefense (23), GuildRecruitment (25).
+local NOT_WATCHED = { [22] = true, [23] = true, [25] = true }
+
 -- "Trade - City" -> "Trade". Server channels (General, Trade, LookingForGroup...) only, never
 -- defense / recruitment or custom channels.
-local function PublicChannel(baseName, channelName)
+local function PublicChannel(baseName, channelName, zoneChannelID)
+  if NOT_WATCHED[zoneChannelID] then return nil end
   local base = type(baseName) == "string" and baseName ~= "" and baseName or nil
   if not base and type(channelName) == "string" then base = channelName:match("^%d+%.%s*(.+)$") or channelName end
   if not base then return nil end
@@ -673,7 +696,7 @@ end
 local stats = { seen = 0, channel = 0, accepted = 0, matched = 0, last = "", bases = {}, nbases = 0 }
 ChatWatch.Stats = function() return stats end
 
-local function OnChat(event, text, sender, _, channelName, _, _, _, _, baseName)
+local function OnChat(event, text, sender, _, channelName, _, _, zoneChannelID, _, baseName)
   stats.seen = stats.seen + 1
   if not ChatWatch.Enabled() then return end
   if Secret(text, sender) then stats.secret = (stats.secret or 0) + 1; return end
@@ -683,7 +706,7 @@ local function OnChat(event, text, sender, _, channelName, _, _, _, _, baseName)
     stats.channel = stats.channel + 1
     if Secret(channelName, baseName) then stats.secret = (stats.secret or 0) + 1; return end
     local base
-    label, base = PublicChannel(baseName, channelName)
+    label, base = PublicChannel(baseName, channelName, zoneChannelID)
     stats.last = tostring(baseName or channelName)
     if label then
       stats.accepted = stats.accepted + 1

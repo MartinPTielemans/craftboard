@@ -1308,6 +1308,31 @@ end
 
 local handlers = {}
 
+-- Recipe lists wanted while sending wasn't possible (combat, chat lockdown): pendingQ[full] =
+-- the hash they announced. Asked for every 15 s once sending is possible, while that peer's list
+-- is still not that one.
+local pendingQ, pendingQTimer = {}, false
+local function RetryQueries()
+  pendingQTimer = false
+  local db, now = DB(), time()
+  for full, h in pairs(pendingQ) do
+    local p = db and db.peers[full]
+    if type(p) ~= "table" or p.hash == h then
+      pendingQ[full] = nil
+    elseif CanSend() then
+      pendingQ[full] = nil
+      if not (queried[full] and now - queried[full] < QUERY_GAP) then
+        queried[full] = now
+        Send("Q", { v = VERSION }, "WHISPER", ShortName(full), "NORMAL")
+      end
+    end
+  end
+  if next(pendingQ) and C_Timer and C_Timer.After then
+    pendingQTimer = true
+    C_Timer.After(15, RetryQueries)
+  end
+end
+
 function handlers.H(full, data)
   local h = CleanString(data.h, 64)
   if not h or type(data.n) ~= "number" then return end
@@ -1379,7 +1404,14 @@ function handlers.H(full, data)
   end
   local now = time()
   if queried[full] and now - queried[full] < QUERY_GAP then return end
-  if not CanSend() then return end
+  if not CanSend() then
+    pendingQ[full] = h
+    if not pendingQTimer and C_Timer and C_Timer.After then
+      pendingQTimer = true
+      C_Timer.After(15, RetryQueries)
+    end
+    return
+  end
   queried[full] = now
   Send("Q", { v = VERSION }, "WHISPER", ShortName(full), "NORMAL")
 end
