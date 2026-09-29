@@ -47,8 +47,10 @@ function API.AddChatSeen(text, sender, channelLabel)
   if type(text) ~= "string" or type(sender) ~= "string" or not (NS.ChatWatch and NS.ChatWatch.Add) then
     return false
   end
+  -- The same line CraftBoard just saw itself (from its own chat events) isn't asked twice; the
+  -- same ask again later refreshes the row, as a repeated chat line does.
   local s = SeenFrom(sender)
-  if s and s.text == NS.ChatWatch.Clean(text) then return true end
+  if s and s.text == NS.ChatWatch.Clean(text) and time() - (s.t or 0) < 10 then return true end
   return NS.ChatWatch.Add(text, sender, channelLabel or "Trade") ~= nil
 end
 

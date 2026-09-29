@@ -230,12 +230,14 @@ function ChatWatch.Detect(text, guildChat)
   for i = 1, #words do
     local p = ProfAt(words, i)
     if p then
-      prof = prof or p
-      -- "any lw around?", "need enchanter", "enchanter needed", "LW wanted"
+      -- "any lw around?", "need enchanter", "enchanter needed", "LW wanted": the profession asked
+      -- for wins over one merely named ("tailor, need enchanter").
       local before, after = words[i - 1], words[i + 1]
       if before == "any" or before == "need" or before == "needs" or after == "needed" or after == "wanted" then
+        if not profAsk then prof = p end
         profAsk = true
       end
+      prof = prof or p
     end
   end
   if Has(s, SKIP) or (not guildChat and s:find(" guild ", 1, true)) or (not prof and Has(s, SKIP_NO_PROF)) then
@@ -571,18 +573,37 @@ local function Asks(s)
   return false
 end
 
--- An ask comes after the last "nvm" / "found one" in the line ("nvm that, LF tailor", "found
--- one, need enchanter"): the line asks again rather than calling the ask off.
-local function AsksAfterDone(s)
-  local last, stop = 0, 0
-  for i = 1, #DONE do
-    local at = s:find(DONE[i], 1, true)
-    while at do
-      if at > last then last, stop = at, at + #DONE[i] - 1 end
-      at = s:find(DONE[i], at + 1, true)
+-- Where the last phrase calling an ask off ("nvm", "found one", "don't need") ends in the
+-- normalized line, and which phrase it is (nil: none).
+local function LastCallOff(s)
+  local stop, phrase = 0, nil
+  for _, list in ipairs({ CANCEL, DONE }) do
+    for i = 1, #list do
+      local at = s:find(list[i], 1, true)
+      while at do
+        local e = at + #list[i] - 1
+        if e > stop then stop, phrase = e, list[i] end
+        at = s:find(list[i], at + 1, true)
+      end
     end
   end
-  return Asks(" " .. s:sub(stop))
+  return stop, phrase
+end
+
+-- The raw line after the last place a normalized phrase (" don t need ") is written in it
+-- ("Don't need"), links intact, or nil.
+local function RawAfter(text, phrase)
+  local parts = {}
+  for w in phrase:gmatch("%S+") do parts[#parts + 1] = "%f[%w]" .. w .. "%f[%W]" end
+  if #parts == 0 then return nil end
+  local pat = table.concat(parts, "[^%w|]+")
+  local low, last = lower(text), nil
+  local a, b = low:find(pat)
+  while a do
+    last = b
+    a, b = low:find(pat, b + 1)
+  end
+  return last and text:sub(last + 1) or nil
 end
 
 -- Record a chat line (also the entry point for tests). Returns the stored entry or nil.
@@ -597,16 +618,24 @@ function ChatWatch.Add(text, sender, channel, guild)
   if not (hit or prev) then return nil end
   local clean = ChatWatch.Clean(text)
   local s = Normalize(clean)
-  -- "nvm found one" isn't a request and drops their row, and so does a line ending on it ("LF
-  -- enchanter, nvm found one"); an ask after it ("nvm, LF tailor instead") is a new ask. Its
-  -- reagent phrases aside: "I no longer have mats" only changes whether they bring them (below).
+  -- "nvm found one" / "don't need an enchanter" isn't a request and drops their row, and so does
+  -- a line ending on it ("LF enchanter, nvm found one"). An ask after it ("nvm, LF tailor
+  -- instead", "don't need tailor, need enchanter") is a new ask, read from the words after it
+  -- alone. Reagent phrases aside: "I no longer have mats" only changes whether they bring them.
   local d = WithoutMats(s)
-  if Has(d, CANCEL) or (Has(d, DONE) and (not hit or not AsksAfterDone(d))) then
-    if prev then
-      seen[from] = nil
-      FireSoon()
+  local stop, phrase = LastCallOff(d)
+  if phrase then
+    local rest = hit and Asks(" " .. d:sub(stop)) and RawAfter(text, phrase)
+    hit = rest and ChatWatch.Detect(rest, guild) or nil
+    if not hit then
+      if prev then
+        seen[from] = nil
+        FireSoon()
+      end
+      return nil
     end
-    return nil
+    clean = ChatWatch.Clean(rest)
+    s = Normalize(clean)
   end
   if not hit then
     local said, mats = Mats(s)

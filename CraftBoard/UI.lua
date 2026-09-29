@@ -2770,10 +2770,12 @@ function R.RecipesByOutput()
   local out = {}
   local db = type(CraftBoardDB) == "table" and CraftBoardDB or {}
   local chars = type(db.chars) == "table" and db.chars or {}
+  local tradeable = NS.Recipes and NS.Recipes.IsTradeable
   local function take(c, current, key)
     if type(c) ~= "table" or type(c.recipes) ~= "table" then return end
     for id, rec in pairs(c.recipes) do
-      if type(rec) == "table" and type(rec.o) == "number" then
+      -- Bind-on-Pickup and quest outputs can't be made for the requester (as in Find and chat).
+      if type(rec) == "table" and type(rec.o) == "number" and (not tradeable or tradeable(rec)) then
         local k = out[rec.o]
         if not k then
           out[rec.o] = { rec = rec, recipeID = id, prof = rec.p, current = current, char = key }

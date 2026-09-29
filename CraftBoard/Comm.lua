@@ -415,10 +415,10 @@ end
 local function MyHash()
   local R = NS.Recipes
   if R and R.Hash then
-    local ok, h = pcall(R.Hash)
+    local ok, h = pcall(R.Hash, MAX_RECIPES)
     if ok and h ~= nil then return tostring(h) end
   end
-  return "0:" .. CountTable(MyRecipes())
+  return "0:" .. min(CountTable(MyRecipes()), MAX_RECIPES)
 end
 
 local function MyProfs()
@@ -525,7 +525,7 @@ function SendHello(dist, busy)
   end
   local h = MyHash()
   -- n must match the count part of h ("count:poly") so peers' empty-book shortcut is right.
-  local n = tonumber(h:match("^(%d+):")) or CountTable(MyRecipes())
+  local n = tonumber(h:match("^(%d+):")) or min(CountTable(MyRecipes()), MAX_RECIPES)
   local payload = { v = VERSION, profs = MyProfs(), n = n, h = h, b = busyNow or nil,
     l = not loginHello[dist] or nil, cd = NS.Cooldowns and NS.Cooldowns.ForHello and NS.Cooldowns.ForHello(MAX_CD) or nil,
     pg = 1 }
@@ -1848,7 +1848,10 @@ end
 
 -- isInitialLogin: a real login. After a /reload the back-online flag (l) must not go out
 -- again, so both distributions count as already announced.
+local guildShareWas = nil   -- guild sharing as last acted on (Comm.SetGuildShare)
+
 local function OnEnteringWorld(_, isInitialLogin)
+  if guildShareWas == nil then guildShareWas = GuildShareOn() end
   if not started and isInitialLogin ~= true then
     loginHello.GUILD, loginHello.CHANNEL = true, true
   end
@@ -1894,6 +1897,20 @@ function Comm.SetRealmChannel(on)
     if LeaveChannelByName and ResolveChannel() then pcall(LeaveChannelByName, CHANNEL_NAME) end
     channelId = nil
   end
+end
+
+-- Options "Share recipes with my guild": turned on, the guild hears my hello and my posts now
+-- rather than with the next periodic hello. guildShareWas: the state last acted on (the modern
+-- settings panel has already saved the new value when this is called).
+function Comm.SetGuildShare(on)
+  local db = DB()
+  if not db then return end
+  on = on and true or false
+  local was = guildShareWas
+  if was == nil then was = db.guildShare ~= false end
+  db.guildShare, guildShareWas = on, on
+  if was ~= on then FirePeersSoon() end
+  if on and not was then SendHello("GUILD") end
 end
 
 function Comm.ChannelId()

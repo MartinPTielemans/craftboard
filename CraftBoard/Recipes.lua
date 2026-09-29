@@ -813,9 +813,15 @@ end
 
 -- Deterministic cheap hash of my current char's shareable recipe ID set: "count:polyhash".
 -- The count equals the number of entries Comm sends (hello n / R list).
-function Recipes.Hash()
+-- max: only the first max recipe IDs (in order), the ones a recipe list can carry: a list and
+-- the hash it is stored under always cover the same recipes.
+function Recipes.Hash(max)
   local ids = {}
   for recipeID in pairs(Recipes.Shareable()) do ids[#ids + 1] = recipeID end
+  if max and #ids > max then
+    table.sort(ids)
+    for k = #ids, max + 1, -1 do ids[k] = nil end
+  end
   return IdHash(ids)
 end
 

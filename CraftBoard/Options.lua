@@ -88,7 +88,11 @@ local function GetGuildShare()
 end
 
 local function SetGuildShare(v)
-  if type(CraftBoardDB) == "table" then CraftBoardDB.guildShare = v and true or false end
+  if NS.Comm and NS.Comm.SetGuildShare then
+    NS.Comm.SetGuildShare(v)
+  elseif type(CraftBoardDB) == "table" then
+    CraftBoardDB.guildShare = v and true or false
+  end
 end
 
 local GUILD_TIP = L["Announce your recipes and requests to guildmates who use CraftBoard."]
@@ -330,8 +334,13 @@ local function RegisterVertical()
         local default = o.default ~= false
         local setting
         if o.guild then
-          -- Stored straight on CraftBoardDB.guildShare.
+          -- Stored straight on CraftBoardDB.guildShare; turning it on announces me to the guild.
           setting = S.RegisterAddOnSetting(category, o[1], "guildShare", CraftBoardDB, bool, o[2], default)
+          if S.SetOnValueChangedCallback then
+            pcall(S.SetOnValueChangedCallback, o[1], function(_, _, value)
+              if NS.Comm and NS.Comm.SetGuildShare then NS.Comm.SetGuildShare(value) end
+            end)
+          end
         else
           setting = S.RegisterProxySetting(category, o[1], bool, o[2], default, o[3], o[4])
         end

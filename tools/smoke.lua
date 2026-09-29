@@ -230,6 +230,8 @@ CW.Add("LF " .. KIT .. " pls", "Mira Vale", "Trade")
 check(CW.Add("LF " .. KIT .. ", nvm found one", "Mira Vale", "Trade") == nil and row("Mira Vale-Forever") == nil,
   "an ask that ends in 'nvm found one' is called off")
 check(CW.Add("LF " .. KIT .. " nvm, need enchanter", "Mira Vale", "Trade") ~= nil, "an ask after 'nvm' in the line stands")
+local swap = CW.Add("don't need tailor, need enchanter", "Mira Vale", "Trade")
+check(swap ~= nil and swap.profID == 333, "a new ask after a call-off is read from its own words")
 
 -- Channel labels (non-ASCII channel names, the client's chat type names) and the tuning log
 EnumerateServerChannels = function() return "Général", "Commerce" end
