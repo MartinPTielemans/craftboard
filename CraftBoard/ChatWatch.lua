@@ -583,13 +583,6 @@ local function AsksAfterDone(s)
   return Asks(" " .. s:sub(stop))
 end
 
-local function Opens(s, list)
-  for i = 1, #list do
-    if s:sub(1, #list[i]) == list[i] then return true end
-  end
-  return false
-end
-
 -- Record a chat line (also the entry point for tests). Returns the stored entry or nil.
 -- A later line from the same player can also drop their row ("nvm, found one") or say
 -- whether they bring the reagents ("have mats" / "don't have mats") without asking again.
@@ -602,12 +595,11 @@ function ChatWatch.Add(text, sender, channel, guild)
   if not (hit or prev) then return nil end
   local clean = ChatWatch.Clean(text)
   local s = Normalize(clean)
-  -- "nvm found one" isn't a request; a line opening with it ("nvm, LF enchanter instead")
-  -- doesn't make a new row either. Its reagent phrases aside: "I no longer have mats" only
-  -- changes whether they bring them (below).
-  -- A line ending on it ("LF enchanter, nvm found one") calls the ask off as well.
+  -- "nvm found one" isn't a request and drops their row, and so does a line ending on it ("LF
+  -- enchanter, nvm found one"); an ask after it ("nvm, LF tailor instead") is a new ask. Its
+  -- reagent phrases aside: "I no longer have mats" only changes whether they bring them (below).
   local d = WithoutMats(s)
-  if Has(d, CANCEL) or (Has(d, DONE) and (not hit or Opens(d, DONE) or not AsksAfterDone(d))) then
+  if Has(d, CANCEL) or (Has(d, DONE) and (not hit or not AsksAfterDone(d))) then
     if prev then
       seen[from] = nil
       FireSoon()

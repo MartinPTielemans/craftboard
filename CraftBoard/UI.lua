@@ -3817,7 +3817,7 @@ local function Annotate()
       local mine = R.IsMyPost(post)
       -- Queued from their chat ask before they posted it (the chat row is left out below as a
       -- duplicate): the queued craft belongs to the post now.
-      if not mine and Q and Q.Adopt then Q.Adopt(post.from, post.item, post.id) end
+      if not mine and Q and Q.Adopt then Q.Adopt(post.from, post.item, post.id, qty) end
       local alt = not mine and R.AltOf(post.from)
       local online = mine or alt or R.Online(post.from)
       local e = {

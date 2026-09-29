@@ -90,6 +90,7 @@ local rawNew, rawOld, rawAt = {}, {}, 0 -- exact copies seen: [peer .. message] 
 local heardOn = {}        -- [peer] = "GUILD" / "CHANNEL": where their last broadcast reached us
 local queryTimes = {}     -- arrival times of the queries answered in the last R_BATCH_WINDOW
 local batch = nil         -- [peer] = dist, queriers waiting for a broadcast R
+local batchAsked = {}     -- [peer] = when that querier asked (their R is only read for QUERY_TTL)
 local pagesIn = {}        -- [peer] = { h=, pgs=, got={[pg]=true}, n=, recipes={}, count= }: a paged R arriving
 local batchAt = nil       -- time of the last broadcast R
 local peersFirePending = false
@@ -884,6 +885,8 @@ local function PrunePosts()
     for id, p in pairs(db.posts) do
       if type(p) == "table" and p.pa ~= nil and gone[p.pa] then
         db.posts[id], gone[id], more = nil, true, true
+        -- The parent is tombstoned, so a late copy of this linked order is dropped on arrival.
+        Retracted()[p.pa] = Retracted()[p.pa] or time()
         if p.from == me and RetractMine then RetractMine(id, p.sentTo) end
       end
     end
@@ -1466,6 +1469,17 @@ local function FlushBatch()
   end
   local b = batch
   batch = nil
+  -- Queriers who asked too long ago (a long lockdown) would no longer read the answer: they are
+  -- let go, and a hello (my hash differs from theirs) makes them ask again.
+  local now, stale = time(), false
+  for peer in pairs(b) do
+    if now - (batchAsked[peer] or now) > QUERY_TTL - 15 then
+      b[peer], answered[peer], stale = nil, nil, true
+    end
+    batchAsked[peer] = nil
+  end
+  if stale then SendHello() end
+  if not next(b) then return end
   batchAt = time()
   local sent = {}
   for _, dist in pairs(b) do
@@ -1503,6 +1517,7 @@ function handlers.Q(full)
       C_Timer.After(R_BATCH_DELAY, FlushBatch)
     end
     batch[full] = dist
+    batchAsked[full] = now
     return
   end
   SendRecipes("WHISPER", ShortName(full), ReadsPages(full))

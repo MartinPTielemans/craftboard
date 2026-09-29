@@ -199,7 +199,8 @@ end
 -- alias, so it still reads as queued when the post goes away first. Returns the entry or nil.
 -- Also after that post went away and they posted again (the chat alias still matches); never
 -- from a post that is still on the board.
-function Queue.Adopt(who, itemID, src)
+-- qty: the post's quantity, which the craft takes over while none of it is made yet.
+function Queue.Adopt(who, itemID, src, qty)
   if type(who) ~= "string" or type(itemID) ~= "number" or src == nil or Queue.Get(src) then return nil end
   local posts = type(CraftBoardDB) == "table" and type(CraftBoardDB.posts) == "table" and CraftBoardDB.posts or {}
   local function Chat(id) return type(id) == "string" and id:sub(1, 5) == "chat:" end
@@ -207,6 +208,7 @@ function Queue.Adopt(who, itemID, src)
     local chat = Chat(x.src) and x.src or (Chat(x.alias) and not posts[x.src] and x.alias) or nil
     if x.who and x.item == itemID and chat and NS.SamePlayer and NS.SamePlayer(x.who, who) then
       x.src, x.alias = src, chat
+      if type(qty) == "number" and Queue.MadeItems(x) <= 0 then x.qty = Queue.ClampQty(x.recipeID, qty) end
       NS.Fire("QUEUE_UPDATED")
       return x
     end

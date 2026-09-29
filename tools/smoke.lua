@@ -225,7 +225,7 @@ check(mira.mats and mira.qty == 2 and mira.asks == 2, "asking again keeps the re
 CW.Add("LF " .. KIT .. ", don't have mats", "Mira Vale", "Trade")
 check(not (row("Mira Vale-Forever") or {}).mats, "a new line's negation wins")
 check(CW.Add("nvm found one", "Mira Vale", "Trade") == nil and row("Mira Vale-Forever") == nil, "'nvm found one' drops the row")
-check(CW.Add("nvm, LF lw", "Mira Vale", "Trade") == nil, "a line opening with 'nvm' makes no row")
+check(CW.Add("nvm, LF lw", "Mira Vale", "Trade") ~= nil, "an ask after an opening 'nvm' is a new ask")
 CW.Add("LF " .. KIT .. " pls", "Mira Vale", "Trade")
 check(CW.Add("LF " .. KIT .. ", nvm found one", "Mira Vale", "Trade") == nil and row("Mira Vale-Forever") == nil,
   "an ask that ends in 'nvm found one' is called off")
@@ -363,9 +363,11 @@ do
   Q.Adopt("Bob-Forever", 2304, "post:bob:1")
   check(Q.Has("post:bob:1") and Q.Has("chat:Bob-Forever:Light Armor Kit") and Q.Get("post:bob:1") == c,
     "a posted chat ask keeps its queued craft (the chat ask still points at it)")
-  -- That post is gone and they post again: the craft moves to the new post (never from a live one).
-  Q.Adopt("Bob-Forever", 2304, "post:bob:2")
-  check(Q.Get("post:bob:2") == c and Q.Has("chat:Bob-Forever:Light Armor Kit"), "a repost takes the queued craft over")
+  -- That post is gone and they post again: the craft moves to the new post (never from a live one),
+  -- taking the post's quantity while nothing is made yet.
+  Q.Adopt("Bob-Forever", 2304, "post:bob:2", 5)
+  check(Q.Get("post:bob:2") == c and Q.Has("chat:Bob-Forever:Light Armor Kit") and c.qty == 5,
+    "a repost takes the queued craft over, with its quantity")
   Q.Remove(c.id)
 end
 -- They take back "have mats": the queued craft needs the reagents again.
@@ -458,6 +460,7 @@ do
   db.posts["young"] = { id = "young", from = "Dora-Forever", item = 5, qty = 1, t = time(), pa = "old" }
   NS.Comm.Requests()
   check(db.posts["old"] == nil and db.posts["young"] == nil, "linked orders expire with their parent")
+  check(db.retracted and db.retracted["old"] ~= nil, "the expired parent is tombstoned for late copies")
   local saved = me.cd
   me.cd = nil
   local h2 = NS.Cooldowns.ForHello(16)
