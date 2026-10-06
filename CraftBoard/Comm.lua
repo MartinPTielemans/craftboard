@@ -7,9 +7,10 @@
 --   Q query   {v=1}                                                     WHISPER to hello sender
 --   R recipes {v=1, h=hash, profs=..., list={ {id, name, outputItemID, profID}, ... }}  WHISPER
 --             (GUILD/CHANNEL once when several peers query at once; only those who asked take it)
---   P post    {v=1, id=, item=, qty=, note=, t=, pa=parent post id}     GUILD/CHANNEL
+--   P post    {v=1, id=, item=, qty=, note=, t=, pa=parent post id, k="m"?}  GUILD/CHANNEL
 --             (pa is optional: a linked order for an intermediate of the parent request; note
---             may be "", as linked orders send it, and never carries prices)
+--             may be "", as linked orders send it, and never carries prices; k="m": looking for
+--             materials, not a craft (older clients show it as an ordinary request))
 --   X retract {v=1, id=}                                                GUILD/CHANNEL
 --   W who     {v=1, id=, q=lower-case text?, i={itemID,...}?}            GUILD/CHANNEL
 --             ("who can craft this?", sent from a Find search; crafters who know a match answer)
@@ -1105,7 +1106,7 @@ function SendMyPosts(dist)
   for id, p in pairs(db.posts) do
     if type(p) == "table" and p.from == me and type(p.t) == "number" and now - p.t < POST_TTL then
       local target = dist == "CHANNEL" and channelId or nil
-      if Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa }, dist, target, "BULK") then
+      if Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa, k = p.k }, dist, target, "BULK") then
         p.sentTo = p.sentTo or {}
         p.sentTo[dist] = true
       end
@@ -1147,7 +1148,8 @@ Comm.PostNote = PostNote
 -- parent: id of one of my posts this one is an intermediate for (a linked order). Linked
 -- orders posted with their parent in the same click skip the few-seconds gap. note may be
 -- nil or "" (linked orders have none); prices are taken out of it.
-function Comm.PostRequest(itemID, qty, note, parent)
+-- kind "m": looking for the materials themselves (a gatherer or anyone holding them can help).
+function Comm.PostRequest(itemID, qty, note, parent, kind)
   local db, me = DB(), MyKey()
   itemID = PosInt(tonumber(itemID), 1e8)
   qty = PosInt(floor(tonumber(qty) or 1), 1000)
@@ -1167,7 +1169,8 @@ function Comm.PostRequest(itemID, qty, note, parent)
   postCounter = postCounter + 1
   local id = me .. ":" .. now .. ":" .. postCounter
   note = PostNote(note)
-  db.posts[id] = { id = id, from = me, item = itemID, qty = qty, note = note, t = now, mine = true, pa = parent }
+  db.posts[id] = { id = id, from = me, item = itemID, qty = qty, note = note, t = now, mine = true, pa = parent,
+    k = kind == "m" and "m" or nil }
   SendPost(id)
   Fire("POSTS_UPDATED")
   return id
@@ -1189,7 +1192,7 @@ function SendPost(id)
     local wanted = (dist == "GUILD" and InGuild() and GuildShareOn()) or (dist == "CHANNEL" and RealmChannelOn())
     if wanted then
       local sent = CanSend() and DistAvailable(dist) and Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty,
-        note = p.note, t = p.t, pa = p.pa }, dist, dist == "CHANNEL" and channelId or nil)
+        note = p.note, t = p.t, pa = p.pa, k = p.k }, dist, dist == "CHANNEL" and channelId or nil)
       if sent then
         -- Where it went: its retraction goes there too, whatever the sharing settings are by then.
         p.sentTo = p.sentTo or {}
@@ -1342,7 +1345,7 @@ function Comm.Renew(id)
   end
   Comm.Retract(id)
   lastPost = 0
-  local nid = Comm.PostRequest(p.item, p.qty, p.note)
+  local nid = Comm.PostRequest(p.item, p.qty, p.note, nil, p.k)
   if not nid then return nil end
   for _, k in ipairs(kids) do Comm.PostRequest(k.item, k.qty, "", nid) end
   return nid
@@ -1914,6 +1917,7 @@ function handlers.P(full, data)
     note = PostNote(data.note),
     t = (st <= now and now - st < POST_TTL) and st or now,
     pa = pa,
+    k = data.k == "m" and "m" or nil,
   }
   if NS.Stats and NS.Stats.NoteDemand then NS.Stats.NoteDemand(item, full) end
   Fire("POSTS_UPDATED")

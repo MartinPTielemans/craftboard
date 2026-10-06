@@ -565,3 +565,15 @@ L["no professions shared"] = "ninguna profesión compartida"
 L["/cb demand - what players around you asked for most this week"] = "/cb demand - lo que más han pedido los jugadores de tu alrededor esta semana"
 L["/cb guild - your guildmates' professions"] = "/cb guild - las profesiones de tus compañeros de hermandad"
 
+-- Materials requests and gatherers
+L["Ask the board for %dx %s"] = "Pedir %dx %s en el tablón"
+L["Posted: looking for %dx %s"] = "Publicado: busco %dx %s"
+L["%s (%s %d)"] = "%s (%s %d)"
+L["Materials: %s"] = "Materiales: %s"
+L["[CraftBoard] I have %s for you."] = "[CraftBoard] Tengo %s para ti."
+L["Looking for the materials, not a craft."] = "Busca los materiales, no una fabricación."
+L["None of your characters has any."] = "Ninguno de tus personajes tiene."
+L["You have %d (%d more on alts)."] = "Tienes %d (%d más en alts)."
+L["You have %d."] = "Tienes %d."
+L["Gatherers: %s"] = "Recolectores: %s"
+

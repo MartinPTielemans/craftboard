@@ -47,7 +47,9 @@ function CreateFrame()
   return f
 end
 
-time = os.time
+-- The clock can be moved on (clock.skip) past the addon's rate limits.
+local clock = { skip = 0 }
+time = function(t) if t then return os.time(t) end return os.time() + clock.skip end
 GetTime = os.clock
 GetBuildInfo = function() return "", "", "", 16001 end
 GetLocale = function() return LOCALE end
@@ -539,6 +541,16 @@ do
   local saved = false
   for k in pairs(db.demand[4305]) do saved = type(k) == "number" end
   check(saved, "only day counts are saved")
+end
+
+-- Materials requests: k="m" on the post, kept through Renew
+do
+  clock.skip = clock.skip + 11   -- past the gap between posts
+  local mid = C.PostRequest(2318, 20, "", nil, "m")
+  check(mid and db.posts[mid].k == "m", "a materials request")
+  local rid = C.Renew(mid)
+  check(rid and db.posts[rid].k == "m", "renewed as a materials request")
+  C.Retract(rid)
 end
 
 -- Timers run cleanly (back-online checks, notices)

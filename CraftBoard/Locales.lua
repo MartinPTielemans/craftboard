@@ -586,6 +586,18 @@ local enUS = {
   "no professions shared",
   "/cb demand - what players around you asked for most this week",
   "/cb guild - your guildmates' professions",
+
+  -- Materials requests and gatherers
+  "Ask the board for %dx %s",
+  "Posted: looking for %dx %s",
+  "%s (%s %d)",
+  "Materials: %s",
+  "[CraftBoard] I have %s for you.",
+  "Looking for the materials, not a craft.",
+  "None of your characters has any.",
+  "You have %d (%d more on alts).",
+  "You have %d.",
+  "Gatherers: %s",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

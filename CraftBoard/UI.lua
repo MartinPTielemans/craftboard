@@ -1578,7 +1578,15 @@ local function ReagentRow(parent, rowH)
   end)
   row:SetScript("OnLeave", HideTooltip)
   -- Like a shift-click: drop the item link into an open chat box (handy for asking guild).
-  row:SetScript("OnClick", function(self) InsertLink(ItemLink(self.itemID)) end)
+  -- Right-click: ask the board for the material, or list my recipes that use it.
+  if row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+  row:SetScript("OnClick", function(self, button)
+    if button == "RightButton" then
+      if self.itemID and find.ReagentMenu then find.ReagentMenu(self, self.itemID, self.short) end
+      return
+    end
+    InsertLink(ItemLink(self.itemID))
+  end)
   return row
 end
 
@@ -1586,6 +1594,7 @@ end
 local function FillReagentRow(row, r)
   row.itemID = r.itemID
   row.makers = r.makers
+  row.short = max(0, (r.need or 0) - (r.have or 0))
   row.icon:SetTexture(ItemIcon(r.itemID) or TEX.question)
   local text = format(L["%d/%d %s"], r.have, r.need, ItemName(r.itemID))
   -- What my other characters carry ("+12 on alts"), in grey, when it would help.
@@ -2587,6 +2596,52 @@ function find.CrafterCard(c)
   return out
 end
 
+-- A reagent slot's menu: ask the board for the material (what is short, else one stack's worth
+-- of what the slot needs), and my recipes that use it.
+function find.ReagentMenu(owner, itemID, short)
+  local name = ItemName(itemID)
+  local qty = min(1000, max(1, short or 0))
+  local actions = {
+    { text = format(L["Ask the board for %dx %s"], qty, name), fn = function()
+      if not (NS.Comm and NS.Comm.PostRequest) then return end
+      if NS.Comm.PostRequest(itemID, qty, "", nil, "m") then
+        NS.Print(format(L["Posted: looking for %dx %s"], qty, name))
+        UI.Refresh()
+      end
+    end },
+    { text = L["My recipes that use this"], fn = function() UI.SearchReagent(name) end },
+  }
+  find.ContextMenu(owner, name, actions)
+end
+
+-- Gathering professions (Herbalism, Mining, Skinning) of my characters and of online players on
+-- the board: { "Bob (Mining 250)", ... }, mine first, at most `limit`.
+local GATHER = { [182] = true, [186] = true, [393] = true }
+function find.Gatherers(limit)
+  local out = {}
+  local function add(name, id, pr, mine)
+    if #out >= limit or type(pr) ~= "table" then return end
+    local pname = pr.name or pr[1]
+    local rank = pr.rank or pr[2]
+    if type(pname) ~= "string" then return end
+    out[#out + 1] = format(L["%s (%s %d)"], (mine and GOLD_HEX or "") .. Short(name) .. (mine and "|r" or ""), pname, rank or 0)
+  end
+  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+  for name, c in pairs(chars) do
+    for id, pr in pairs(type(c) == "table" and type(c.profs) == "table" and c.profs or {}) do
+      if GATHER[id] and type(pr) == "table" and not pr.gone then add(name, id, pr, true) end
+    end
+  end
+  for name, p in pairs(NS.Comm and NS.Comm.Peers and NS.Comm.Peers() or {}) do
+    if p.online and not p.busy then
+      for id, pr in pairs(p.profs or {}) do
+        if GATHER[id] then add(name, id, pr, false) end
+      end
+    end
+  end
+  return out
+end
+
 -- A right-click menu: { {text=, fn=}, ... } under a title. Without the menu API nothing opens
 -- (every action has another way in: the card, the Filter, a slash command).
 function find.ContextMenu(owner, title, actions)
@@ -3183,11 +3238,20 @@ end
 
 -- Offer: sends the whisper right away (it only ever goes to a request I can craft), once per
 -- OFFER_GAP whichever way it is asked for (button, menu, gamepad).
+-- What an offer says: "I can craft it", or for a materials request "I have it".
+function R.OfferTextFor(e)
+  if e.mats then
+    local item = ItemLink(e.post.item) or ItemName(e.post.item)
+    return format(L["[CraftBoard] I have %s for you."], (e.post.qty or 1) > 1 and (format(L["%dx"], e.post.qty) .. " " .. item) or item)
+  end
+  return R.OfferText(e.post.item, e.post.qty)
+end
+
 function R.Offer(e)
-  if not (e and e.post and not e.mine and e.can) then return end
+  if not (e and e.post and not e.mine and (e.can or e.supply)) then return end
   local ago = R.OfferedAgo(e)
   if ago and ago < OFFER_GAP then return end
-  if NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, R.OfferText(e.post.item, e.post.qty)) then
+  if NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, R.OfferTextFor(e)) then
     if NS.Comm.MarkOffered then NS.Comm.MarkOffered(e.post.id) end
     UI.RefreshRequestDetail()
     -- An offered request stops counting: recount for the tab, embedded tab and broker badges.
@@ -3202,8 +3266,8 @@ end
 -- Whisper: opens the chat box, typed in when I can craft it, empty otherwise.
 function R.WhisperPost(e)
   if not (e and e.post and not e.mine) then return end
-  if e.can then
-    OpenWhisper(e.post.from, nil, nil, R.OfferText(e.post.item, e.post.qty))
+  if e.can or e.supply then
+    OpenWhisper(e.post.from, nil, nil, R.OfferTextFor(e))
   else
     R.OpenTell(e.post.from)
   end
@@ -3364,7 +3428,7 @@ function R.Actions(e)
     if not e.altPost then add(L["Retract"], R.Retract) end
   elseif e.post then
     local ago = R.OfferedAgo(e)
-    if e.can and e.online and not (ago and ago < OFFER_GAP) then add(L["Offer"], R.Offer, true) end
+    if (e.can or e.supply) and e.online and not (ago and ago < OFFER_GAP) then add(L["Offer"], R.Offer, true) end
     add(format(L["Whisper %s"], Short(e.post.from)), R.WhisperPost, true)
     if R.CanQueue(e) then add(L["Queue"], R.AddToQueue, true) end
   end
@@ -3556,7 +3620,7 @@ function R.Buttons(e)
     reqs.retractWhy = e.altPost and format(L["Posted by %s: log in on %s to retract it."], Short(e.post.from), Short(e.post.from)) or nil
   elseif post then
     local ago = R.OfferedAgo(e)
-    if e.can and e.online then
+    if (e.can or e.supply) and e.online then
       red = reqs.offer
       local offered = ago and ago < OFFER_GAP
       red:SetText(offered and L["Offered"] or L["Offer"])
@@ -3599,7 +3663,7 @@ function R.Buttons(e)
     b:Show()
     anchor = b
   end
-  if post and e.can and e.online then
+  if post and (e.can or e.supply) and e.online then
     place(reqs.whisper, reqs.whisper.cbSquare and -6 or -4)
     reqs.whisper:SetEnabled(true)
   elseif queueEntry and e.queue.who then
@@ -3654,7 +3718,21 @@ function R.PostDetail(e)
   end
 
   local lines = {}
-  if not mine then
+  if e.mats then
+    -- Looking for materials: what my characters hold, and who gathers.
+    lines[#lines + 1] = GOLD_HEX .. L["Looking for the materials, not a craft."] .. "|r"
+    if not mine then
+      if (e.have or 0) + (e.haveAlts or 0) == 0 then
+        lines[#lines + 1] = GREY .. L["None of your characters has any."] .. "|r"
+      else
+        local text = (e.haveAlts or 0) > 0 and format(L["You have %d (%d more on alts)."], e.have or 0, e.haveAlts)
+          or format(L["You have %d."], e.have or 0)
+        lines[#lines + 1] = e.supply and (GREEN .. text .. "|r") or text
+      end
+    end
+    local gatherers = find.Gatherers(4)
+    if #gatherers > 0 then lines[#lines + 1] = format(L["Gatherers: %s"], table.concat(gatherers, ", ")) end
+  elseif not mine then
     lines[#lines + 1] = R.KnowLine(current, rec and not current and know.char or nil)
     if rec and not current and know.char then lines[#lines + 1] = format(L["Craft it on %s."], Short(know.char)) end
   end
@@ -3916,7 +3994,7 @@ function BuildRequests(p)
     if not self:IsEnabled() then
       return L["Offered"], L["You offered on this request a few minutes ago."]
     end
-    return format(L["Offer to %s"], Short(e.post.from)), format(L["Sends this whisper now: %s"], R.OfferText(e.post.item, e.post.qty))
+    return format(L["Offer to %s"], Short(e.post.from)), format(L["Sends this whisper now: %s"], R.OfferTextFor(e))
   end)
   reqs.retract = red(L["Retract"], R.Retract, function(_, self)
     if not self:IsEnabled() then return L["Retract"], reqs.retractWhy end
@@ -4182,12 +4260,25 @@ local function Annotate()
       if not mine and Q and Q.Adopt then Q.Adopt(post.from, post.item, post.id, qty) end
       local alt = not mine and R.AltOf(post.from)
       local online = mine or alt or R.Online(post.from)
+      local matsPost = post.k == "m"
+      if matsPost then know = nil end
       local e = {
         post = post, id = post.id, outputItemID = post.item, mine = mine or alt and true or false, altPost = alt and true or nil,
         know = know, t = post.t, name = name, lname = strlower(name), lfrom = strlower(Short(post.from)), ready = false,
         label = qty > 1 and (format(L["%dx"], qty) .. " " .. name) or name, icon = ItemIcon(post.item),
-        online = online, can = know ~= nil and know.rec ~= nil, dim = not online,
+        online = online, can = know ~= nil and know.rec ~= nil, dim = not online, mats = matsPost or nil,
       }
+      if matsPost then
+        -- Looking for the material itself: I can help when my characters hold enough of it.
+        e.label = format(L["Materials: %s"], e.label)
+        local I = NS.Inventory
+        local bags = I and I.Count and I.Count(post.item, true) or 0
+        local all = I and I.Count and I.Count(post.item) or 0
+        local alts = I and I.AltCounts and I.AltCounts(post.item) or 0
+        e.have, e.haveAlts = all, alts
+        e.supply = all + alts >= qty
+        e.ready = bags >= qty
+      end
       if mine then
         e.status = Age(post.t)
       elseif alt then
@@ -4201,8 +4292,10 @@ local function Annotate()
         e.ready = canCraft(know.rec, qty, true).ready and true or false
       elseif e.can then
         e.readyAlt = true
+      elseif e.supply and not e.ready then
+        e.readyAlt = true
       end
-      e.counts = e.can and not e.mine and online
+      e.counts = (e.can or e.supply) and not e.mine and online
       postedBy[strlower(post.from) .. ":" .. post.item] = true
       add(e)
     end
