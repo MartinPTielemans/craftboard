@@ -1734,58 +1734,70 @@ local function BuildUniverse()
   local myRecipes = R and R.Mine and R.Mine() or {}
   local profCount = {}
   universe, universeByID, universeByItem = {}, {}, {}
+  -- "Only guild crafters": everyone else's crafts are left out (mine stay).
+  local guildOnly = find.GuildOnly()
+  local guildmate = NS.Comm and NS.Comm.IsGuildmate
   for _, e in ipairs(all) do
-    local out = OutputOf(e.recipeID, e)
-    local itemName = out and I and I.ItemName and I.ItemName(out)
-    local name = e.name
-    -- Search fell back to the generic "Recipe <id>" label: the output item name reads better.
-    if itemName and name == format(L["Recipe %d"], e.recipeID) then name = itemName end
-    local u = {
-      recipeID = e.recipeID, name = name, outputItemID = out, crafters = e.crafters or {},
-      lname = strlower(name or ""), litem = itemName and strlower(itemName) or nil,
-      prof = ProfOf(e.recipeID), group = R and R.GroupOf and R.GroupOf(e.recipeID, out) or L["Other"], me = false, alt = nil, onlineN = 0, onlineName = nil,
-      peersN = 0, peerName = nil, ready = false, times = 0,
-    }
-    for _, c in ipairs(u.crafters) do
-      if c.mine then
-        if c.name == NS.Me then
-          u.me = true
-        elseif not u.alt then
-          -- An alt only counts when it can supply this realm and faction (linked orders, "Alt").
-          local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
-          local reachable = NS.Inventory and NS.Inventory.Reachable
-          if not reachable or reachable(c.name, chars[c.name]) then u.alt = Short(c.name) end
-        end
-      else
-        u.peersN = u.peersN + 1
-        u.peerName = u.peerName or Short(c.name)
-        if c.online then
-          u.onlineN = u.onlineN + 1
-          u.onlineName = u.onlineName or Short(c.name)
-        end
+    if guildOnly and guildmate then
+      local kept = {}
+      for _, c in ipairs(e.crafters or {}) do
+        if c.mine or guildmate(c.name) then kept[#kept + 1] = c end
       end
+      e.crafters = kept
     end
-    local rec = myRecipes[e.recipeID]
-    if u.me and rec and I and I.CanCraft then
-      local cc = I.CanCraft(rec)
-      u.ready, u.times = cc.ready and true or false, cc.times or 0
-    end
-    if u.prof ~= nil then profCount[u.prof] = (profCount[u.prof] or 0) + 1 end
-    universe[#universe + 1] = u
-    universeByID[u.recipeID] = u
-    if out then
-      local m = universeByItem[out]
-      if not m then
-        m = { me = false, alt = nil, peersN = 0, crafters = {}, seen = {} }
-        universeByItem[out] = m
-      end
-      m.me = m.me or u.me
-      m.alt = m.alt or u.alt
+    if #(e.crafters or {}) > 0 then
+      local out = OutputOf(e.recipeID, e)
+      local itemName = out and I and I.ItemName and I.ItemName(out)
+      local name = e.name
+      -- Search fell back to the generic "Recipe <id>" label: the output item name reads better.
+      if itemName and name == format(L["Recipe %d"], e.recipeID) then name = itemName end
+      local u = {
+        recipeID = e.recipeID, name = name, outputItemID = out, crafters = e.crafters or {},
+        lname = strlower(name or ""), litem = itemName and strlower(itemName) or nil,
+        prof = ProfOf(e.recipeID), group = R and R.GroupOf and R.GroupOf(e.recipeID, out) or L["Other"], me = false, alt = nil, onlineN = 0, onlineName = nil,
+        peersN = 0, peerName = nil, ready = false, times = 0,
+      }
       for _, c in ipairs(u.crafters) do
-        if type(c.name) == "string" and not m.seen[c.name] then
-          m.seen[c.name] = true
-          m.crafters[#m.crafters + 1] = c
-          if not c.mine then m.peersN = m.peersN + 1 end
+        if c.mine then
+          if c.name == NS.Me then
+            u.me = true
+          elseif not u.alt then
+            -- An alt only counts when it can supply this realm and faction (linked orders, "Alt").
+            local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+            local reachable = NS.Inventory and NS.Inventory.Reachable
+            if not reachable or reachable(c.name, chars[c.name]) then u.alt = Short(c.name) end
+          end
+        else
+          u.peersN = u.peersN + 1
+          u.peerName = u.peerName or Short(c.name)
+          if c.online then
+            u.onlineN = u.onlineN + 1
+            u.onlineName = u.onlineName or Short(c.name)
+          end
+        end
+      end
+      local rec = myRecipes[e.recipeID]
+      if u.me and rec and I and I.CanCraft then
+        local cc = I.CanCraft(rec)
+        u.ready, u.times = cc.ready and true or false, cc.times or 0
+      end
+      if u.prof ~= nil then profCount[u.prof] = (profCount[u.prof] or 0) + 1 end
+      universe[#universe + 1] = u
+      universeByID[u.recipeID] = u
+      if out then
+        local m = universeByItem[out]
+        if not m then
+          m = { me = false, alt = nil, peersN = 0, crafters = {}, seen = {} }
+          universeByItem[out] = m
+        end
+        m.me = m.me or u.me
+        m.alt = m.alt or u.alt
+        for _, c in ipairs(u.crafters) do
+          if type(c.name) == "string" and not m.seen[c.name] then
+            m.seen[c.name] = true
+            m.crafters[#m.crafters + 1] = c
+            if not c.mine then m.peersN = m.peersN + 1 end
+          end
         end
       end
     end
@@ -2015,6 +2027,64 @@ function find.SetHideMine(on)
   local db = UIDB()
   if db then db.findHideMine = on and true or nil end
   UI.FilterFind(false)
+end
+
+-- "Most asked for first" (CraftBoardDB.ui.findDemand): a group of the week's most-asked items.
+function find.DemandOn()
+  local db = UIDB()
+  return db ~= nil and db.findDemand == true
+end
+
+function find.SetDemand(on)
+  local db = UIDB()
+  if db then db.findDemand = on and true or nil end
+  UI.FilterFind(false)
+end
+
+-- "Only guild crafters" (CraftBoardDB.ui.findGuild): crafters outside the guild are left out.
+function find.GuildOnly()
+  local db = UIDB()
+  return db ~= nil and db.findGuild == true
+end
+
+function find.SetGuildOnly(on)
+  local db = UIDB()
+  if db then db.findGuild = on and true or nil end
+  find.universeDirty = true
+  UI.RefreshFind(false)
+end
+
+-- The week's most-asked items among entries, as a leading group (like Pinned).
+function find.WithDemand(items, nav, entries, depth)
+  if not (find.DemandOn() and NS.Stats) then return items, nav end
+  local list = {}
+  for _, u in ipairs(entries) do
+    local n = u.outputItemID and NS.Stats.Demand(u.outputItemID) or 0
+    if n >= 2 then list[#list + 1] = { u = u, n = n } end
+  end
+  if #list == 0 then return items, nav end
+  table.sort(list, function(a, b)
+    if a.n ~= b.n then return a.n > b.n end
+    return a.u.name < b.u.name
+  end)
+  local name = L["Most asked for this week"]
+  local open = find.searching or not Collapsed()[name]
+  local out, outNav = { { kind = "cat", name = name, count = min(#list, 15), depth = depth, collapsed = not open } }, {}
+  if open then
+    for i = 1, min(#list, 15) do
+      local copy = setmetatable({ depth = depth + 1, gap = i == min(#list, 15), demand = list[i].n }, { __index = list[i].u })
+      out[#out + 1] = copy
+      copy.idx = #out
+      outNav[#outNav + 1] = copy
+    end
+  end
+  local shift = #out
+  for _, it in ipairs(items) do out[#out + 1] = it end
+  for _, e in ipairs(nav) do
+    e.idx = e.idx + shift
+    outNav[#outNav + 1] = e
+  end
+  return out, outNav
 end
 
 -- I can get it myself: this character makes it, or an alt on this realm and faction (u.alt)
@@ -2332,7 +2402,7 @@ end
 local function FillFindEntry(row, u)
   row.name:SetText(u.ready and (u.name .. CountText(u.times)) or u.name)
   row.name:SetTextColor(NameRGB(u.outputItemID))
-  row.status:SetText(StatusText(u))
+  row.status:SetText(rawget(u, "demand") and format(L["%d asks"], u.demand) or StatusText(u))
   row.sel:SetShown(u.recipeID == selectedID)
 end
 
@@ -2445,6 +2515,12 @@ function find.Entries()
     local e = { { kind = "check", text = L["Hide what I can craft"],
       tip = L["Leaves out what this character can make, and items your characters on this realm and faction can make and mail you. An enchant only an alt knows stays: without a scroll it has to be put on your gear by someone who is there."],
       get = find.HideMine, set = function() find.SetHideMine(not find.HideMine()) end },
+      { kind = "check", text = L["Most asked for first"],
+        tip = L["A group at the top with what players around you asked for most this week (board requests and crafting asks in chat)."],
+        get = find.DemandOn, set = function() find.SetDemand(not find.DemandOn()) end },
+      { kind = "check", text = L["Only guild crafters"],
+        tip = L["Lists only what your guildmates (and your own characters) can craft."],
+        get = find.GuildOnly, set = function() find.SetGuildOnly(not find.GuildOnly()) end },
       { kind = "divider" } }
     for _, x in ipairs(profs()) do e[#e + 1] = x end
     return e
@@ -2584,10 +2660,11 @@ end
 local function BuildFind(p)
   find.refilter = function(keep) UI.FilterFind(keep) end
   local d = BuildColumns(p, find, "CraftBoardFindScroll", FillFindEntry, find.Entries(),
-    function() return find.prof == nil and not find.HideMine() end, function()
+    function() return find.prof == nil and not find.HideMine() and not find.DemandOn() and not find.GuildOnly() end, function()
       local db = UIDB()
-      if db then db.findProf, db.findHideMine = nil, nil end
-      UI.FilterFind(false)
+      local guild = db and db.findGuild
+      if db then db.findProf, db.findHideMine, db.findDemand, db.findGuild = nil, nil, nil, nil end
+      if guild then find.universeDirty = true UI.RefreshFind(false) else UI.FilterFind(false) end
     end)
 
   find.none = Placeholder(d, L["Select a recipe to see who can craft it."])
@@ -2781,8 +2858,10 @@ function UI.RefreshDetail()
 
   local itemID = OutputOf(e.recipeID, e)
   find.itemID = itemID
-  FillHeader(find.header, e.recipeID, itemID, e.name, ProfLine(find.profNames or {}, e.prof),
-    ItemDescription(e.recipeID, itemID))
+  local sub = ProfLine(find.profNames or {}, e.prof)
+  local asks = itemID and NS.Stats and NS.Stats.Demand(itemID) or 0
+  if asks > 0 then sub = sub .. DOT .. format(asks == 1 and L["asked for once this week"] or L["asked for %d times this week"], asks) end
+  FillHeader(find.header, e.recipeID, itemID, e.name, sub, ItemDescription(e.recipeID, itemID))
   AnchorBelowHeader(find.header, find.reagLabel)
   SetDetailBackground(find, e.prof)
 
@@ -2907,6 +2986,7 @@ function UI.FilterFind(keepScroll)
   end
 
   local items, nav = Grouped(results, prof == nil, searching, find.profNames)
+  items, nav = find.WithDemand(items, nav, results, 0)
   items, nav = find.WithPinned(items, nav, results, 0)
   find.results = nav
 

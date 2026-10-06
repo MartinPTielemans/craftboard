@@ -566,6 +566,26 @@ local enUS = {
   -- Plan: recipes not learned yet, where to learn them
   "Trainer",
   "Not learned yet",
+
+  -- Demand and guild crafters
+  "%d asks",
+  "%d asks, %d crafters known",
+  "%d asks, no crafter known",
+  "A group at the top with what players around you asked for most this week (board requests and crafting asks in chat).",
+  "Lists only what your guildmates (and your own characters) can craft.",
+  "Most asked for first",
+  "Most asked for this week",
+  "Most asked for this week:",
+  "Nothing asked for yet this week. CraftBoard counts board requests and crafting asks it sees in chat.",
+  "Only guild crafters",
+  "asked for %d times this week",
+  "asked for once this week",
+  "You are not in a guild.",
+  "No guildmate CraftBoard knows of yet. They show up as their CraftBoard says hello.",
+  "Guild crafters (%d):",
+  "no professions shared",
+  "/cb demand - what players around you asked for most this week",
+  "/cb guild - your guildmates' professions",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

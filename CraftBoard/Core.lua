@@ -335,6 +335,45 @@ local function ForgetChar(name)
 end
 
 -- Slash commands. NS.L comes from Locales.lua, which loads after this file: look it up at call time.
+-- /cb guild: guildmates who use CraftBoard, with their professions and specializations.
+local function PrintGuild()
+  local L = NS.L
+  local C = NS.Comm
+  if not (IsInGuild and IsInGuild()) then
+    NS.Print(L["You are not in a guild."])
+    return
+  end
+  local rows = {}
+  for name, p in pairs(C and C.Peers and C.Peers() or {}) do
+    if C.IsGuildmate and C.IsGuildmate(name) then
+      local parts = {}
+      for id, pr in pairs(type(p.profs) == "table" and p.profs or {}) do
+        if type(pr) == "table" and type(pr.name) == "string" then
+          local text = pr.rank and string.format("%s %d", pr.name, pr.rank) or pr.name
+          local spec = NS.Skills and NS.Skills.SpecFor and NS.Skills.SpecFor(p.specs, id)
+          parts[#parts + 1] = spec and string.format("%s (%s)", text, spec) or text
+        end
+      end
+      table.sort(parts)
+      rows[#rows + 1] = { name = name, online = p.online, text = table.concat(parts, ", ") }
+    end
+  end
+  if #rows == 0 then
+    NS.Print(L["No guildmate CraftBoard knows of yet. They show up as their CraftBoard says hello."])
+    return
+  end
+  table.sort(rows, function(a, b)
+    if a.online ~= b.online then return a.online end
+    return a.name < b.name
+  end)
+  NS.Print(string.format(L["Guild crafters (%d):"], #rows))
+  for _, r in ipairs(rows) do
+    local name = NS.ShortName(r.name)
+    NS.Print(string.format("  %s%s|r: %s", r.online and "|cff40ff40" or "|cff999999", name,
+      r.text ~= "" and r.text or L["no professions shared"]))
+  end
+end
+
 local function PrintHelp()
   local L = NS.L
   NS.Print(L["/cb - open or close CraftBoard"])
@@ -343,6 +382,8 @@ local function PrintHelp()
   NS.Print(L["/cb cd - crafting cooldowns on your characters"])
   NS.Print(L["/cb uses <reagent> - your recipes that use a reagent"])
   NS.Print(L["/cb wish - your wishlist"])
+  NS.Print(L["/cb demand - what players around you asked for most this week"])
+  NS.Print(L["/cb guild - your guildmates' professions"])
   NS.Print(L["/cb stats - this session's crafting and your most-made recipes"])
   NS.Print(L["/cb texts - edit the whisper texts CraftBoard types in for you"])
   NS.Print(L["/cb chars - your characters CraftBoard remembers"])
@@ -455,6 +496,10 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
     ForgetChar(rest)
   elseif cmd == "cd" or cmd == "cooldowns" then
     if NS.Cooldowns and NS.Cooldowns.Print then NS.Cooldowns.Print() end
+  elseif cmd == "demand" then
+    if NS.Stats and NS.Stats.PrintDemand then NS.Stats.PrintDemand() end
+  elseif cmd == "guild" then
+    PrintGuild()
   elseif cmd == "stats" then
     if NS.Stats and NS.Stats.Print then NS.Stats.Print() end
   elseif cmd == "texts" or cmd == "templates" then

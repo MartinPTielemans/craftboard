@@ -525,6 +525,22 @@ do
   check(R.GuessSource() == nil, "no trainer, no recipe item used: no source")
 end
 
+-- Demand: one ask per player, item and day; counts only
+do
+  local S = NS.Stats
+  S.NoteDemand(4305, "Ann Lee-Forever")
+  S.NoteDemand(4305, "Ann Lee-Forever")
+  S.NoteDemand(4305, "Bo Rin-Forever")
+  S.NoteDemand(4305, NS.Me)
+  eq(S.Demand(4305), 2, "asks counted once per player and day, mine left out")
+  local listed = false
+  for _, e in ipairs(S.TopDemand(5, 7, 2)) do listed = listed or (e.itemID == 4305 and e.n == 2) end
+  check(listed, "most asked for")
+  local saved = false
+  for k in pairs(db.demand[4305]) do saved = type(k) == "number" end
+  check(saved, "only day counts are saved")
+end
+
 -- Timers run cleanly (back-online checks, notices)
 runTimers()
 

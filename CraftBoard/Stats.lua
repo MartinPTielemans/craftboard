@@ -138,3 +138,104 @@ function Stats.Print()
     NS.Print(format("  %dx %s", list[i].n, name))
   end
 end
+
+-- Demand ------------------------------------------------------------------------------
+-- How often items are asked for around me: new board requests and crafting asks in public chat.
+-- CraftBoardDB.demand[itemID] = { [day] = asks } for the last DEMAND_DAYS days. Only counts are
+-- saved, never who asked; one ask per player, item and day counts (remembered for the session).
+local DEMAND_DAYS = 14
+local MAX_DEMAND = 500
+local counted = {}        -- [player .. item .. day] = true (this session)
+
+local function Today(t) return math.floor((t or time()) / 86400) end
+
+local function DemandDB()
+  if type(CraftBoardDB) ~= "table" then return nil end
+  if type(CraftBoardDB.demand) ~= "table" then CraftBoardDB.demand = {} end
+  return CraftBoardDB.demand
+end
+
+-- Drops days older than DEMAND_DAYS, and items nobody asked for since.
+function Stats.PruneDemand()
+  local d = DemandDB()
+  if not d then return end
+  local cutoff, n = Today() - DEMAND_DAYS, 0
+  for id, days in pairs(d) do
+    if type(days) == "table" then
+      for day in pairs(days) do
+        if type(day) ~= "number" or day <= cutoff then days[day] = nil end
+      end
+    end
+    if type(days) ~= "table" or next(days) == nil then d[id] = nil else n = n + 1 end
+  end
+  return n
+end
+
+function Stats.NoteDemand(itemID, who)
+  if type(itemID) ~= "number" or type(who) ~= "string" then return end
+  if NS.IsMe and NS.IsMe(who) then return end
+  local d = DemandDB()
+  if not d then return end
+  local day = Today()
+  local key = who .. "\t" .. itemID .. "\t" .. day
+  if counted[key] then return end
+  counted[key] = true
+  if not d[itemID] then
+    local n = 0
+    for _ in pairs(d) do n = n + 1 end
+    if n >= MAX_DEMAND and (Stats.PruneDemand() or 0) >= MAX_DEMAND then return end
+    d[itemID] = {}
+  end
+  d[itemID][day] = (d[itemID][day] or 0) + 1
+end
+
+-- Asks for an item within the last `days` days (7 by default).
+function Stats.Demand(itemID, days)
+  local d = DemandDB()
+  local e = d and d[itemID]
+  if type(e) ~= "table" then return 0 end
+  local from, n = Today() - (days or 7), 0
+  for day, c in pairs(e) do
+    if type(day) == "number" and day > from and type(c) == "number" then n = n + c end
+  end
+  return n
+end
+
+-- The most-asked items: { {itemID=, n=}, ... }, at least `atLeast` asks, most first.
+function Stats.TopDemand(limit, days, atLeast)
+  local d = DemandDB()
+  local out = {}
+  for id in pairs(d or {}) do
+    local n = Stats.Demand(id, days)
+    if n >= (atLeast or 1) then out[#out + 1] = { itemID = id, n = n } end
+  end
+  table.sort(out, function(a, b)
+    if a.n ~= b.n then return a.n > b.n end
+    return a.itemID < b.itemID
+  end)
+  for i = #out, (limit or #out) + 1, -1 do out[i] = nil end
+  return out
+end
+
+-- /cb demand: the most-asked items this week, and who on the board makes them.
+function Stats.PrintDemand()
+  local top = Stats.TopDemand(10, 7)
+  if #top == 0 then
+    NS.Print(L["Nothing asked for yet this week. CraftBoard counts board requests and crafting asks it sees in chat."])
+    return
+  end
+  NS.Print(L["Most asked for this week:"])
+  local byItem = {}
+  for _, e in ipairs(NS.Recipes and NS.Recipes.Search and NS.Recipes.Search("") or {}) do
+    if e.outputItemID then byItem[e.outputItemID] = (byItem[e.outputItemID] or 0) + #(e.crafters or {}) end
+  end
+  for _, e in ipairs(top) do
+    local label = NS.ItemLabel and NS.ItemLabel(e.itemID) or format(L["Item %d"], e.itemID)
+    local makers = byItem[e.itemID]
+    NS.Print(format("  %s: %s", label, makers and makers > 0
+      and format(L["%d asks, %d crafters known"], e.n, makers)
+      or format(L["%d asks, no crafter known"], e.n)))
+  end
+end
+
+NS.Register("PLAYER_LOGIN", function() Stats.PruneDemand() end)

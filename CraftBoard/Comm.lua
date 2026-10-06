@@ -974,6 +974,12 @@ function Comm.PeerCooldowns(name)
   return type(p) == "table" and type(p.cd) == "table" and p.cd or nil
 end
 
+-- A member of my guild (by the roster, which knows offline members too).
+function Comm.IsGuildmate(name)
+  local full = FullName(name)
+  return full ~= nil and GuildRoster()[full] ~= nil
+end
+
 -- One peer as Comm.Peers() would give it (nil if unknown or ignored), without copying them all.
 function Comm.Peer(name)
   local db, full = DB(), FullName(name)
@@ -1909,6 +1915,7 @@ function handlers.P(full, data)
     t = (st <= now and now - st < POST_TTL) and st or now,
     pa = pa,
   }
+  if NS.Stats and NS.Stats.NoteDemand then NS.Stats.NoteDemand(item, full) end
   Fire("POSTS_UPDATED")
 end
 

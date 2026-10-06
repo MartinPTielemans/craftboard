@@ -669,6 +669,8 @@ function ChatWatch.Add(text, sender, channel, guild)
     e.qty = e.qty or prev.qty
   end
   if hit.itemName then ResolveEntry(e) end
+  -- Counted toward what is asked for around here (Stats keeps counts only, never who).
+  if NS.Stats and NS.Stats.NoteDemand and e.itemID then NS.Stats.NoteDemand(e.itemID, from) end
   seen[from] = e
   Prune(from)
   FireSoon()
