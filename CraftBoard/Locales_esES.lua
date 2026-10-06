@@ -499,3 +499,12 @@ L["/cb wish - your wishlist"] = "/cb wish - tu lista de deseos"
 L["Tell me when someone links my wishlist"] = "Avisarme cuando alguien enlace mi lista de deseos"
 L["One quiet chat line when someone links an item on your wishlist, or the recipe for it, in public chat. Right-click a recipe in Find to add it. Nothing is sent."] = "Una línea discreta en el chat cuando alguien enlaza un objeto de tu lista de deseos, o su receta, en un canal público. Haz clic derecho en una receta en Encontrar para añadirlo. No se envía nada."
 
+-- Requests: renewing old requests
+L["Your request for %s expires in about %dh. Renew it on the Requests tab to keep it up."] = "Tu solicitud de %s caduca en unas %d h. Renuévala en la pestaña Solicitudes para mantenerla."
+L["Renew"] = "Renovar"
+L["Renewed: %s is up for another day."] = "Renovada: %s sigue publicada un día más."
+L["Posts the request again, with its linked orders, so it stays up for another day."] = "Vuelve a publicar la solicitud, con sus pedidos enlazados, para que siga un día más."
+L["Expires in about %dh. Renew keeps it up for another day."] = "Caduca en unas %d h. Renovar la mantiene un día más."
+L["Tell me when my request is about to expire"] = "Avisarme cuando mi solicitud vaya a caducar"
+L["One quiet chat line when one of your requests has a few hours left on the board. Renew it on the Requests tab to keep it up."] = "Una línea discreta en el chat cuando a una de tus solicitudes le quedan pocas horas. Renuévala en la pestaña Solicitudes para mantenerla."
+

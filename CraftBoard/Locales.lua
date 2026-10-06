@@ -520,6 +520,15 @@ local enUS = {
   "/cb wish - your wishlist",
   "Tell me when someone links my wishlist",
   "One quiet chat line when someone links an item on your wishlist, or the recipe for it, in public chat. Right-click a recipe in Find to add it. Nothing is sent.",
+
+  -- Requests: renewing old requests
+  "Your request for %s expires in about %dh. Renew it on the Requests tab to keep it up.",
+  "Renew",
+  "Renewed: %s is up for another day.",
+  "Posts the request again, with its linked orders, so it stays up for another day.",
+  "Expires in about %dh. Renew keeps it up for another day.",
+  "Tell me when my request is about to expire",
+  "One quiet chat line when one of your requests has a few hours left on the board. Renew it on the Requests tab to keep it up.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

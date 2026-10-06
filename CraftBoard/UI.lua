@@ -3120,6 +3120,21 @@ function R.Retract(e)
   UI.Refresh()
 end
 
+-- My own request (not an alt's, not a linked order): it can go up again for another day.
+function R.CanRenew(e)
+  return e and e.mine and not e.altPost and e.post and not e.post.pa and NS.Comm and NS.Comm.Renew and true or false
+end
+
+function R.Renew(e)
+  if not R.CanRenew(e) then return end
+  local nid = NS.Comm.Renew(e.id)
+  if nid then
+    reqs.selected = nid
+    NS.Print(format(L["Renewed: %s is up for another day."], ItemName(e.post.item)))
+  end
+  UI.Refresh()
+end
+
 function R.Done(e)
   if not (e and e.queue and NS.Queue) then return end
   NS.Queue.Remove(e.queue.id)
@@ -3202,6 +3217,7 @@ function R.Actions(e)
     add(L["Done"], R.Done)
   elseif e.mine then
     -- An alt's request can only be retracted on that alt (its author sends the retraction).
+    if R.CanRenew(e) then add(L["Renew"], R.Renew, true) end
     if not e.altPost then add(L["Retract"], R.Retract) end
   elseif e.post then
     local ago = R.OfferedAgo(e)
@@ -3386,7 +3402,7 @@ function R.Buttons(e)
   local post = e and e.post and not e.mine
   local queueEntry, queueTotal = e and e.queue, e and e.queueTotal
   for _, b in ipairs({ reqs.offer, reqs.retract, reqs.chatWhisper, reqs.craft, reqs.whisper, reqs.queueBtn,
-    reqs.done, reqs.chatHide }) do b:Hide() end
+    reqs.done, reqs.chatHide, reqs.renew }) do b:Hide() end
   if not e then return end
 
   -- Red: Offer / Whisper (a request I can't craft opens the chat box) / Retract / Craft.
@@ -3451,6 +3467,10 @@ function R.Buttons(e)
     place(reqs.done)
     FitButton(reqs.done, 70)
   end
+  if R.CanRenew(e) then
+    place(reqs.renew)
+    FitButton(reqs.renew, 70)
+  end
   local target = R.QueueTarget(e)
   if (post or chat) and (target or (NS.Queue and NS.Queue.Has(e.id))) then
     local queued = NS.Queue and NS.Queue.Has(e.id)
@@ -3505,6 +3525,12 @@ function R.PostDetail(e)
   end
   local ago = R.OfferedAgo(e)
   if ago then lines[#lines + 1] = format(L["You offered %s."], R.AgoText(time() - ago)) end
+  -- My request near the end of its day: say so (Renew puts it up again).
+  local ttl = NS.Comm and NS.Comm.POST_TTL
+  if R.CanRenew(e) and ttl and type(post.t) == "number" and time() - post.t >= ttl - NS.Comm.RENEW_WINDOW then
+    local left = max(1, floor((ttl - (time() - post.t)) / 3600 + 0.5))
+    lines[#lines + 1] = GOLD_HEX .. format(L["Expires in about %dh. Renew keeps it up for another day."], left) .. "|r"
+  end
   lines[#lines + 1] = not mine and NS.Trade and NS.Trade.CraftedText(post.from) or nil
   R.SetInfo(lines)
 
@@ -3799,6 +3825,14 @@ function BuildRequests(p)
     if who then TextTooltip(self, format(L["Whisper %s"], Short(who)), L["Opens the chat box."]) end
   end)
   reqs.whisper:SetScript("OnLeave", HideTooltip)
+
+  reqs.renew = PanelButton(bar, L["Renew"], 70, 22)
+  reqs.renew:SetScript("OnClick", function() R.Renew(reqs.entry) end)
+  reqs.renew:SetScript("OnEnter", function(self)
+    TextTooltip(self, L["Renew"], L["Posts the request again, with its linked orders, so it stays up for another day."])
+  end)
+  reqs.renew:SetScript("OnLeave", HideTooltip)
+  reqs.renew:Hide()
 
   reqs.queueBtn = PanelButton(bar, L["Queue"], 70, 22)
   reqs.queueBtn:SetScript("OnClick", function() R.AddToQueue(reqs.entry) end)

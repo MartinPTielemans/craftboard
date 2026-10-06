@@ -303,6 +303,21 @@ M.CheckChat("WTS |Hitem:2304::|h[Light Armor Kit]|h again", "Nora Pell", "Trade"
 check(#printed == 1 and printed[1]:find("Nora Pell", 1, true) ~= nil, "one wishlist line per item and player")
 M.SetWished(2304, false)
 
+-- Old requests: one nudge near the end of the day, and Renew posts it (and its linked order) again
+do
+  local old = db.posts[pid]
+  old.t = time() - C.POST_TTL + 3600
+  printed = {}
+  C.NudgeOld()
+  C.NudgeOld()
+  check(#printed == 1, "one nudge for a request about to expire")
+  local nid = C.Renew(pid)
+  check(nid and nid ~= pid and db.posts[pid] == nil and db.posts[nid].qty == old.qty, "renewed as a new post")
+  local kids = C.Linked(nid)
+  check(#kids == 1 and kids[1].item == 2318, "its linked order went up with it")
+  pid = nid
+end
+
 -- Back online: a player link, no "1x", and which character knows the recipe
 printed = {}
 C.NoteBackOnline("Bob-Forever")

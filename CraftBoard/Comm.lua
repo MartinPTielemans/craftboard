@@ -1287,6 +1287,44 @@ function Comm.Retract(id)
   return true
 end
 
+-- Renew: one of my posts goes up again as a new post (the old one is retracted), with its
+-- linked orders, for another POST_TTL. Returns the new id.
+function Comm.Renew(id)
+  local db, me = DB(), MyKey()
+  local p = db and type(id) == "string" and db.posts[id]
+  if not (type(p) == "table" and p.from == me) then return nil end
+  local kids = {}
+  for _, c in pairs(db.posts) do
+    if type(c) == "table" and c.pa == id and c.from == me then kids[#kids + 1] = { item = c.item, qty = c.qty } end
+  end
+  Comm.Retract(id)
+  lastPost = 0
+  local nid = Comm.PostRequest(p.item, p.qty, p.note)
+  if not nid then return nil end
+  for _, k in ipairs(kids) do Comm.PostRequest(k.item, k.qty, "", nid) end
+  return nid
+end
+
+-- My posts that expire within RENEW_WINDOW and haven't been mentioned yet: one quiet chat line
+-- each (option oldPostNotice, default on). Checked with every hello round and at login.
+function Comm.NudgeOld()
+  if type(CraftBoardDB) == "table" and CraftBoardDB.oldPostNotice == false then return end
+  local db, me = DB(), MyKey()
+  if not (db and me) then return end
+  local now = time()
+  for _, p in pairs(db.posts) do
+    if type(p) == "table" and p.from == me and not p.pa and not p.nudged and type(p.t) == "number"
+      and now - p.t >= POST_TTL - Comm.RENEW_WINDOW and now - p.t < POST_TTL then
+      p.nudged = true
+      local label = NS.ItemLabel and NS.ItemLabel(p.item) or format(L["Item %d"], p.item)
+      local left = math.max(1, floor((POST_TTL - (now - p.t)) / 3600 + 0.5))
+      Print(format(L["Your request for %s expires in about %dh. Renew it on the Requests tab to keep it up."], label, left))
+    end
+  end
+end
+Comm.RENEW_WINDOW = 4 * 3600
+Comm.POST_TTL = POST_TTL
+
 -- Posts linked to post id (its intermediates), and the post it is linked to.
 function Comm.Linked(id)
   local db = DB()
@@ -2075,6 +2113,7 @@ local function ScheduleHello()
     PrunePosts()
     SweepDedupe()
     scale.SweepAsked()
+    Comm.NudgeOld()
     SendHello()
     ScheduleHello()
   end)
@@ -2116,6 +2155,7 @@ local function Start()
     C_Timer.After(15, RetryRetracts)
   end
   C_Timer.After(10, function() SendHello() end)
+  C_Timer.After(30, function() Comm.NudgeOld() end)
   ScheduleHello()
   if C_Timer.NewTicker then
     C_Timer.NewTicker(300, function()

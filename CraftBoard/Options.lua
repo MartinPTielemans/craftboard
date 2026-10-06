@@ -196,6 +196,8 @@ end
 local GetBackOnline, SetBackOnline = Flag("backOnline")
 local GetGroupTips, SetGroupTips = Flag("groupTooltips")
 local GetGamepad, SetGamepad = Flag("gamepad")
+local GetOldPostNotice, SetOldPostNotice = Flag("oldPostNotice")
+local OLD_POST_TIP = L["One quiet chat line when one of your requests has a few hours left on the board. Renew it on the Requests tab to keep it up."]
 local BACK_ONLINE_TIP = L["One quiet chat line when a player whose request you can craft, or offered on, logs back in. Nothing is sent."]
 local GROUP_TIPS_TIP = L["In a party or raid, item tooltips name the group members who can craft the item, and their tooltips list their professions."]
 local GAMEPAD_TIP = L["With gamepad mode on: D-pad up/down moves through the list, A whispers or offers, B closes, the shoulder buttons switch tabs."]
@@ -267,6 +269,7 @@ local SECTIONS = {
     { "CRAFTBOARD_GUILD_SHARE", L["Share recipes with my guild"], GetGuildShare, SetGuildShare, GUILD_TIP, guild = true },
     { "CRAFTBOARD_AUTO_BUSY", L["Busy in dungeons and raids"], GetAutoBusy, SetAutoBusy, AUTO_BUSY_TIP },
     { "CRAFTBOARD_BACK_ONLINE", L["Tell me when a requester comes online"], GetBackOnline, SetBackOnline, BACK_ONLINE_TIP },
+    { "CRAFTBOARD_OLD_POST", L["Tell me when my request is about to expire"], GetOldPostNotice, SetOldPostNotice, OLD_POST_TIP },
     "advertise",
   } },
   { L["Chat"], {
