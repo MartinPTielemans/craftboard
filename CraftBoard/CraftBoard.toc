@@ -6,7 +6,7 @@
 ## Notes-esES: Compañero de profesiones para Forever: planifica tu progreso, fabrica y encuentra artesanos.
 ## Notes-esMX: Compañero de profesiones para Forever: planifica tu progreso, fabrica y encuentra artesanos.
 ## Author: mpt
-## Version: 0.9.4
+## Version: 1.0.0
 ## SavedVariables: CraftBoardDB
 ## IconTexture: Interface\AddOns\CraftBoard\Media\icon
 ## X-Category: Professions
