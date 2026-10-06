@@ -467,3 +467,12 @@ L["new recipes"] = "nouvelles recettes"
 L["planned"] = "prévu"
 L["realm channel on"] = "canal du royaume activé"
 L["%s would need %d; one request can ask for 1000 at most. Post fewer."] = "%s demanderait %d ; une demande peut en réclamer 1000 au plus. Demandez-en moins."
+
+-- Comm: on-demand recipe questions (W / A)
+L["channel players heard today: %d; recipe lists: %s"] = "joueurs du canal entendus aujourd'hui : %d ; listes de recettes : %s"
+L["asked per search (many players)"] = "demandées à chaque recherche (beaucoup de joueurs)"
+L["swapped in full"] = "échangées en entier"
+
+-- Find: asking the board
+L["No known crafter for \"%s\" yet. Asking CraftBoard users..."] = "Aucun artisan connu pour « %s » pour l'instant. Question posée aux utilisateurs de CraftBoard..."
+

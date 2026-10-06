@@ -409,6 +409,14 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
   elseif cmd == "welcome" then
     if NS.Welcome and NS.Welcome.Show then NS.Welcome.Show() end
   elseif cmd == "debug" then
+    -- /cb debug ondemand: act as if the channel were crowded (Find asks the board, no full lists
+    -- from channel players), to try it out with few players around. Plain English like chatdebug.
+    if strlower(strtrim(rest or "")) == "ondemand" and type(CraftBoardDB) == "table" then
+      CraftBoardDB.forceOnDemand = not CraftBoardDB.forceOnDemand or nil
+      if NS.Comm and NS.Comm.RecheckScale then NS.Comm.RecheckScale() end
+      NS.Print("on-demand recipe questions forced " .. (CraftBoardDB.forceOnDemand and "on" or "off"))
+      return
+    end
     if NS.Comm and NS.Comm.Debug then NS.Comm.Debug() end
     PrintPeers()
   elseif cmd == "dump" then

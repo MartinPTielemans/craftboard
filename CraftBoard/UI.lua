@@ -2664,6 +2664,12 @@ function UI.RefreshDetail()
     find.crafterLabel:SetPoint("TOPLEFT", find.reagents.box, "BOTTOMLEFT", -1, -12)
   end
   find.crafters:SetItems(e.crafters, L["No known crafters."], true)
+  -- Nobody else known for it on a crowded channel: ask who makes this item.
+  local others = 0
+  for _, c in ipairs(e.crafters or {}) do if not c.mine then others = others + 1 end end
+  if itemID and others == 0 and NS.Comm and NS.Comm.OnDemand and NS.Comm.OnDemand() and NS.Comm.AskSoon then
+    NS.Comm.AskSoon(nil, { itemID })
+  end
 
   find.post:SetEnabled(itemID ~= nil)
   UI.UpdateAdvertise()
@@ -2721,6 +2727,10 @@ function UI.FilterFind(keepScroll)
   end
 
   local results = {}
+  -- Too many players on the channel to know every recipe: the search is also asked of the board
+  -- (crafters who know a match answer within seconds and join the list).
+  local asking = searching and NS.Comm and NS.Comm.OnDemand and NS.Comm.OnDemand() or false
+  if asking and NS.Comm.AskSoon then NS.Comm.AskSoon(text) end
   if searching then
     local tokens = Tokens(text)
     local first = tokens[1] or ""
@@ -2763,6 +2773,7 @@ function UI.FilterFind(keepScroll)
         if Matches(u, Tokens(text)) then mine = true break end
       end
       emptyText = mine and format(L["You can craft everything matching \"%s\" yourself."], text)
+        or asking and format(L["No known crafter for \"%s\" yet. Asking CraftBoard users..."], text)
         or format(L["No known crafter for \"%s\"."], text)
     elseif #hidden > 0 then
       emptyText = L["You can craft everything here yourself."]

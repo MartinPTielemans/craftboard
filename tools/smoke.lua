@@ -277,6 +277,15 @@ local cid = pid and C.PostRequest(2318, 2, "", pid)
 check(cid and db.posts[cid].note == "" and db.posts[cid].pa == pid, "linked order without a note")
 eq(C.OpenSlots(), slots - 2, "open slots count my posts")
 
+-- Who can craft this (W / A): the question's text, and my recipes that answer it
+eq(C.QueryText("  LF Light   |cff00ff00Armor|r "), "lf light armor", "question text: plain, lower case, one space")
+eq(C.QueryText("ab"), nil, "question text: too short to ask")
+local m = C.MatchQuery("armor kit", nil)
+check(#m == 1 and m[1][1] == 2152 and m[1][3] == 2304, "a question matches my recipe by name")
+m = C.MatchQuery(nil, { 2304 })
+check(#m == 1 and m[1][1] == 2152, "a question matches my recipe by its output item")
+eq(#C.MatchQuery("mooncloth", { 9999 }), 0, "a peer's recipe isn't mine to answer")
+
 -- Back online: a player link, no "1x", and which character knows the recipe
 printed = {}
 C.NoteBackOnline("Bob-Forever")

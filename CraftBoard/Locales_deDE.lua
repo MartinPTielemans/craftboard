@@ -480,3 +480,12 @@ L["Queue and craft"] = "Vormerken und herstellen"
 L["Queue crafts, then Craft next makes them. Buy missing reagents at vendors."] = "Merke Herstellungen vor, dann stellt \"Nächstes herstellen\" sie her. Fehlende Reagenzien kaufst du bei Händlern."
 L["Skill up smarter"] = "Berufe klüger steigern"
 L["%s would need %d; one request can ask for 1000 at most. Post fewer."] = "%s bräuchte %d; eine Anfrage kann höchstens 1000 anfordern. Fordere weniger an."
+
+-- Comm: on-demand recipe questions (W / A)
+L["channel players heard today: %d; recipe lists: %s"] = "Kanalspieler heute gehört: %d; Rezeptlisten: %s"
+L["asked per search (many players)"] = "pro Suche erfragt (viele Spieler)"
+L["swapped in full"] = "vollständig ausgetauscht"
+
+-- Find: asking the board
+L["No known crafter for \"%s\" yet. Asking CraftBoard users..."] = "Noch kein Handwerker für \"%s\" bekannt. CraftBoard-Nutzer werden gefragt..."
+

@@ -490,6 +490,14 @@ local enUS = {
   "Post a request to the board, or whisper a crafter directly.",
   "Open Professions",
   "Later",
+
+  -- Comm: on-demand recipe questions (W / A)
+  "channel players heard today: %d; recipe lists: %s",
+  "asked per search (many players)",
+  "swapped in full",
+
+  -- Find: asking the board
+  "No known crafter for \"%s\" yet. Asking CraftBoard users...",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

@@ -90,6 +90,16 @@ Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonCh
 - `P` post: `{v=1, id=<sender..time>, item=itemID, qty=n, note=<=60 chars, t=time, pa=parent id?}`;
   `X` retract. `pa` links an order for an intermediate to the request it is for.
   Posts expire after 24h locally.
+- `W` who-can-craft: `{v=1, id=, q=lower-case text?, i={outputItemID,...}?}` on GUILD/CHANNEL, sent
+  from a Find search (debounced 1.5 s, one per 4 s, the same question once per 5 min). Crafters
+  with matching shareable recipes (name or output item name in their language, or the item IDs)
+  whisper `A` `{v=1, id=W id, list={{id,name,outputItemID,profID},...} (<=30), profs=}` after a
+  0.5-3 s random wait (one per asker per 30 s, 20 per minute). An `A` is only taken for my own `W`
+  within 60 s and is merged into that peer's recipes. Older clients drop both unread.
+- On-demand mode (`Comm.OnDemand()`): over 150 channel players heard within a day (guildmates
+  aside), channel peers' hellos no longer trigger `Q`; Find asks `W` instead. Guild peers always
+  sync in full. At most 1000 peers are stored (the longest unheard go) and at most 12 full
+  recipe lists are whispered per minute (the rest wait). `/cb debug ondemand` forces the mode.
 - Two distributions: GUILD always (if in guild), CHANNEL when `CraftBoardDB.realmChannel` is on
   (default on). Channel name `CraftBoardF` (hidden from chat: leave it out of chat frames).
 - Rate limit: hello ≤1/10min per distribution (busy changes: ≤1/15 s), full list ≤1/min per peer;
