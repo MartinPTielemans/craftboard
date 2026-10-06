@@ -556,6 +556,12 @@ local enUS = {
   "Crafted %d times (%d this session).",
   "Crafted once.",
   "Crafted %d times.",
+
+  -- Crafter card: professions, specializations, cooldowns
+  "%s: ready",
+  "%s: %s",
+  "Shares 1 recipe with you.",
+  "Shares %d recipes with you.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

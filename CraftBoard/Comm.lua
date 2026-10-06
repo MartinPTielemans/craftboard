@@ -511,6 +511,29 @@ local function CooldownSig()
   return table.concat(ids, ",")
 end
 
+-- Specializations in the hello (sp): my current character's, as a list of spell IDs (nil: none).
+function Comm.MySpecs()
+  local db, me = DB(), MyKey()
+  local c = db and me and type(db.chars) == "table" and db.chars[me]
+  local list = NS.Skills and NS.Skills.SpecList and type(c) == "table" and NS.Skills.SpecList(c.specs) or {}
+  return #list > 0 and list or nil
+end
+
+-- A peer's sp, kept to known specializations: { [spellID] = true } or nil.
+function Comm.ReadSpecs(sp)
+  if type(sp) ~= "table" or not (NS.Skills and NS.Skills.SPECS) then return nil end
+  local out, n = {}, 0
+  for k = 1, 8 do
+    local id = PosInt(sp[k], 1e7)
+    if id and NS.Skills.SPECS[id] then out[id], n = true, n + 1 end
+  end
+  return n > 0 and out or nil
+end
+
+function Comm.SpecKey(set)
+  return NS.Skills and NS.Skills.SpecList and table.concat(NS.Skills.SpecList(set), ",") or ""
+end
+
 -- Announce a busy or cooldown change on every distribution whose last hello carried the other
 -- state (a quick hello: see SendHello's busy argument).
 local function StateFlush()
@@ -580,7 +603,7 @@ function SendHello(dist, busy, urgent)
   local n = tonumber(h:match("^(%d+):")) or min(CountTable(MyRecipes()), MAX_RECIPES)
   local payload = { v = VERSION, profs = MyProfs(), n = n, h = h, b = busyNow or nil,
     l = not loginHello[dist] or nil, cd = NS.Cooldowns and NS.Cooldowns.ForHello and NS.Cooldowns.ForHello(MAX_CD) or nil,
-    pg = 1 }
+    pg = 1, sp = Comm.MySpecs() }
   local target = dist == "CHANNEL" and channelId or nil
   if Send("H", payload, dist, target, "BULK") then
     lastHello[dist] = now
@@ -949,6 +972,17 @@ function Comm.PeerCooldowns(name)
   return type(p) == "table" and type(p.cd) == "table" and p.cd or nil
 end
 
+-- One peer as Comm.Peers() would give it (nil if unknown or ignored), without copying them all.
+function Comm.Peer(name)
+  local db, full = DB(), FullName(name)
+  if not (db and full) or (NS.IsIgnored and NS.IsIgnored(full)) then return nil end
+  local p = db.peers[full]
+  if type(p) ~= "table" then return nil end
+  local online = OnlineOf(full, p, GuildRoster(), time())
+  return { recipes = p.recipes or {}, profs = p.profs or {}, seen = p.seen, online = online and true or false,
+    busy = online and p.busy and true or false, cd = p.cd, specs = p.specs }
+end
+
 -- Returns a copy of the stored peers with `online` derived from last message time,
 -- overridden by guild roster / friend list when they know the answer.
 function Comm.Peers()
@@ -969,6 +1003,7 @@ function Comm.Peers()
         -- Busy only means something while online (an offline peer's last flag is stale).
         busy = online and p.busy and true or false,
         cd = p.cd,
+        specs = p.specs,
       }
     end
   end
@@ -1576,6 +1611,12 @@ function handlers.H(full, data)
   end
   -- pg=1: this client reads recipe lists sent in pages (older ones take a single message only).
   p.paging = data.pg == 1 or nil
+  -- Specializations (sp, optional): known spell IDs only.
+  local specs = Comm.ReadSpecs(data.sp)
+  if Comm.SpecKey(specs) ~= Comm.SpecKey(p.specs) then
+    p.specs = specs
+    FirePeersSoon()
+  end
   local profs = CleanProfs(data.profs)
   if profs then
     -- New ranks with the same recipes (a skill-up): tooltips and lists showing them update.

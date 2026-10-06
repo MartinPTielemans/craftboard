@@ -502,6 +502,20 @@ do
   eq(NS.Stats.Made(99999), 0, "a spell that isn't a recipe of mine is not")
 end
 
+-- Specializations: read from the spellbook, sent as spell IDs, read back to known ones only
+do
+  IsPlayerSpell = function(id) return id == 10656 end
+  NS.Skills.ReadSpecs()
+  check(me.specs and me.specs[10656] and not me.specs[10658], "specialization read from the spellbook")
+  local sp = C.MySpecs()
+  check(sp and #sp == 1 and sp[1] == 10656, "the hello carries it")
+  local got = C.ReadSpecs({ 10656, 123, "x", 20219 })
+  check(got and got[10656] and got[20219] and not got[123], "unknown spell IDs are dropped")
+  eq(NS.Skills.SpecFor(got, 165), "Dragonscale Leatherworking", "the specialization of a profession")
+  local card = NS.UI and NS.UI.CrafterCardText and NS.UI.CrafterCardText({ name = NS.Me, mine = true }) or ""
+  check(card:find("Dragonscale", 1, true) ~= nil, "my crafter card names it")
+end
+
 -- Timers run cleanly (back-online checks, notices)
 runTimers()
 

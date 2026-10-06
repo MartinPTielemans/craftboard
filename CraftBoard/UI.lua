@@ -1477,18 +1477,22 @@ local function CrafterRow(parent, rowH)
   row.name:SetPoint("RIGHT", row.state, "LEFT", -6, 0)
   row:SetScript("OnEnter", function(self)
     local c = self.crafter
-    if c and c.busy then
+    if not c then return end
+    if c.busy then
       TextTooltip(self, Short(c.name), L["Busy: not taking whispers from the board right now."])
-    elseif c and not c.mine then
+    elseif not c.mine then
       TextTooltip(self, Short(c.name), find.itemID and L["Click to whisper a request."] or nil)
     else
-      return
+      TextTooltip(self, Short(c.name))
     end
-    local crafted = NS.Trade and NS.Trade.CraftedText(c.name)
-    if crafted and GameTooltip then
-      GameTooltip:AddLine(crafted, MUTED[1], MUTED[2], MUTED[3], true)
-      GameTooltip:Show()
+    if not GameTooltip then return end
+    -- The crafter card: professions (with specialization), cooldowns, what they share.
+    for _, line in ipairs(find.CrafterCard(c)) do
+      GameTooltip:AddLine(line[1], line[2][1], line[2][2], line[2][3], true)
     end
+    local crafted = not c.mine and NS.Trade and NS.Trade.CraftedText(c.name)
+    if crafted then GameTooltip:AddLine(crafted, MUTED[1], MUTED[2], MUTED[3], true) end
+    GameTooltip:Show()
   end)
   row:SetScript("OnClick", function(self)
     local c = self.crafter
@@ -2445,6 +2449,66 @@ function find.Entries()
     for _, x in ipairs(profs()) do e[#e + 1] = x end
     return e
   end
+end
+
+-- Lines for a crafter's card ({ text, rgb }): their professions with rank and specialization,
+-- crafting cooldowns, and how many recipes they share. Peers from what their hellos said; my
+-- characters from my own records.
+-- The card's lines as one text (tests, debugging).
+function UI.CrafterCardText(c)
+  local parts = {}
+  for _, line in ipairs(find.CrafterCard(c)) do parts[#parts + 1] = line[1] end
+  return table.concat(parts, "\n")
+end
+
+function find.CrafterCard(c)
+  local out = {}
+  local profs, specs, cd, shared
+  if c.mine then
+    local ch = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars[c.name]
+    if type(ch) == "table" then
+      profs, specs, cd = {}, ch.specs, ch.cd
+      for id, e in pairs(type(ch.profs) == "table" and ch.profs or {}) do
+        if type(e) == "table" and not e.gone then profs[id] = { name = e.name or e[1], rank = e.rank or e[2], max = e.max or e[3] } end
+      end
+    end
+  else
+    local p = NS.Comm and NS.Comm.Peer and NS.Comm.Peer(c.name)
+    if p then
+      profs, specs, cd = p.profs, p.specs, p.cd
+      shared = 0
+      for _ in pairs(p.recipes or {}) do shared = shared + 1 end
+    end
+  end
+  local S = NS.Skills
+  local rows = {}
+  for id, pr in pairs(profs or {}) do
+    if type(pr) == "table" and type(pr.name) == "string" then
+      local text = pr.rank and (pr.max and format(L["%s %d/%d"], pr.name, pr.rank, pr.max) or format("%s %d", pr.name, pr.rank)) or pr.name
+      local spec = S and S.SpecFor and S.SpecFor(specs, id)
+      if spec then text = text .. DOT .. spec end
+      rows[#rows + 1] = text
+    end
+  end
+  table.sort(rows)
+  for _, r in ipairs(rows) do out[#out + 1] = { r, C.label } end
+  local now, cds = time(), {}
+  for id, at in pairs(type(cd) == "table" and cd or {}) do
+    if type(id) == "number" and type(at) == "number" then
+      local name = NS.Recipes and NS.Recipes.NameOf and NS.Recipes.NameOf(id) or tostring(id)
+      cds[#cds + 1] = { name = name, left = at - now }
+    end
+  end
+  table.sort(cds, function(a, b) return a.name < b.name end)
+  for i = 1, min(#cds, 4) do
+    local e = cds[i]
+    out[#out + 1] = { e.left <= 0 and format(L["%s: ready"], e.name)
+      or format(L["%s: %s"], e.name, NS.Cooldowns and NS.Cooldowns.Text(e.left) or ""), e.left <= 0 and { 0.25, 1, 0.25 } or MUTED }
+  end
+  if shared and shared > 0 then
+    out[#out + 1] = { format(shared == 1 and L["Shares 1 recipe with you."] or L["Shares %d recipes with you."], shared), MUTED }
+  end
+  return out
 end
 
 -- A right-click menu: { {text=, fn=}, ... } under a title. Without the menu API nothing opens

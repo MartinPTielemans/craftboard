@@ -75,9 +75,11 @@ local function AddUnitLine(tt, unit)
   local p = PeerOf(byPeer, full)
   if not p then return end
   local parts = {}
-  for _, pr in pairs(type(p.profs) == "table" and p.profs or {}) do
+  for id, pr in pairs(type(p.profs) == "table" and p.profs or {}) do
     if type(pr) == "table" and type(pr.name) == "string" then
-      parts[#parts + 1] = pr.rank and format("%s %d", pr.name, pr.rank) or pr.name
+      local text = pr.rank and format("%s %d", pr.name, pr.rank) or pr.name
+      local spec = NS.Skills and NS.Skills.SpecFor and NS.Skills.SpecFor(p.specs, id)
+      parts[#parts + 1] = spec and format("%s (%s)", text, spec) or text
     end
   end
   if #parts == 0 then return end

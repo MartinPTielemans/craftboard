@@ -534,3 +534,9 @@ L["Crafted %d times (%d this session)."] = "Fabriqué %d fois (%d cette session)
 L["Crafted once."] = "Fabriqué une fois."
 L["Crafted %d times."] = "Fabriqué %d fois."
 
+-- Crafter card: professions, specializations, cooldowns
+L["%s: ready"] = "%s : prêt"
+L["%s: %s"] = "%s : %s"
+L["Shares 1 recipe with you."] = "Partage 1 recette avec vous."
+L["Shares %d recipes with you."] = "Partage %d recettes avec vous."
+
