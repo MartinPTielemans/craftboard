@@ -341,6 +341,8 @@ local function PrintHelp()
   NS.Print(L["/cb find [text] | requests | plan - open a tab (Find searches for the text)"])
   NS.Print(L["/cb busy - toggle busy (CraftBoard users can't whisper you from the board)"])
   NS.Print(L["/cb cd - crafting cooldowns on your characters"])
+  NS.Print(L["/cb uses <reagent> - your recipes that use a reagent"])
+  NS.Print(L["/cb wish - your wishlist"])
   NS.Print(L["/cb chars - your characters CraftBoard remembers"])
   NS.Print(L["/cb forget <name> - forget one of your characters (see /cb chars)"])
   NS.Print(L["/cb scan - record the open profession window again"])
@@ -451,6 +453,11 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
     ForgetChar(rest)
   elseif cmd == "cd" or cmd == "cooldowns" then
     if NS.Cooldowns and NS.Cooldowns.Print then NS.Cooldowns.Print() end
+  elseif cmd == "wish" or cmd == "wishlist" then
+    if NS.Marks and NS.Marks.PrintWishes then NS.Marks.PrintWishes() end
+  elseif cmd == "uses" then
+    -- /cb uses <reagent>: Plan's recipes that use it.
+    if NS.UI and NS.UI.SearchReagent then NS.UI.SearchReagent(strtrim(rest or "")) end
   elseif cmd == "busy" then
     if NS.Comm and NS.Comm.ToggleBusy then NS.Comm.ToggleBusy() end
   elseif cmd == "frames" then

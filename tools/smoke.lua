@@ -286,6 +286,23 @@ m = C.MatchQuery(nil, { 2304 })
 check(#m == 1 and m[1][1] == 2152, "a question matches my recipe by its output item")
 eq(#C.MatchQuery("mooncloth", { 9999 }), 0, "a peer's recipe isn't mine to answer")
 
+-- Marks: pins and the wishlist (a wished item, or the recipe item named after it, linked in chat)
+local M = NS.Marks
+M.TogglePin(2152)
+check(M.IsPinned(2152) and M.AnyPinned(), "recipe pinned")
+M.TogglePin(2152)
+check(not M.IsPinned(2152), "recipe unpinned")
+M.SetWished(2304, true)
+eq((M.WishedIn("WTS |Hitem:2304::|h[Light Armor Kit]|h")), 2304, "a wished item linked")
+local wished, linked = M.WishedIn("WTS |Hitem:9999::|h[Pattern: Light Armor Kit]|h cheap")
+check(wished == 2304 and linked == 9999, "the recipe item for a wished item")
+check(M.WishedIn("WTS |Hitem:2318::|h[Light Leather]|h") == nil, "an item not on the wishlist")
+printed = {}
+M.CheckChat("WTS |Hitem:2304::|h[Light Armor Kit]|h", "Nora Pell", "Trade")
+M.CheckChat("WTS |Hitem:2304::|h[Light Armor Kit]|h again", "Nora Pell", "Trade")
+check(#printed == 1 and printed[1]:find("Nora Pell", 1, true) ~= nil, "one wishlist line per item and player")
+M.SetWished(2304, false)
+
 -- Back online: a player link, no "1x", and which character knows the recipe
 printed = {}
 C.NoteBackOnline("Bob-Forever")

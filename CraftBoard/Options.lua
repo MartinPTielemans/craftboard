@@ -160,6 +160,13 @@ end
 
 local CHAT_TIP = L["Lists players asking for a crafter in Trade, General, LookingForGroup, say and yell under \"Seen in chat\" on the Requests tab. Nothing is sent. Works best with English shorthand (LF, WTB)."]
 local CHAT_GUILD_TIP = L["Also watch guild chat for crafting requests."]
+local GetWishNotice, SetWishNotice
+do
+  local function get() return not (type(CraftBoardDB) == "table" and CraftBoardDB.wishNotice == false) end
+  local function set(v) if type(CraftBoardDB) == "table" then CraftBoardDB.wishNotice = v and true or false end end
+  GetWishNotice, SetWishNotice = get, set
+end
+local WISH_TIP = L["One quiet chat line when someone links an item on your wishlist, or the recipe for it, in public chat. Right-click a recipe in Find to add it. Nothing is sent."]
 
 -- Auto-busy (Comm.lua): CraftBoardDB.autoBusy, default on. Addon messages can't be sent in
 -- combat, so only dungeons and raids reach other players.
@@ -265,6 +272,7 @@ local SECTIONS = {
   { L["Chat"], {
     { "CRAFTBOARD_CHAT_WATCH", L["Watch chat for crafting requests"], GetChatWatch, SetChatWatch, CHAT_TIP },
     { "CRAFTBOARD_CHAT_WATCH_GUILD", L["Include guild chat"], GetChatGuild, SetChatGuild, CHAT_GUILD_TIP, default = false, nested = true },
+    { "CRAFTBOARD_WISH_NOTICE", L["Tell me when someone links my wishlist"], GetWishNotice, SetWishNotice, WISH_TIP },
   } },
   { L["Crafting notices"], {
     { "CRAFTBOARD_COOLDOWN_NOTICE", L["Tell me when a crafting cooldown is ready"], GetCooldownNotice, SetCooldownNotice, COOLDOWN_NOTICE_TIP },

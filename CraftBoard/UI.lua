@@ -1138,7 +1138,8 @@ end
 --    Professions_Recipe_Hover (309x21, alpha 0.5, HIGHLIGHT) on hover, both centred 1 px low.
 -- The row is sized to its slot (bar + the 1 px ScrollBox spacing and paddings); the hit rect
 -- covers the bar only.
-local function GroupRowFactory(onSelect, onToggle)
+-- onMenu(row, item): right-click on a recipe row (optional).
+local function GroupRowFactory(onSelect, onToggle, onMenu)
   return function(parent)
     local row = CreateFrame("Button", nil, parent)
     local midY = -(ROW.recipeBar / 2) - 1
@@ -1231,13 +1232,25 @@ local function GroupRowFactory(onSelect, onToggle)
 
     row:SetScript("OnEnter", function(self)
       local it = self.item
-      if it and not it.kind then ShowTooltip(self, it.outputItemID, it.recipeID) end
+      if it and not it.kind then
+        ShowTooltip(self, it.outputItemID, it.recipeID)
+        if onMenu and GameTooltip and GameTooltip:IsShown() and MenuUtil and MenuUtil.CreateContextMenu then
+          GameTooltip:AddLine(L["Right-click for actions"], MUTED[1], MUTED[2], MUTED[3])
+          GameTooltip:Show()
+        end
+      end
     end)
     row:SetScript("OnLeave", HideTooltip)
-    row:SetScript("OnClick", function(self)
+    if onMenu and row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+    row:SetScript("OnClick", function(self, button)
       local it = self.item
       if not it then return end
-      if it.kind then onToggle(it) else onSelect(it) end
+      if it.kind then onToggle(it) return end
+      if button == "RightButton" then
+        if onMenu and not it.placeholder then onMenu(self, it) end
+        return
+      end
+      onSelect(it)
     end)
     return row
   end
@@ -2213,7 +2226,8 @@ local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset
   t.search:SetPoint("RIGHT", t.filter, "LEFT", -4, 0)
 
   GroupList(t, left, listName,
-    GroupRowFactory(function(it) UI.PickRecipe(it.recipeID) end, function(it) ToggleGroup(t, it) end),
+    GroupRowFactory(function(it) UI.PickRecipe(it.recipeID) end, function(it) ToggleGroup(t, it) end,
+      t.showMenu),
     GroupFill(fillEntry))
   return CardForm(p, t, left)
 end
@@ -2432,6 +2446,76 @@ function find.Entries()
     for _, x in ipairs(profs()) do e[#e + 1] = x end
     return e
   end
+end
+
+-- A right-click menu: { {text=, fn=}, ... } under a title. Without the menu API nothing opens
+-- (every action has another way in: the card, the Filter, a slash command).
+function find.ContextMenu(owner, title, actions)
+  if #actions == 0 or not (MenuUtil and MenuUtil.CreateContextMenu) then return end
+  pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
+    if root.CreateTitle and title then root:CreateTitle(title) end
+    for _, a in ipairs(actions) do root:CreateButton(a.text, a.fn) end
+  end)
+end
+
+-- The marks every recipe row's menu offers (Find and Plan): pin, wishlist (an item I can't get
+-- myself), and the recipes of mine that use the item.
+function find.MarkActions(recipeID, itemID, canMake)
+  local M, out = NS.Marks, {}
+  if not M then return out end
+  out[#out + 1] = { text = M.IsPinned(recipeID) and L["Unpin"] or L["Pin to the top"], fn = function()
+    M.TogglePin(recipeID)
+    UI.Refresh()
+  end }
+  if itemID and not canMake then
+    out[#out + 1] = { text = M.IsWished(itemID) and L["Remove from wishlist"] or L["Add to wishlist"], fn = function()
+      local on = M.ToggleWish(itemID)
+      if on ~= nil then
+        NS.Print(format(on and L["Added to your wishlist: %s. You'll hear when someone links it in chat."]
+          or L["Removed from your wishlist: %s"], NS.ItemLabel and NS.ItemLabel(itemID) or ItemName(itemID)))
+      end
+    end }
+  end
+  if itemID then
+    out[#out + 1] = { text = L["My recipes that use this"], fn = function() UI.SearchReagent(ItemName(itemID)) end }
+  end
+  return out
+end
+
+function find.showMenu(row, u)
+  if not u.recipeID then return end
+  UI.PickRecipe(u.recipeID)
+  find.ContextMenu(row, u.name, find.MarkActions(u.recipeID, u.outputItemID, find.CanMakeMyself(u)))
+end
+
+-- "Pinned" leads the list: copies of the pinned recipes among items (the recipes keep their
+-- own rows too). Shifts the given items and nav along.
+function find.WithPinned(items, nav, entries, depth)
+  local M = NS.Marks
+  if not (M and M.AnyPinned()) then return items, nav end
+  local pinned = {}
+  for _, e in ipairs(entries) do
+    if M.IsPinned(e.recipeID) then pinned[#pinned + 1] = e end
+  end
+  if #pinned == 0 then return items, nav end
+  local name = L["Pinned"]
+  local open = find.searching or not Collapsed()[name]
+  local out, outNav = { { kind = "cat", name = name, count = #pinned, depth = depth, collapsed = not open } }, {}
+  if open then
+    for i, e in ipairs(pinned) do
+      local copy = setmetatable({ depth = depth + 1, gap = i == #pinned, pinnedCopy = true }, { __index = e })
+      out[#out + 1] = copy
+      copy.idx = #out
+      outNav[#outNav + 1] = copy
+    end
+  end
+  local shift = #out
+  for _, it in ipairs(items) do out[#out + 1] = it end
+  for _, e in ipairs(nav) do
+    e.idx = e.idx + shift
+    outNav[#outNav + 1] = e
+  end
+  return out, outNav
 end
 
 local function BuildFind(p)
@@ -2760,6 +2844,7 @@ function UI.FilterFind(keepScroll)
   end
 
   local items, nav = Grouped(results, prof == nil, searching, find.profNames)
+  items, nav = find.WithPinned(items, nav, results, 0)
   find.results = nav
 
   local emptyText
@@ -4273,7 +4358,14 @@ function P.Index()
       local name = rec.n or (NS.Recipes.NameOf and NS.Recipes.NameOf(id)) or format(L["Recipe %d"], id)
       local list = byProf[rec.p] or {}
       byProf[rec.p] = list
-      list[#list + 1] = { recipeID = id, rec = rec, name = name, lname = strlower(name), diff = DiffOf(rec) }
+      -- Reagent names too, for "Search by reagent" (names still loading fill in on the next build).
+      local reag = {}
+      for _, r in ipairs(type(rec.r) == "table" and rec.r or {}) do
+        local n = type(r[1]) == "number" and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(r[1])
+        if n then reag[#reag + 1] = strlower(n) end
+      end
+      list[#list + 1] = { recipeID = id, rec = rec, name = name, lname = strlower(name), diff = DiffOf(rec),
+        lreag = table.concat(reag, "\n") }
     end
   end
   plan.recipes, plan.dirty = byProf, false
@@ -4309,7 +4401,13 @@ function P.Best(list, pr)
 end
 
 function P.RowFactory()
-  local base = GroupRowFactory(function(it) if it.recipeID then UI.SelectPlan(it.recipeID, true, it.best) end end, P.ToggleGroup)
+  local base = GroupRowFactory(function(it) if it.recipeID then UI.SelectPlan(it.recipeID, true, it.best) end end, P.ToggleGroup,
+    function(row, it)
+      if not it.recipeID then return end
+      UI.SelectPlan(it.recipeID, true, it.best)
+      local actions = find.MarkActions(it.recipeID, it.rec and it.rec.o, true)
+      find.ContextMenu(row, it.name, actions)
+    end)
   return function(parent)
     local row = base(parent)
     local skill = row:CreateTexture(nil, "OVERLAY")
@@ -4486,10 +4584,13 @@ function BuildPlan(p)
     return {
       { kind = "check", text = L["Only what I can craft"], get = function() return P.Option("planReady") end, set = flag("planReady") },
       { kind = "check", text = L["Hide gray recipes"], get = function() return P.Option("planNoGrey") end, set = flag("planNoGrey") },
+      { kind = "divider" },
+      { kind = "check", text = L["Search by reagent"], tip = L["The search box finds your recipes that use a reagent (\"what can I make with Silk Cloth?\")."],
+        get = function() return P.Option("planByReagent") end, set = flag("planByReagent") },
     }
-  end, function() return not (P.Option("planReady") or P.Option("planNoGrey")) end, function()
+  end, function() return not (P.Option("planReady") or P.Option("planNoGrey") or P.Option("planByReagent")) end, function()
     local db = UIDB()
-    if db then db.planReady, db.planNoGrey = nil, nil end
+    if db then db.planReady, db.planNoGrey, db.planByReagent = nil, nil, nil end
     UI.FilterPlan(false)
   end)
   plan.search = NewSearchBox("CraftBoardPlanSearchBox", left, plan)
@@ -4583,6 +4684,7 @@ function UI.FilterPlan(keepScroll)
   plan.searching = searching
   local tokens = searching and Tokens(text) or {}
   local onlyReady, noGray = P.Option("planReady"), P.Option("planNoGrey")
+  local byReagent = P.Option("planByReagent")
   local index = P.Index()
   local canCraft = NS.Inventory and NS.Inventory.CanCraft
   local items, nav, byID = {}, {}, {}
@@ -4598,8 +4700,9 @@ function UI.FilterPlan(keepScroll)
       e.prof, e.best = pr, nil
       byID[e.recipeID] = e
       local ok = true
+      local hay = byReagent and e.lreag or e.lname
       for i = 1, #tokens do
-        if not e.lname:find(tokens[i], 1, true) then ok = false break end
+        if not hay:find(tokens[i], 1, true) then ok = false break end
       end
       if ok and noGray and e.diff == DIFF[3] then ok = false end
       local key = pr.profID .. ":" .. e.diff.key
@@ -4646,6 +4749,24 @@ function UI.FilterPlan(keepScroll)
         copy.idx = #items
         nav[#nav + 1] = copy
       end
+      -- Pinned recipes next (they keep their own rows below too).
+      local pinned = {}
+      for _, e in ipairs(all) do
+        if NS.Marks and NS.Marks.IsPinned(e.recipeID) then pinned[#pinned + 1] = e end
+      end
+      if #pinned > 0 then
+        local key = pr.profID .. ":pinned"
+        local open = searching or not P.IsCollapsed(key, false)
+        items[#items + 1] = { kind = "cat", key = key, name = L["Pinned"], count = #pinned, depth = 1, collapsed = not open }
+        if open then
+          for i, e in ipairs(pinned) do
+            local copy = setmetatable({ depth = 2, gap = i == #pinned }, { __index = e })
+            items[#items + 1] = copy
+            copy.idx = #items
+            nav[#nav + 1] = copy
+          end
+        end
+      end
       for _, d in ipairs(ORDER) do
         local diff = DIFF[d] or UNKNOWN
         local glist = groups[diff.key]
@@ -4682,6 +4803,8 @@ function UI.FilterPlan(keepScroll)
   if #items == 0 then
     if #profs == 0 then
       emptyText = L["No professions yet. Learn one from a trainer in any capital city."]
+    elseif searching and byReagent then
+      emptyText = format(L["None of your recipes here uses \"%s\"."], text)
     elseif searching then
       emptyText = format(L["No recipe matches \"%s\"."], text)
     elseif onlyReady then
@@ -4943,6 +5066,16 @@ end
 -- Puts text in Find's search box (/cb find <text>).
 function UI.Search(text)
   if find.search and type(text) == "string" then find.search:SetText(text) end
+end
+
+-- Plan with "Search by reagent" on and text in its search box (/cb uses <text>, the row menus'
+-- "My recipes that use this").
+function UI.SearchReagent(text)
+  local db = UIDB()
+  if db then db.planByReagent = true end
+  UI.ShowTab(3)
+  if plan.search and type(text) == "string" then plan.search:SetText(text) end
+  UI.FilterPlan(false)
 end
 
 -- Opens CraftBoard on tab i (1 Find, 2 Requests, 3 Plan), wherever it lives.
@@ -5663,7 +5796,7 @@ end
 if NS.RegisterCallback then
   for _, ev in ipairs({ "RECIPES_UPDATED", "PEERS_UPDATED", "INVENTORY_UPDATED", "POSTS_UPDATED",
     "CHAT_SEEN_UPDATED", "BUSY_UPDATED", "QUEUE_UPDATED", "COOLDOWNS_UPDATED", "CRAFTED_UPDATED", "IGNORE_UPDATED",
-    "SKILLS_UPDATED" }) do
+    "SKILLS_UPDATED", "MARKS_UPDATED" }) do
     NS.RegisterCallback(owner, ev, scheduleRefresh)
   end
   NS.RegisterCallback(owner, "ITEM_NAMES_UPDATED", scheduleNames)

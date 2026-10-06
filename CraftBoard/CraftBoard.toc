@@ -37,6 +37,7 @@ Queue.lua
 Craft.lua
 Comm.lua
 ChatWatch.lua
+Marks.lua
 Trade.lua
 Merchant.lua
 UI.lua

@@ -498,6 +498,28 @@ local enUS = {
 
   -- Find: asking the board
   "No known crafter for \"%s\" yet. Asking CraftBoard users...",
+
+  -- Marks: pinned recipes, wishlist, reagent search
+  "Add to wishlist",
+  "Added to your wishlist: %s. You'll hear when someone links it in chat.",
+  "My recipes that use this",
+  "None of your recipes here uses \"%s\".",
+  "Pin to the top",
+  "Pinned",
+  "Remove from wishlist",
+  "Removed from your wishlist: %s",
+  "Search by reagent",
+  "The search box finds your recipes that use a reagent (\"what can I make with Silk Cloth?\").",
+  "Unpin",
+  "Wishlist (%d):",
+  "Wishlist: %s linked %s in %s.",
+  "Wishlist: %s linked %s.",
+  "Your wishlist is empty. Right-click a recipe in Find to add its item.",
+  "Your wishlist is full (%d items). Remove one first.",
+  "/cb uses <reagent> - your recipes that use a reagent",
+  "/cb wish - your wishlist",
+  "Tell me when someone links my wishlist",
+  "One quiet chat line when someone links an item on your wishlist, or the recipe for it, in public chat. Right-click a recipe in Find to add it. Nothing is sent.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 
