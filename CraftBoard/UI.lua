@@ -4559,6 +4559,12 @@ function P.Detail()
   if pr.fresh then
     lines[#lines + 1] = GREY .. format(L["New recipes learned: open %s to add them."], pr.name) .. "|r"
   end
+  local made = NS.Stats and NS.Stats.Made(e.recipeID) or 0
+  if made > 0 then
+    local now = NS.Stats.SessionMade(e.recipeID)
+    lines[#lines + 1] = GREY .. (now > 0 and format(L["Crafted %d times (%d this session)."], made, now)
+      or format(made == 1 and L["Crafted once."] or L["Crafted %d times."], made)) .. "|r"
+  end
   plan.info:SetText(table.concat(lines, "\n"))
   local h = plan.info.GetStringHeight and plan.info:GetStringHeight()
   plan.info:SetHeight(max(12, type(h) == "number" and h or 12 * #lines))
@@ -5829,7 +5835,7 @@ end
 if NS.RegisterCallback then
   for _, ev in ipairs({ "RECIPES_UPDATED", "PEERS_UPDATED", "INVENTORY_UPDATED", "POSTS_UPDATED",
     "CHAT_SEEN_UPDATED", "BUSY_UPDATED", "QUEUE_UPDATED", "COOLDOWNS_UPDATED", "CRAFTED_UPDATED", "IGNORE_UPDATED",
-    "SKILLS_UPDATED", "MARKS_UPDATED" }) do
+    "SKILLS_UPDATED", "MARKS_UPDATED", "STATS_UPDATED" }) do
     NS.RegisterCallback(owner, ev, scheduleRefresh)
   end
   NS.RegisterCallback(owner, "ITEM_NAMES_UPDATED", scheduleNames)

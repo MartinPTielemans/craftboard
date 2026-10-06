@@ -331,6 +331,16 @@ do
   check(db.templates.offer == nil, "saving the default goes back to the built-in text")
 end
 
+-- Crafting history: casts of my recipes count, lifetime and this session
+do
+  local before = NS.Stats.Made(2152)
+  fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 2152)
+  fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 99999)
+  eq(NS.Stats.Made(2152), before + 1, "a cast of my recipe is counted")
+  eq(NS.Stats.SessionMade(2152), 1, "and counted for this session")
+  eq(NS.Stats.Made(99999), 0, "a spell that isn't a recipe of mine is not")
+end
+
 -- Back online: a player link, no "1x", and which character knows the recipe
 printed = {}
 C.NoteBackOnline("Bob-Forever")

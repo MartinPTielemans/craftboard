@@ -542,6 +542,20 @@ local enUS = {
   "Whisper texts",
   "Edit",
   "Your own wording for the whispers CraftBoard types in when you ask a crafter or offer to craft.",
+
+  -- Stats: crafting history and milestones
+  "First time: you crafted %s!",
+  "New rank: %s can now go up to %d.",
+  "%s maxed out at %d!",
+  "%s +%d",
+  "This session: %d crafts%s.",
+  "Crafted on this character: %d. Most made:",
+  "/cb stats - this session's crafting and your most-made recipes",
+  "Celebrate crafting milestones",
+  "A gold chat line and a sound when a profession learns a new rank or is maxed out, and the first time you craft something rare or better.",
+  "Crafted %d times (%d this session).",
+  "Crafted once.",
+  "Crafted %d times.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

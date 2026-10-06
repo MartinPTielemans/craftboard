@@ -205,6 +205,8 @@ local GAMEPAD_TIP = L["With gamepad mode on: D-pad up/down moves through the lis
 -- (Tooltips.lua).
 local GetCooldownNotice, SetCooldownNotice = Flag("cooldownNotice")
 local GetTrainerNotice, SetTrainerNotice = Flag("trainerNotice")
+local GetMilestoneNotice, SetMilestoneNotice = Flag("milestoneNotice")
+local MILESTONE_TIP = L["A gold chat line and a sound when a profession learns a new rank or is maxed out, and the first time you craft something rare or better."]
 local GetReagentTips, SetReagentTips = Flag("reagentTooltips")
 local GetRecipeTips, SetRecipeTips = Flag("recipeTooltips")
 local COOLDOWN_NOTICE_TIP = L["One quiet chat line when a crafting cooldown on one of your characters is ready again."]
@@ -286,6 +288,7 @@ local SECTIONS = {
   { L["Crafting notices"], {
     { "CRAFTBOARD_COOLDOWN_NOTICE", L["Tell me when a crafting cooldown is ready"], GetCooldownNotice, SetCooldownNotice, COOLDOWN_NOTICE_TIP },
     { "CRAFTBOARD_TRAINER_NOTICE", L["Tell me when I can train a new rank"], GetTrainerNotice, SetTrainerNotice, TRAINER_NOTICE_TIP },
+    { "CRAFTBOARD_MILESTONE_NOTICE", L["Celebrate crafting milestones"], GetMilestoneNotice, SetMilestoneNotice, MILESTONE_TIP },
   } },
   { L["Tooltips"], {
     { "CRAFTBOARD_REAGENT_TOOLTIPS", L["Show reagent info in item tooltips"], GetReagentTips, SetReagentTips, REAGENT_TIPS_TIP },

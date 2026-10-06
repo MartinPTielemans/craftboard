@@ -35,6 +35,7 @@ Cooldowns.lua
 Skills.lua
 Queue.lua
 Craft.lua
+Stats.lua
 Comm.lua
 ChatWatch.lua
 Marks.lua

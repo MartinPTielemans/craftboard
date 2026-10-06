@@ -520,3 +520,17 @@ L["Whisper texts"] = "Textes de chuchotement"
 L["Edit"] = "Modifier"
 L["Your own wording for the whispers CraftBoard types in when you ask a crafter or offer to craft."] = "Vos propres mots pour les chuchotements que CraftBoard saisit quand vous demandez à un artisan ou proposez de fabriquer."
 
+-- Stats: crafting history and milestones
+L["First time: you crafted %s!"] = "Première fois : vous avez fabriqué %s !"
+L["New rank: %s can now go up to %d."] = "Nouveau rang : %s peut maintenant monter jusqu'à %d."
+L["%s maxed out at %d!"] = "%s au maximum, à %d !"
+L["%s +%d"] = "%s +%d"
+L["This session: %d crafts%s."] = "Cette session : %d fabrications%s."
+L["Crafted on this character: %d. Most made:"] = "Fabriqué sur ce personnage : %d. Les plus fabriqués :"
+L["/cb stats - this session's crafting and your most-made recipes"] = "/cb stats - la fabrication de cette session et vos recettes les plus faites"
+L["Celebrate crafting milestones"] = "Célébrer les étapes d'artisanat"
+L["A gold chat line and a sound when a profession learns a new rank or is maxed out, and the first time you craft something rare or better."] = "Une ligne dorée et un son quand un métier apprend un nouveau rang ou atteint le maximum, et la première fois que vous fabriquez un objet rare ou mieux."
+L["Crafted %d times (%d this session)."] = "Fabriqué %d fois (%d cette session)."
+L["Crafted once."] = "Fabriqué une fois."
+L["Crafted %d times."] = "Fabriqué %d fois."
+
