@@ -385,8 +385,7 @@ local function InsertLink(link)
 end
 
 local function RequestText(itemID, qty)
-  local label = ItemLink(itemID) or ItemName(itemID)
-  return format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty, label)
+  return NS.Templates.Request(ItemLink(itemID) or ItemName(itemID), qty)
 end
 
 -- Opens the chat box in whisper mode to `name` with the request template typed in, so it is
@@ -3034,8 +3033,8 @@ function R.OpenTell(name)
   return false
 end
 
-function R.OfferText(item)
-  return format(L["[CraftBoard] I can craft %s for you."], ItemLink(item) or ItemName(item))
+function R.OfferText(item, qty)
+  return NS.Templates.Offer(ItemLink(item) or ItemName(item), qty)
 end
 
 -- Offer: sends the whisper right away (it only ever goes to a request I can craft), once per
@@ -3044,7 +3043,7 @@ function R.Offer(e)
   if not (e and e.post and not e.mine and e.can) then return end
   local ago = R.OfferedAgo(e)
   if ago and ago < OFFER_GAP then return end
-  if NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, R.OfferText(e.post.item)) then
+  if NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, R.OfferText(e.post.item, e.post.qty)) then
     if NS.Comm.MarkOffered then NS.Comm.MarkOffered(e.post.id) end
     UI.RefreshRequestDetail()
     -- An offered request stops counting: recount for the tab, embedded tab and broker badges.
@@ -3060,7 +3059,7 @@ end
 function R.WhisperPost(e)
   if not (e and e.post and not e.mine) then return end
   if e.can then
-    OpenWhisper(e.post.from, nil, nil, R.OfferText(e.post.item))
+    OpenWhisper(e.post.from, nil, nil, R.OfferText(e.post.item, e.post.qty))
   else
     R.OpenTell(e.post.from)
   end
@@ -3773,7 +3772,7 @@ function BuildRequests(p)
     if not self:IsEnabled() then
       return L["Offered"], L["You offered on this request a few minutes ago."]
     end
-    return format(L["Offer to %s"], Short(e.post.from)), format(L["Sends this whisper now: %s"], R.OfferText(e.post.item))
+    return format(L["Offer to %s"], Short(e.post.from)), format(L["Sends this whisper now: %s"], R.OfferText(e.post.item, e.post.qty))
   end)
   reqs.retract = red(L["Retract"], R.Retract, function(_, self)
     if not self:IsEnabled() then return L["Retract"], reqs.retractWhy end

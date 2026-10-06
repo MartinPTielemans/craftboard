@@ -1380,7 +1380,8 @@ function Comm.Request(itemID, qty, toName)
   end
   if not label and C_Item and C_Item.GetItemNameByID then label = C_Item.GetItemNameByID(itemID) end
   label = label or format(L["Item %d"], itemID)
-  local msg = format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty, label)
+  local msg = NS.Templates and NS.Templates.Request(label, qty)
+    or format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty, label)
   return Comm.Whisper(target, msg)
 end
 

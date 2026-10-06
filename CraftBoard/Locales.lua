@@ -529,6 +529,19 @@ local enUS = {
   "Expires in about %dh. Renew keeps it up for another day.",
   "Tell me when my request is about to expire",
   "One quiet chat line when one of your requests has a few hours left on the board. Renew it on the Requests tab to keep it up.",
+
+  -- Templates: whisper texts
+  "CraftBoard whisper texts",
+  "{item} becomes the item's link and {qty} the quantity. CraftBoard still only types the whisper in for you: nothing is sent without your click.",
+  "Asking a crafter",
+  "Offering to craft",
+  "Save",
+  "Whisper texts saved.",
+  "Use the defaults",
+  "/cb texts - edit the whisper texts CraftBoard types in for you",
+  "Whisper texts",
+  "Edit",
+  "Your own wording for the whispers CraftBoard types in when you ask a crafter or offer to craft.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

@@ -318,6 +318,19 @@ do
   pid = nid
 end
 
+-- Whisper texts: the built-in wording until the player saves their own
+do
+  local T = NS.Templates
+  local builtin = T.Request("[Kit]", 3)
+  check(builtin:find("[Kit]", 1, true) and builtin:find("3", 1, true), "built-in request text has the item and quantity")
+  eq(T.Get("request"):find("{qty}", 1, true) ~= nil and T.Get("request"):find("{item}", 1, true) ~= nil, true,
+    "the default as a template")
+  T.Set("offer", "hey, I can do {qty}x {item} (50% done)")
+  eq(T.Offer("[Kit]", 2), "hey, I can do 2x [Kit] (50% done)", "own offer text filled in")
+  T.Set("offer", T.Default("offer"))
+  check(db.templates.offer == nil, "saving the default goes back to the built-in text")
+end
+
 -- Back online: a player link, no "1x", and which character knows the recipe
 printed = {}
 C.NoteBackOnline("Bob-Forever")

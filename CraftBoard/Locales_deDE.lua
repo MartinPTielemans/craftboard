@@ -520,3 +520,16 @@ L["Expires in about %dh. Renew keeps it up for another day."] = "Läuft in etwa 
 L["Tell me when my request is about to expire"] = "Melden, wenn meine Anfrage bald abläuft"
 L["One quiet chat line when one of your requests has a few hours left on the board. Renew it on the Requests tab to keep it up."] = "Eine unauffällige Chatzeile, wenn eine deiner Anfragen nur noch wenige Stunden steht. Erneuere sie im Reiter \"Anfragen\", damit sie bleibt."
 
+-- Templates: whisper texts
+L["CraftBoard whisper texts"] = "CraftBoard-Flüstertexte"
+L["{item} becomes the item's link and {qty} the quantity. CraftBoard still only types the whisper in for you: nothing is sent without your click."] = "{item} wird zum Gegenstandslink und {qty} zur Menge. CraftBoard tippt das Flüstern nur für dich ein: Nichts wird ohne deinen Klick gesendet."
+L["Asking a crafter"] = "Einen Handwerker fragen"
+L["Offering to craft"] = "Herstellung anbieten"
+L["Save"] = "Speichern"
+L["Whisper texts saved."] = "Flüstertexte gespeichert."
+L["Use the defaults"] = "Standard verwenden"
+L["/cb texts - edit the whisper texts CraftBoard types in for you"] = "/cb texts - die Flüstertexte bearbeiten, die CraftBoard für dich eintippt"
+L["Whisper texts"] = "Flüstertexte"
+L["Edit"] = "Bearbeiten"
+L["Your own wording for the whispers CraftBoard types in when you ask a crafter or offer to craft."] = "Deine eigenen Worte für das Flüstern, das CraftBoard eintippt, wenn du einen Handwerker fragst oder eine Herstellung anbietest."
+

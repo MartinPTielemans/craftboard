@@ -230,6 +230,12 @@ end
 
 local WELCOME_TIP = L["Shows the CraftBoard welcome window again."]
 
+local function ShowTexts()
+  if NS.Templates and NS.Templates.Show then NS.Templates.Show() end
+end
+
+local TEXTS_TIP = L["Your own wording for the whispers CraftBoard types in when you ask a crafter or offer to craft."]
+
 -- Advertise channel: where Find's Advertise button posts its one line ("Trade" (cities only) by
 -- default, "General", or "Off").
 local ADVERTISE = { "Trade", "General", "Off" }
@@ -375,6 +381,7 @@ local function RegisterVertical()
     FORGET_TIP, true))
   layout:AddInitializer(CreateSettingsButtonInitializer(L["Show tips again"], L["Reset"], ResetTips, TIPS_TIP, true))
   layout:AddInitializer(CreateSettingsButtonInitializer(L["Show welcome"], L["Show"], ShowWelcome, WELCOME_TIP, true))
+  layout:AddInitializer(CreateSettingsButtonInitializer(L["Whisper texts"], L["Edit"], ShowTexts, TEXTS_TIP, true))
 
   S.RegisterAddOnCategory(category)
   return category:GetID()
@@ -484,6 +491,8 @@ local function BuildPanel()
   Button(L["Forget other players' data"], 200, 20, FORGET_TIP, ConfirmForget)
   Button(L["Show tips again"], 150, 228, TIPS_TIP, ResetTips)
   Button(L["Show welcome"], 150, 386, WELCOME_TIP, ShowWelcome)
+  y = y - 28
+  Button(L["Whisper texts"], 200, 20, TEXTS_TIP, ShowTexts)
 
   p:SetScript("OnShow", function()
     for i = 1, #checks do checks[i]:SetChecked(checks[i].get()) end

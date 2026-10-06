@@ -343,6 +343,7 @@ local function PrintHelp()
   NS.Print(L["/cb cd - crafting cooldowns on your characters"])
   NS.Print(L["/cb uses <reagent> - your recipes that use a reagent"])
   NS.Print(L["/cb wish - your wishlist"])
+  NS.Print(L["/cb texts - edit the whisper texts CraftBoard types in for you"])
   NS.Print(L["/cb chars - your characters CraftBoard remembers"])
   NS.Print(L["/cb forget <name> - forget one of your characters (see /cb chars)"])
   NS.Print(L["/cb scan - record the open profession window again"])
@@ -453,6 +454,8 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
     ForgetChar(rest)
   elseif cmd == "cd" or cmd == "cooldowns" then
     if NS.Cooldowns and NS.Cooldowns.Print then NS.Cooldowns.Print() end
+  elseif cmd == "texts" or cmd == "templates" then
+    if NS.Templates and NS.Templates.Show then NS.Templates.Show() end
   elseif cmd == "wish" or cmd == "wishlist" then
     if NS.Marks and NS.Marks.PrintWishes then NS.Marks.PrintWishes() end
   elseif cmd == "uses" then
