@@ -631,7 +631,9 @@ local function BuildRecipeList(withNames)
     local name = withNames and type(r) == "table" and type(r.n) == "string" and r.n:sub(1, MAX_NAME) or false
     local o = type(r) == "table" and type(r.o) == "number" and r.o or false
     local p = type(r) == "table" and type(r.p) == "number" and r.p or false
-    list[i] = { id, name, o, p }
+    -- Where it is learned (5th field; older clients read the first four).
+    local src = NS.Recipes and NS.Recipes.SourceOf and NS.Recipes.SourceOf(id) or nil
+    list[i] = { id, name, o, p, src }
   end
   return list
 end
@@ -1819,6 +1821,8 @@ function handlers.R(full, data)
     if id then
       recipes[id] = true
       count = count + 1
+      local src = type(e) == "table" and PosInt(e[5], 1e8)
+      if src and NS.Recipes and NS.Recipes.SetSource then NS.Recipes.SetSource(id, src) end
       name = CleanString(name, MAX_NAME)
       o = PosInt(o, 1e8)
       prof = PosInt(prof, 1e6)
@@ -1990,7 +1994,8 @@ function Comm.MatchQuery(q, items)
       end
       if hit then
         out[#out + 1] = { id, type(r.n) == "string" and r.n:sub(1, MAX_NAME) or false,
-          type(r.o) == "number" and r.o or false, type(r.p) == "number" and r.p or false }
+          type(r.o) == "number" and r.o or false, type(r.p) == "number" and r.p or false,
+          NS.Recipes and NS.Recipes.SourceOf and NS.Recipes.SourceOf(id) or nil }
       end
     end
   end
@@ -2084,6 +2089,8 @@ function handlers.A(full, data)
     local rid = PosInt(e[1], 1e8)
     if rid then
       if not p.recipes[rid] then p.recipes[rid], added = true, true end
+      local src = PosInt(e[5], 1e8)
+      if src and NS.Recipes and NS.Recipes.SetSource then NS.Recipes.SetSource(rid, src) end
       local name, o, prof = CleanString(e[2], MAX_NAME), PosInt(e[3], 1e8), PosInt(e[4], 1e6)
       if name or o then
         local rn = db.recipeNames[rid]

@@ -562,6 +562,10 @@ local enUS = {
   "%s: %s",
   "Shares 1 recipe with you.",
   "Shares %d recipes with you.",
+
+  -- Plan: recipes not learned yet, where to learn them
+  "Trainer",
+  "Not learned yet",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

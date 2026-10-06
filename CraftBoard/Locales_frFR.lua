@@ -540,3 +540,7 @@ L["%s: %s"] = "%s : %s"
 L["Shares 1 recipe with you."] = "Partage 1 recette avec vous."
 L["Shares %d recipes with you."] = "Partage %d recettes avec vous."
 
+-- Plan: recipes not learned yet, where to learn them
+L["Trainer"] = "Maître"
+L["Not learned yet"] = "Pas encore apprises"
+

@@ -4466,7 +4466,38 @@ function P.Index()
     end
   end
   plan.recipes, plan.dirty = byProf, false
+  plan.missingIdx = nil     -- P.Missing reads the catalogue again
   return byProf
+end
+
+-- Recipes of a profession this character hasn't learned: from the shared catalogue (my other
+-- characters' and other players' recipes), with where they are learned when anyone recorded it.
+-- { {recipeID=, name=, lname=, missing=true, status=}, ... } by name. Rebuilt with the index.
+function P.Missing(profID)
+  plan.missingIdx = plan.missingIdx or {}
+  local cached = plan.missingIdx[profID]
+  if cached then return cached end
+  local mine = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine() or {}
+  local cat = type(CraftBoardDB) == "table" and type(CraftBoardDB.recipeNames) == "table" and CraftBoardDB.recipeNames or {}
+  local out = {}
+  for id, e in pairs(cat) do
+    if type(id) == "number" and type(e) == "table" and e.p == profID and not mine[id] then
+      local name = e.n or (e.o and ItemName(e.o)) or (NS.Recipes.NameOf and NS.Recipes.NameOf(id)) or format(L["Recipe %d"], id)
+      out[#out + 1] = { recipeID = id, name = name, lname = strlower(name), missing = true,
+        status = P.SourceText(id), rec = { o = e.o } }
+    end
+  end
+  table.sort(out, function(a, b) return a.name < b.name end)
+  plan.missingIdx[profID] = out
+  return out
+end
+
+-- Where a recipe is learned, for a row: "Trainer", the recipe item's name, else "".
+function P.SourceText(recipeID)
+  local src = NS.Recipes and NS.Recipes.SourceOf and NS.Recipes.SourceOf(recipeID)
+  if src == (NS.Recipes and NS.Recipes.SRC_TRAINER) then return L["Trainer"] end
+  if type(src) == "number" then return ItemName(src) end
+  return ""
 end
 
 -- "Best next": among recipes that still give points and that the bags allow now, points per
@@ -4498,9 +4529,16 @@ function P.Best(list, pr)
 end
 
 function P.RowFactory()
-  local base = GroupRowFactory(function(it) if it.recipeID then UI.SelectPlan(it.recipeID, true, it.best) end end, P.ToggleGroup,
+  local base = GroupRowFactory(function(it)
+      if it.missing then P.OpenInFind(it.recipeID) return end
+      if it.recipeID then UI.SelectPlan(it.recipeID, true, it.best) end
+    end, P.ToggleGroup,
     function(row, it)
       if not it.recipeID then return end
+      if it.missing then
+        find.ContextMenu(row, it.name, find.MarkActions(it.recipeID, it.rec and it.rec.o, false))
+        return
+      end
       UI.SelectPlan(it.recipeID, true, it.best)
       local actions = find.MarkActions(it.recipeID, it.rec and it.rec.o, true)
       find.ContextMenu(row, it.name, actions)
@@ -4520,7 +4558,23 @@ function P.RowFactory()
   end
 end
 
+-- Find, on a recipe I haven't learned (who can craft it, its reagents).
+function P.OpenInFind(recipeID)
+  UI.ShowTab(1)
+  if find.search then find.search:SetText("") end
+  UI.FilterFind(false)
+  UI.PickRecipe(recipeID)
+end
+
 function P.FillEntry(row, e)
+  if e.missing then
+    row.skill:Hide()
+    row.name:SetText(e.name)
+    row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
+    row.status:SetText(e.status or "")
+    row.sel:Hide()
+    return
+  end
   if e.placeholder then
     row.skill:Hide()
     row.name:SetText(e.name)
@@ -4892,6 +4946,29 @@ function UI.FilterPlan(keepScroll)
         end
       end
     end
+    -- Recipes of this profession I haven't learned (collapsed until opened; never with "Only
+    -- what I can craft" or a reagent search). Clicking one opens it in Find.
+    if pOpen and not (onlyReady or byReagent) and (count > 0 or not searching) then
+      local missing = {}
+      for _, m in ipairs(P.Missing(pr.profID)) do
+        local ok = true
+        for i = 1, #tokens do
+          if not m.lname:find(tokens[i], 1, true) then ok = false break end
+        end
+        if ok then missing[#missing + 1] = m end
+      end
+      if #missing > 0 then
+        local key = pr.profID .. ":missing"
+        local open = searching or not P.IsCollapsed(key, true)
+        items[#items + 1] = { kind = "cat", key = key, gray = true, name = L["Not learned yet"], count = #missing, depth = 1, collapsed = not open }
+        if open then
+          for i, m in ipairs(missing) do
+            m.depth, m.gap = 2, i == #missing
+            items[#items + 1] = m
+          end
+        end
+      end
+    end
   end
   plan.results, plan.byID = nav, byID
   -- A recipe the player picked stays picked while a filter hides it (the card says so); an
@@ -4937,7 +5014,8 @@ NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
 end)
 if NS.RegisterCallback then
   local function dirty() plan.dirty = true end
-  for _, ev in ipairs({ "RECIPES_UPDATED", "SKILLS_UPDATED", "ITEM_NAMES_UPDATED" }) do
+  -- (Other players' recipes fill the catalogue behind "Not learned yet".)
+  for _, ev in ipairs({ "RECIPES_UPDATED", "SKILLS_UPDATED", "ITEM_NAMES_UPDATED", "PEERS_UPDATED" }) do
     NS.RegisterCallback(plan, ev, dirty)
   end
 end

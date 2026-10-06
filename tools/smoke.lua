@@ -516,6 +516,15 @@ do
   check(card:find("Dragonscale", 1, true) ~= nil, "my crafter card names it")
 end
 
+-- Where recipes are learned: the first source heard is kept
+do
+  local R = NS.Recipes
+  R.SetSource(18560, 1)
+  R.SetSource(18560, 14468)
+  eq(R.SourceOf(18560), 1, "first recipe source kept")
+  check(R.GuessSource() == nil, "no trainer, no recipe item used: no source")
+end
+
 -- Timers run cleanly (back-online checks, notices)
 runTimers()
 

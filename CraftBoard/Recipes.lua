@@ -550,10 +550,63 @@ end
 -- A recipe learned (trainer, recipe item): its profession's record is behind until the next
 -- scan. c.profs[profID].newRecipes = true (every profession when the recipe's can't be told)
 -- until then, and that scan reads every recipe again.
+-- Where recipes are learned, shared with the recipe lists (5th field): 1 = a trainer, else the
+-- item ID of the recipe item that taught it. Recorded when I learn one: a trainer window open
+-- (or just closed), or a recipe item used in the seconds before. Kept in the catalogue (s), the
+-- first source heard winning. Nothing at all when it can't be told (a quest, a client that hid
+-- the item use).
+local SRC_TRAINER = 1
+Recipes.SRC_TRAINER = SRC_TRAINER
+local trainerShownAt, trainerClosedAt = nil, nil
+local lastUse = nil    -- { id = itemID, t = time }
+
+function Recipes.SourceOf(recipeID)
+  local cat = Catalogue()
+  local e = cat and cat[recipeID]
+  return e and type(e.s) == "number" and e.s or nil
+end
+
+function Recipes.SetSource(recipeID, src)
+  local cat = Catalogue()
+  if not (cat and type(recipeID) == "number" and type(src) == "number" and src >= 1) then return end
+  local e = cat[recipeID]
+  if type(e) ~= "table" then e = {}; cat[recipeID] = e end
+  if e.s == nil then e.s = src end
+end
+
+local function IsRecipeItem(itemID)
+  local get = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+  if not get then return false end
+  local ok, _, _, _, _, _, classID = pcall(get, itemID)
+  return ok and classID == 9
+end
+
+function Recipes.GuessSource(now)
+  now = now or time()
+  if trainerShownAt and (not trainerClosedAt or trainerClosedAt < trainerShownAt or now - trainerClosedAt <= 3) then
+    return SRC_TRAINER
+  end
+  if lastUse and now - lastUse.t <= 10 and IsRecipeItem(lastUse.id) then return lastUse.id end
+  return nil
+end
+
+NS.Register("TRAINER_SHOW", function() trainerShownAt = time() end)
+pcall(NS.Register, "TRAINER_CLOSED", function() trainerClosedAt = time() end)
+-- The item a recipe is learned from: noted when a bag item is used (observing only).
+if hooksecurefunc and C_Container and C_Container.UseContainerItem then
+  pcall(hooksecurefunc, C_Container, "UseContainerItem", function(bag, slot)
+    local get = C_Container.GetContainerItemID
+    local ok, id = pcall(get, bag, slot)
+    if ok and type(id) == "number" and not (issecretvalue and issecretvalue(id)) then lastUse = { id = id, t = time() } end
+  end)
+end
+
 local function OnRecipeLearned(recipeID)
   local c = MyChar()
   if not c or type(recipeID) ~= "number" then return end
   if issecretvalue and issecretvalue(recipeID) then return end
+  local src = Recipes.GuessSource()
+  if src then Recipes.SetSource(recipeID, src) end
   local marked = false
   for _, id in ipairs(LinesOfRecipe(recipeID)) do
     local p = c.profs[id]
