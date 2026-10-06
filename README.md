@@ -27,12 +27,21 @@ CurseForge app and WowUp under the Forever game version.
   Filter menu leaves out what you or your alts can already provide (an alt's enchant stays, since
   it can't reach your gear), so only crafts you need someone else for are listed.
 - **Requests.** Post an order with a quantity and a note. Crafters see it on the board and offer
-  with one click.
+  with one click. Short of a material? Right-click its reagent slot to ask the board for it;
+  players who hold it, and gatherers, can offer. Renew a request before its day is up.
 - **Seen in chat.** Players asking for a crafter in Trade or General ("LF enchanter", "WTB [item]")
   are listed on the Requests tab, with a green check when you can make it. This works even when
   nobody else on your realm runs CraftBoard.
 - **Plan your leveling.** The Plan tab sorts your recipes by skill-up colour, says how many crafts
-  reach the next rank, and reminds you when to visit your trainer.
+  reach the next rank, and reminds you when to visit your trainer. It lists the recipes you
+  haven't learned yet and where they come from, and its Filter can search by reagent ("what
+  can I make with Silk Cloth?").
+- **Pin and wish.** Right-click a recipe to pin it to the top, or put its item on your wishlist:
+  you'll hear when someone links it, or its recipe, in chat.
+- **What's in demand.** CraftBoard counts what is asked for around you, so Find can lead with
+  the week's most-asked items and `/cb demand` shows which ones nobody crafts yet.
+- **Crafter cards.** A crafter's tooltip shows their professions, specialization (Dragonscale,
+  Gnomish, Weaponsmith...) and cooldowns. Find can list only your guild's crafters.
 - **Craft from the board.** Queue crafts from requests or your plan, then Craft next works through
   them while the profession window is open. At a vendor, one button buys the missing thread,
   vials and flux.
@@ -43,6 +52,9 @@ CurseForge app and WowUp under the Forever game version.
 - **Trade window help.** One click casts a requested enchant on your partner's item, and
   CraftBoard privately counts how often you've crafted for each other.
 - **Cooldowns.** Transmute and Mooncloth cooldowns show next to crafters; `/cb cd` lists yours.
+- **Your own words.** Set the whispers CraftBoard types in for you with `/cb texts`.
+- **Milestones.** A small celebration for a new rank, a maxed profession or your first epic
+  craft; `/cb stats` shows this session and your most-made recipes.
 - **Busy mode.** Mark yourself busy and other users see you greyed out and can't whisper you from
   the board. It turns on by itself in dungeons and raids.
 - **Advertise.** One button posts a single plain line to Trade for players without the addon, at
@@ -58,8 +70,9 @@ CurseForge app and WowUp under the Forever game version.
   auction house or GDKP.
 - **Fair ordering.** Online crafters are listed first, then shuffled each session. There are no
   ratings, featured spots or anything you can pay for.
-- **Private by default.** Chat lines are kept in memory for 30 minutes and never saved or shared.
-  "Crafted for you" counts stay on your computer.
+- **Private by default.** Chat lines are kept in memory for 30 minutes and never saved or shared;
+  only per-item counts of what was asked for are kept, never who asked. "Crafted for you" counts
+  and your crafting history stay on your computer.
 - **Non-combat.** Unaffected by Forever's combat addon restrictions.
 
 ## Commands
@@ -70,11 +83,17 @@ CurseForge app and WowUp under the Forever game version.
 | `/cb find [text]`, `/cb requests`, `/cb plan` | Open a tab (Find searches for the text) |
 | `/cb busy` | Toggle busy |
 | `/cb cd` | List crafting cooldowns on your characters |
+| `/cb uses <reagent>` | Your recipes that use a reagent |
+| `/cb wish` | Your wishlist |
+| `/cb demand` | What players around you asked for most this week |
+| `/cb guild` | Your guildmates' professions |
+| `/cb stats` | This session's crafting and your most-made recipes |
+| `/cb texts` | Edit the whisper texts CraftBoard types in for you |
 | `/cb chars`, `/cb forget <name>` | List your characters CraftBoard remembers; forget a deleted one |
 | `/cb scan` | Record the open profession window again |
 | `/cb options` | Open the settings |
 | `/cb welcome` | Show the welcome window again |
-| `/cb debug` | Show sync status and known crafters |
+| `/cb debug` | Show sync status and known crafters (`/cb debug ondemand` tries the crowded-channel mode) |
 | `/cb chatdebug` | Show what the chat watcher is picking up |
 
 The minimap button opens CraftBoard on left-click and the settings on right-click; its tooltip
@@ -91,8 +110,8 @@ of `/cb debug` help the most.
 ## Development
 
 - `CraftBoard/` is the addon. Modules: Core, Locales (+ deDE, frFR, esES), Options, Launcher,
-  Recipes, Inventory, Cooldowns, Skills, Queue, Craft, Comm, ChatWatch, Trade, Merchant, UI,
-  Tooltips, Onboarding, Welcome, Hooks, Embed, Debug. The design is in `docs/SPEC.md`.
+  Recipes, Inventory, Cooldowns, Skills, Queue, Craft, Stats, Comm, ChatWatch, Marks, Templates,
+  Trade, Merchant, UI, Tooltips, Onboarding, Welcome, Hooks, Embed, Debug. The design is in `docs/SPEC.md`.
 - `tools/link.sh` symlinks the addon into the Forever AddOns folder for live testing.
 - `tools/check.sh` parses every Lua file, checks that all locale keys are used, defined and
   translated with matching placeholders, and runs `tools/smoke.lua` (every file loaded against

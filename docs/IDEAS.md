@@ -123,6 +123,27 @@ Fun and polish
 Out of scope (decided earlier): orders by mail, web board, offline board, ratings, prices; the
 people journal is its own addon (WellMet).
 
+## Built after 1.0 (Unreleased, 2026-10-06)
+From the 1.0 candidate list and the "maybe" items:
+- Scaling: on-demand recipe questions (W / A) on crowded channels, peer cap, answer rate cap
+  (see the scaling section below and SPEC.md). Still to verify in game how far the channel
+  reaches.
+- Pinned recipes; recipe wishlist with a chat-link notice; search by reagent (Plan filter,
+  `/cb uses`).
+- Old-post nudge and Renew; editable whisper templates (request, offer; no "thanks" template:
+  nothing in CraftBoard sends one).
+- Private crafting stats (lifetime and session per recipe), session tracker (`/cb stats`),
+  milestone moments (new rank, maxed, first rare-or-better craft).
+- Specializations (spellbook, shared in the hello) and a crafter card tooltip.
+- Missing recipes per profession (Plan "Not learned yet") with crowd-sourced sources: trainer
+  or recipe item, recorded when learned and shared as a fifth recipe-list field.
+- Realm demand insights: per-item ask counts (no names), Find "Most asked for first",
+  `/cb demand`.
+- Guild crafting directory: Find "Only guild crafters", `/cb guild`.
+- "Looking for mats" posts (P k="m") and gatherers on their card.
+Not built: enchant preview, item cooldowns (Salt Shaker), leveling path from mats you already
+have (Plan's Best next covers part of it), craft the queue entry's full count in one click.
+
 ## Scaling on a realmless game (2026-09-27)
 Forever has no realms, only region + ruleset. If the hidden channel spans that whole population,
 the current sync (hello every ~10 min from every client, then a whispered full recipe list per

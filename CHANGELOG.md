@@ -6,6 +6,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Pinned recipes: right-click a recipe in Find or Plan to pin it; a Pinned group leads the list.
+- Wishlist: right-click a recipe in Find to add its item. One quiet chat line when someone links
+  it, or the recipe that teaches it ("Pattern: ..."), in public chat (option). `/cb wish`.
+- Search by reagent: Plan's Filter finds your recipes that use a reagent ("what can I make with
+  Silk Cloth?"); also "My recipes that use this" in every recipe and reagent menu, and
+  `/cb uses <reagent>`.
+- Renew: a request with about four hours left gets one quiet chat line (option) and a line on its
+  card; Renew posts it again, with its linked orders, for another day.
+- Whisper texts: `/cb texts` (or Whisper texts in the settings) sets your own wording for asking
+  a crafter and offering to craft, with {item} and {qty}.
+- Crafting history: lifetime and this-session crafts per recipe, on the Plan card and in
+  `/cb stats`. Never shared.
+- Milestones: a gold chat line and a sound for a new rank, a maxed profession and your first
+  rare-or-better craft of a recipe (option).
+- Specializations: Dragonscale, Elemental and Tribal Leatherworking, Gnomish and Goblin
+  Engineering, Armorsmith, Weaponsmith and the master smiths are read from your spellbook and
+  shared with other CraftBoard users.
+- Crafter card: a crafter's tooltip in Find lists their professions with rank and
+  specialization, their crafting cooldowns, and how many recipes they share.
+- Not learned yet: each profession in Plan lists recipes other players or your other characters
+  know and this character doesn't, with where they are learned (trainer, or the recipe item)
+  when anyone recorded it. A click opens the recipe in Find.
+- Demand: CraftBoard counts what is asked for around you (board requests and crafting asks in
+  chat; counts only, never who). Find's card says how often an item was asked for this week, the
+  Filter can lead with the week's most-asked items, and `/cb demand` lists them with how many
+  crafters are known.
+- Guild: "Only guild crafters" in Find's Filter; `/cb guild` lists guildmates' professions.
+- Materials requests: right-click a reagent slot to ask the board for the material. Requests
+  marks them, checks the ones your characters hold enough of, offers "I have it", and names
+  gatherers (your characters and online players with Herbalism, Mining or Skinning).
+
+### Changed
+- Crowded channels: with more than 150 players heard on the CraftBoard channel in a day, channel
+  players' full recipe lists are no longer swapped. A Find search asks the board instead and
+  crafters with a match answer within seconds. Guildmates still swap full lists. At most 1000
+  players are remembered and 12 full recipe lists answered per minute.
+
 ## [1.0.0] - 2026-10-06
 
 CraftBoard 1.0: from a crafting-order board to a crafting companion for Forever.
