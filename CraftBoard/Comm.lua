@@ -1368,9 +1368,13 @@ function Comm.Renew(id)
     end
     return out
   end
+  -- The gap between posts holds for Renew too (checked before anything is retracted).
+  if time() - lastPost < POST_GAP then
+    Print(L["Please wait a few seconds before posting again."])
+    return nil
+  end
   local tree = Tree(id, {})
   Comm.Retract(id)
-  lastPost = 0
   local nid = Comm.PostRequest(p.item, p.qty, p.note, nil, p.k)
   if not nid then return nil end
   local function Post(list, parent)
@@ -1678,7 +1682,11 @@ function handlers.H(full, data)
     -- Their book changed: what I had of it may be gone (an unlearned profession). Searches
     -- (W / A) bring back what they still know. (The hash their full list was stored under counts
     -- as what I knew, the first time.)
-    if (p.odHash or p.hash) ~= h then
+    local known = p.odHash or p.hash
+    if known == nil then
+      -- Nothing to compare with yet (only search answers so far): they belong to this book.
+      p.odHash = h
+    elseif known ~= h then
       if next(p.recipes) then
         p.recipes = {}
         Fire("PEERS_UPDATED")
@@ -2110,6 +2118,27 @@ function Comm.Ask(text, items)
     if #list >= W_MAX_ITEMS then break end
     if PosInt(id, 1e8) then list[#list + 1] = id end
   end
+  -- Items in my catalogue whose name in my language matches go along by ID, so a crafter on a
+  -- client in another language finds them too (the text only matches names in theirs).
+  if q and #list < W_MAX_ITEMS and NS.Inventory and NS.Inventory.ItemName then
+    local cat = type(CraftBoardDB) == "table" and type(CraftBoardDB.recipeNames) == "table" and CraftBoardDB.recipeNames or {}
+    local seenID = {}
+    for _, id in ipairs(list) do seenID[id] = true end
+    for _, e in pairs(cat) do
+      if #list >= W_MAX_ITEMS then break end
+      local o = type(e) == "table" and e.o
+      local name = type(o) == "number" and not seenID[o] and NS.Inventory.ItemName(o)
+      if type(name) == "string" then
+        name = strlower(name)
+        local hit = true
+        for w in q:gmatch("%S+") do
+          if not name:find(w, 1, true) then hit = false break end
+        end
+        if hit then list[#list + 1], seenID[o] = o, true end
+      end
+    end
+    sort(list)
+  end
   if not q and #list == 0 then return false end
   local now = time()
   local key = (q or "") .. "|" .. table.concat(list, ",")
@@ -2130,8 +2159,14 @@ local askPending, askText, askItems = false, nil, nil
 function Comm.AskSoon(text, items)
   if text ~= nil then askText = text end
   if type(items) == "table" then
+    -- Newest first, each once: the card the player stopped on is never cut off by W_MAX_ITEMS.
     askItems = askItems or {}
-    for _, id in ipairs(items) do askItems[#askItems + 1] = id end
+    for _, id in ipairs(items) do
+      for k = #askItems, 1, -1 do
+        if askItems[k] == id then table.remove(askItems, k) end
+      end
+      table.insert(askItems, 1, id)
+    end
   end
   if askPending or not (C_Timer and C_Timer.After) then return end
   askPending = true

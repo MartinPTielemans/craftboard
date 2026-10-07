@@ -318,6 +318,8 @@ do
   C.NudgeOld()
   C.NudgeOld()
   check(#printed == 1, "one nudge for a request about to expire")
+  check(C.Renew(pid) == nil and db.posts[pid] ~= nil, "Renew waits out the gap between posts, keeping the request")
+  clock.skip = clock.skip + 11
   local nid = C.Renew(pid)
   check(nid and nid ~= pid and db.posts[pid] == nil and db.posts[nid].qty == old.qty, "renewed as a new post")
   local kids = C.Linked(nid)
@@ -571,6 +573,7 @@ do
   clock.skip = clock.skip + 11   -- past the gap between posts
   local mid = C.PostRequest(2318, 20, "", nil, "m")
   check(mid and db.posts[mid].k == "m", "a materials request")
+  clock.skip = clock.skip + 11
   local rid = C.Renew(mid)
   check(rid and db.posts[rid].k == "m", "renewed as a materials request")
   C.Retract(rid)

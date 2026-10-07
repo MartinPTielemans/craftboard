@@ -354,6 +354,19 @@ function ChatWatch.Resolve(name)
   return e.recipeID, e.current, e.prof, e.char
 end
 
+-- The item a name is, among the catalogue's outputs (other players' recipes too), or nil.
+function ChatWatch.CatalogueItem(name)
+  local want = lower(name)
+  local cat = type(CraftBoardDB) == "table" and type(CraftBoardDB.recipeNames) == "table" and CraftBoardDB.recipeNames or {}
+  local itemName = NS.Inventory and NS.Inventory.ItemName
+  for _, e in pairs(cat) do
+    local o = type(e) == "table" and e.o
+    local n = type(o) == "number" and itemName and itemName(o)
+    if type(n) == "string" and lower(n) == want then return o end
+  end
+  return nil
+end
+
 -- Resolve an entry's item onto it (by item ID when the line linked one, else by name):
 -- recipeID, current, knownOn (the alt that knows it when the current character doesn't).
 local function ResolveEntry(e)
@@ -676,6 +689,8 @@ function ChatWatch.Add(text, sender, channel, guild)
     local rec = NS.Recipes.Record(e.recipeID)
     asked = type(rec) == "table" and type(rec.o) == "number" and rec.o or nil
   end
+  -- A recipe none of my characters knows: its item by name, from the shared catalogue.
+  if not asked and type(e.itemName) == "string" then asked = ChatWatch.CatalogueItem(e.itemName) end
   if NS.Stats and NS.Stats.NoteDemand and asked then NS.Stats.NoteDemand(asked, from) end
   seen[from] = e
   Prune(from)
