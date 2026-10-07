@@ -335,12 +335,57 @@ local function ForgetChar(name)
 end
 
 -- Slash commands. NS.L comes from Locales.lua, which loads after this file: look it up at call time.
+-- /cb guild: guildmates who use CraftBoard, with their professions and specializations.
+local function PrintGuild()
+  local L = NS.L
+  local C = NS.Comm
+  if not (IsInGuild and IsInGuild()) then
+    NS.Print(L["You are not in a guild."])
+    return
+  end
+  local rows = {}
+  for name, p in pairs(C and C.Peers and C.Peers() or {}) do
+    if C.IsGuildmate and C.IsGuildmate(name) then
+      local parts = {}
+      for id, pr in pairs(type(p.profs) == "table" and p.profs or {}) do
+        if type(pr) == "table" and type(pr.name) == "string" then
+          local text = pr.rank and string.format("%s %d", pr.name, pr.rank) or pr.name
+          local spec = NS.Skills and NS.Skills.SpecFor and NS.Skills.SpecFor(p.specs, id)
+          parts[#parts + 1] = spec and string.format("%s (%s)", text, spec) or text
+        end
+      end
+      table.sort(parts)
+      rows[#rows + 1] = { name = name, online = p.online, text = table.concat(parts, ", ") }
+    end
+  end
+  if #rows == 0 then
+    NS.Print(L["No guildmate CraftBoard knows of yet. They show up as their CraftBoard says hello."])
+    return
+  end
+  table.sort(rows, function(a, b)
+    if a.online ~= b.online then return a.online end
+    return a.name < b.name
+  end)
+  NS.Print(string.format(L["Guild crafters (%d):"], #rows))
+  for _, r in ipairs(rows) do
+    local name = NS.ShortName(r.name)
+    NS.Print(string.format("  %s%s|r: %s", r.online and "|cff40ff40" or "|cff999999", name,
+      r.text ~= "" and r.text or L["no professions shared"]))
+  end
+end
+
 local function PrintHelp()
   local L = NS.L
   NS.Print(L["/cb - open or close CraftBoard"])
   NS.Print(L["/cb find [text] | requests | plan - open a tab (Find searches for the text)"])
   NS.Print(L["/cb busy - toggle busy (CraftBoard users can't whisper you from the board)"])
   NS.Print(L["/cb cd - crafting cooldowns on your characters"])
+  NS.Print(L["/cb uses <reagent> - your recipes that use a reagent"])
+  NS.Print(L["/cb wish [remove <name>] - your wishlist"])
+  NS.Print(L["/cb demand - what players around you asked for most this week"])
+  NS.Print(L["/cb guild - your guildmates' professions"])
+  NS.Print(L["/cb stats - this session's crafting and your most-made recipes"])
+  NS.Print(L["/cb texts - edit the whisper texts CraftBoard types in for you"])
   NS.Print(L["/cb chars - your characters CraftBoard remembers"])
   NS.Print(L["/cb forget <name> - forget one of your characters (see /cb chars)"])
   NS.Print(L["/cb scan - record the open profession window again"])
@@ -409,6 +454,14 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
   elseif cmd == "welcome" then
     if NS.Welcome and NS.Welcome.Show then NS.Welcome.Show() end
   elseif cmd == "debug" then
+    -- /cb debug ondemand: act as if the channel were crowded (Find asks the board, no full lists
+    -- from channel players), to try it out with few players around. Plain English like chatdebug.
+    if strlower(strtrim(rest or "")) == "ondemand" and type(CraftBoardDB) == "table" then
+      CraftBoardDB.forceOnDemand = not CraftBoardDB.forceOnDemand or nil
+      if NS.Comm and NS.Comm.RecheckScale then NS.Comm.RecheckScale() end
+      NS.Print("on-demand recipe questions forced " .. (CraftBoardDB.forceOnDemand and "on" or "off"))
+      return
+    end
     if NS.Comm and NS.Comm.Debug then NS.Comm.Debug() end
     PrintPeers()
   elseif cmd == "dump" then
@@ -443,6 +496,25 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
     ForgetChar(rest)
   elseif cmd == "cd" or cmd == "cooldowns" then
     if NS.Cooldowns and NS.Cooldowns.Print then NS.Cooldowns.Print() end
+  elseif cmd == "demand" then
+    if NS.Stats and NS.Stats.PrintDemand then NS.Stats.PrintDemand() end
+  elseif cmd == "guild" then
+    PrintGuild()
+  elseif cmd == "stats" then
+    if NS.Stats and NS.Stats.Print then NS.Stats.Print() end
+  elseif cmd == "texts" or cmd == "templates" then
+    if NS.Templates and NS.Templates.Show then NS.Templates.Show() end
+  elseif cmd == "wish" or cmd == "wishlist" then
+    -- /cb wish remove <name or link>: takes it off (also items no list shows any more).
+    local sub, what = strsplit(" ", strtrim(rest or ""), 2)
+    if NS.Marks and strlower(sub or "") == "remove" and NS.Marks.RemoveWish then
+      NS.Marks.RemoveWish(what)
+    elseif NS.Marks and NS.Marks.PrintWishes then
+      NS.Marks.PrintWishes()
+    end
+  elseif cmd == "uses" then
+    -- /cb uses <reagent>: Plan's recipes that use it.
+    if NS.UI and NS.UI.SearchReagent then NS.UI.SearchReagent(strtrim(rest or "")) end
   elseif cmd == "busy" then
     if NS.Comm and NS.Comm.ToggleBusy then NS.Comm.ToggleBusy() end
   elseif cmd == "frames" then

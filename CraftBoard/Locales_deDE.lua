@@ -480,3 +480,125 @@ L["Queue and craft"] = "Vormerken und herstellen"
 L["Queue crafts, then Craft next makes them. Buy missing reagents at vendors."] = "Merke Herstellungen vor, dann stellt \"Nächstes herstellen\" sie her. Fehlende Reagenzien kaufst du bei Händlern."
 L["Skill up smarter"] = "Berufe klüger steigern"
 L["%s would need %d; one request can ask for 1000 at most. Post fewer."] = "%s bräuchte %d; eine Anfrage kann höchstens 1000 anfordern. Fordere weniger an."
+
+-- Comm: on-demand recipe questions (W / A)
+L["channel players heard today: %d; recipe lists: %s"] = "Kanalspieler heute gehört: %d; Rezeptlisten: %s"
+L["asked per search (many players)"] = "pro Suche erfragt (viele Spieler)"
+L["swapped in full"] = "vollständig ausgetauscht"
+
+-- Find: asking the board
+L["No known crafter for \"%s\" yet. Asking CraftBoard users..."] = "Noch kein Handwerker für \"%s\" bekannt. CraftBoard-Nutzer werden gefragt..."
+
+-- Marks: pinned recipes, wishlist, reagent search
+L["Add to wishlist"] = "Zur Wunschliste hinzufügen"
+L["Added to your wishlist: %s. You'll hear when someone links it in chat."] = "Zur Wunschliste hinzugefügt: %s. Du erfährst es, wenn jemand es im Chat verlinkt."
+L["My recipes that use this"] = "Meine Rezepte, die das verwenden"
+L["None of your recipes here uses \"%s\"."] = "Keines deiner Rezepte hier verwendet \"%s\"."
+L["Pin to the top"] = "Oben anheften"
+L["Pinned"] = "Angeheftet"
+L["Remove from wishlist"] = "Von der Wunschliste entfernen"
+L["Removed from your wishlist: %s"] = "Von der Wunschliste entfernt: %s"
+L["Search by reagent"] = "Nach Reagenz suchen"
+L["The search box finds your recipes that use a reagent (\"what can I make with Silk Cloth?\")."] = "Das Suchfeld findet deine Rezepte, die ein Reagenz verwenden (\"Was kann ich aus Seidenstoff machen?\")."
+L["Unpin"] = "Lösen"
+L["Wishlist (%d):"] = "Wunschliste (%d):"
+L["Wishlist: %s linked %s in %s."] = "Wunschliste: %s hat %s in %s verlinkt."
+L["Wishlist: %s linked %s."] = "Wunschliste: %s hat %s verlinkt."
+L["Your wishlist is empty. Right-click a recipe in Find to add its item."] = "Deine Wunschliste ist leer. Rechtsklicke ein Rezept in \"Finden\", um seinen Gegenstand hinzuzufügen."
+L["Your wishlist is full (%d items). Remove one first."] = "Deine Wunschliste ist voll (%d Gegenstände). Entferne zuerst einen."
+L["/cb uses <reagent> - your recipes that use a reagent"] = "/cb uses <Reagenz> - deine Rezepte, die ein Reagenz verwenden"
+L["Tell me when someone links my wishlist"] = "Melden, wenn jemand meine Wunschliste verlinkt"
+L["One quiet chat line when someone links an item on your wishlist, or the recipe for it, in public chat. Right-click a recipe in Find to add it. Nothing is sent."] = "Eine unauffällige Chatzeile, wenn jemand einen Gegenstand deiner Wunschliste oder sein Rezept im öffentlichen Chat verlinkt. Rechtsklicke ein Rezept in \"Finden\", um ihn hinzuzufügen. Es wird nichts gesendet."
+
+-- Requests: renewing old requests
+L["Your request for %s expires in about %dh. Renew it on the Requests tab to keep it up."] = "Deine Anfrage für %s läuft in etwa %d h ab. Erneuere sie im Reiter \"Anfragen\", damit sie bleibt."
+L["Renew"] = "Erneuern"
+L["Renewed: %s is up for another day."] = "Erneuert: %s steht einen weiteren Tag."
+L["Posts the request again, with its linked orders, so it stays up for another day."] = "Stellt die Anfrage mit ihren verknüpften Aufträgen erneut ein, damit sie einen weiteren Tag steht."
+L["Expires in about %dh. Renew keeps it up for another day."] = "Läuft in etwa %d h ab. \"Erneuern\" hält sie einen weiteren Tag."
+L["Tell me when my request is about to expire"] = "Melden, wenn meine Anfrage bald abläuft"
+L["One quiet chat line when one of your requests has a few hours left on the board. Renew it on the Requests tab to keep it up."] = "Eine unauffällige Chatzeile, wenn eine deiner Anfragen nur noch wenige Stunden steht. Erneuere sie im Reiter \"Anfragen\", damit sie bleibt."
+
+-- Templates: whisper texts
+L["CraftBoard whisper texts"] = "CraftBoard-Flüstertexte"
+L["{item} becomes the item's link and {qty} the quantity. CraftBoard still only types the whisper in for you: nothing is sent without your click."] = "{item} wird zum Gegenstandslink und {qty} zur Menge. CraftBoard tippt das Flüstern nur für dich ein: Nichts wird ohne deinen Klick gesendet."
+L["Asking a crafter"] = "Einen Handwerker fragen"
+L["Offering to craft"] = "Herstellung anbieten"
+L["Save"] = "Speichern"
+L["Whisper texts saved."] = "Flüstertexte gespeichert."
+L["Use the defaults"] = "Standard verwenden"
+L["/cb texts - edit the whisper texts CraftBoard types in for you"] = "/cb texts - die Flüstertexte bearbeiten, die CraftBoard für dich eintippt"
+L["Whisper texts"] = "Flüstertexte"
+L["Edit"] = "Bearbeiten"
+L["Your own wording for the whispers CraftBoard types in when you ask a crafter or offer to craft."] = "Deine eigenen Worte für das Flüstern, das CraftBoard eintippt, wenn du einen Handwerker fragst oder eine Herstellung anbietest."
+
+-- Stats: crafting history and milestones
+L["First time: you crafted %s!"] = "Zum ersten Mal: Du hast %s hergestellt!"
+L["New rank: %s can now go up to %d."] = "Neuer Rang: %s kann jetzt bis %d steigen."
+L["%s maxed out at %d!"] = "%s ist mit %d gemeistert!"
+L["%s +%d"] = "%s +%d"
+L["This session: %d crafts%s."] = "Diese Sitzung: %d Herstellungen%s."
+L["Crafted on this character: %d. Most made:"] = "Auf diesem Charakter hergestellt: %d. Am häufigsten:"
+L["/cb stats - this session's crafting and your most-made recipes"] = "/cb stats - Herstellungen dieser Sitzung und deine häufigsten Rezepte"
+L["Celebrate crafting milestones"] = "Handwerksmeilensteine feiern"
+L["A gold chat line and a sound when a profession learns a new rank or is maxed out, and the first time you craft something rare or better."] = "Eine goldene Chatzeile und ein Klang, wenn ein Beruf einen neuen Rang lernt oder gemeistert ist, und wenn du zum ersten Mal etwas Seltenes oder Besseres herstellst."
+L["Crafted %d times (%d this session)."] = "%d-mal hergestellt (%d in dieser Sitzung)."
+L["Crafted once."] = "Einmal hergestellt."
+L["Crafted %d times."] = "%d-mal hergestellt."
+
+-- Crafter card: professions, specializations, cooldowns
+L["%s: ready"] = "%s: bereit"
+L["%s: %s"] = "%s: %s"
+L["Shares 1 recipe with you."] = "Teilt 1 Rezept mit dir."
+L["Shares %d recipes with you."] = "Teilt %d Rezepte mit dir."
+
+-- Plan: recipes not learned yet, where to learn them
+L["Trainer"] = "Lehrer"
+L["Not learned yet"] = "Noch nicht erlernt"
+
+-- Demand and guild crafters
+L["%d asks"] = "%d Anfragen"
+L["%d asks, %d crafters known"] = "%d Anfragen, %d Handwerker bekannt"
+L["%d asks, no crafter known"] = "%d Anfragen, kein Handwerker bekannt"
+L["A group at the top with what players around you asked for most this week (board requests and crafting asks in chat)."] = "Eine Gruppe ganz oben mit dem, was Spieler um dich herum diese Woche am häufigsten angefragt haben (Brettanfragen und Handwerksanfragen im Chat)."
+L["Lists only what your guildmates (and your own characters) can craft."] = "Zeigt nur, was deine Gildenmitglieder (und deine eigenen Charaktere) herstellen können."
+L["Most asked for first"] = "Meistgefragtes zuerst"
+L["Most asked for this week"] = "Diese Woche am meisten gefragt"
+L["Most asked for this week:"] = "Diese Woche am meisten gefragt:"
+L["Nothing asked for yet this week. CraftBoard counts board requests and crafting asks it sees in chat."] = "Diese Woche wurde noch nichts angefragt. CraftBoard zählt Brettanfragen und Handwerksanfragen, die es im Chat sieht."
+L["Only guild crafters"] = "Nur Gildenhandwerker"
+L["asked for %d times this week"] = "diese Woche %d-mal gefragt"
+L["asked for once this week"] = "diese Woche einmal gefragt"
+L["You are not in a guild."] = "Du bist in keiner Gilde."
+L["No guildmate CraftBoard knows of yet. They show up as their CraftBoard says hello."] = "CraftBoard kennt noch kein Gildenmitglied. Sie erscheinen, sobald ihr CraftBoard Hallo sagt."
+L["Guild crafters (%d):"] = "Gildenhandwerker (%d):"
+L["no professions shared"] = "keine Berufe geteilt"
+L["/cb demand - what players around you asked for most this week"] = "/cb demand - was Spieler um dich herum diese Woche am häufigsten angefragt haben"
+L["/cb guild - your guildmates' professions"] = "/cb guild - die Berufe deiner Gildenmitglieder"
+
+-- Materials requests and gatherers
+L["Ask the board for %dx %s"] = "Das Brett nach %dx %s fragen"
+L["Posted: looking for %dx %s"] = "Eingestellt: suche %dx %s"
+L["%s (%s %d)"] = "%s (%s %d)"
+L["Materials: %s"] = "Material: %s"
+L["[CraftBoard] I have %s for you."] = "[CraftBoard] Ich habe %s für dich."
+L["Looking for the materials, not a craft."] = "Sucht das Material selbst, keine Herstellung."
+L["None of your characters has any."] = "Keiner deiner Charaktere hat welche."
+L["You have %d (%d more on alts)."] = "Du hast %d (%d weitere auf Twinks)."
+L["You have %d."] = "Du hast %d."
+L["Gatherers: %s"] = "Sammler: %s"
+
+-- Chat offers
+L["that"] = "das"
+
+-- Plan: keyboard on recipes not learned yet
+L["%s: not learned yet. Press Enter (or A) to see who can craft it."] = "%s: noch nicht erlernt. Drücke Enter (oder A), um zu sehen, wer es herstellen kann."
+
+-- Wishlist removal
+L["Not on your wishlist (see /cb wish)."] = "Nicht auf deiner Wunschliste (siehe /cb wish)."
+L["/cb wish remove <name> takes one off."] = "/cb wish remove <Name> entfernt einen."
+L["/cb wish [remove <name>] - your wishlist"] = "/cb wish [remove <Name>] - deine Wunschliste"
+
+-- Renew with others' linked orders
+L["Another player posted a linked order for this request: it can't be renewed without taking theirs down."] = "Ein anderer Spieler hat einen verknüpften Auftrag zu dieser Anfrage eingestellt: Sie kann nicht erneuert werden, ohne seinen zu entfernen."
+

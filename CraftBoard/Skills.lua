@@ -304,6 +304,91 @@ function Skills.Ranks()
   return out
 end
 
+-- Specializations ---------------------------------------------------------------
+-- Classic specializations by spell ID (the spell the specialization teaches) and the profession
+-- they belong to. Names come from the client (localized); the English ones are a fallback.
+Skills.SPECS = {
+  [10656] = { prof = 165, name = "Dragonscale Leatherworking" },
+  [10658] = { prof = 165, name = "Elemental Leatherworking" },
+  [10660] = { prof = 165, name = "Tribal Leatherworking" },
+  [20219] = { prof = 202, name = "Gnomish Engineer" },
+  [20222] = { prof = 202, name = "Goblin Engineer" },
+  [9788] = { prof = 164, name = "Armorsmith" },
+  [9787] = { prof = 164, name = "Weaponsmith" },
+  [17039] = { prof = 164, name = "Master Swordsmith" },
+  [17040] = { prof = 164, name = "Master Hammersmith" },
+  [17041] = { prof = 164, name = "Master Axesmith" },
+}
+
+-- true / false, or nil when the client won't say right now (a secret value).
+local function Knows(spellID)
+  local unknown = false
+  -- (Either API may be missing: a list with a nil first entry would stop ipairs.)
+  for _, fn in pairs({ IsPlayerSpell or false, IsSpellKnown or false }) do
+    if type(fn) == "function" then
+      local ok, yes = pcall(fn, spellID)
+      if ok and IsSecret(yes) then
+        unknown = true
+      elseif ok and yes then
+        return true
+      end
+    end
+  end
+  if unknown then return nil end
+  return false
+end
+
+function Skills.SpecName(spellID)
+  local name
+  if C_Spell and C_Spell.GetSpellName then
+    local ok, n = pcall(C_Spell.GetSpellName, spellID)
+    if ok and type(n) == "string" and not IsSecret(n) then name = n end
+  end
+  local s = Skills.SPECS[spellID]
+  return name or (s and s.name) or tostring(spellID)
+end
+
+-- My current character's specializations: chars[Me].specs = { [spellID] = true } (nil: none),
+-- read from the spellbook. Fires SKILLS_UPDATED on a change.
+function Skills.ReadSpecs()
+  local c = MyChar()
+  if not c then return end
+  local found, n = {}, 0
+  for id in pairs(Skills.SPECS) do
+    local known = Knows(id)
+    -- Can't tell now: the saved set stays as it is until the next read.
+    if known == nil then return end
+    if known then found[id], n = true, n + 1 end
+  end
+  local old = type(c.specs) == "table" and c.specs or {}
+  local changed = false
+  for id in pairs(Skills.SPECS) do
+    if (old[id] or false) ~= (found[id] or false) then changed = true end
+  end
+  c.specs = n > 0 and found or nil
+  if changed then NS.Fire("SKILLS_UPDATED") end
+end
+
+-- Spell IDs of a set of specializations ({ [spellID] = true }), sorted.
+function Skills.SpecList(set)
+  local out = {}
+  for id in pairs(type(set) == "table" and set or {}) do
+    if Skills.SPECS[id] then out[#out + 1] = id end
+  end
+  table.sort(out)
+  return out
+end
+
+-- "Dragonscale Leatherworking" for profID among set, or nil.
+-- A master smith also knows Weaponsmith: the master specialization (the higher spell ID) wins.
+function Skills.SpecFor(set, profID)
+  local best
+  for _, id in ipairs(Skills.SpecList(set)) do
+    if Skills.SPECS[id].prof == profID then best = id end
+  end
+  return best and Skills.SpecName(best) or nil
+end
+
 -- Trainer reminders ------------------------------------------------------------
 
 local function NoticeOn()
@@ -414,7 +499,22 @@ local function TrainerSoon()
   end)
 end
 
-NS.Register("PLAYER_LOGIN", function() Soon(6) end)
+NS.Register("PLAYER_LOGIN", function()
+  Soon(6)
+  C_Timer.After(7, Skills.ReadSpecs)
+end)
+-- SPELLS_CHANGED comes in bursts: one read after it settles.
+local specsPending = false
+local function SpecsSoon()
+  if specsPending then return end
+  specsPending = true
+  C_Timer.After(2, function()
+    specsPending = false
+    Skills.ReadSpecs()
+  end)
+end
+pcall(NS.Register, "LEARNED_SPELL_IN_TAB", SpecsSoon)
+pcall(NS.Register, "SPELLS_CHANGED", SpecsSoon)
 NS.Register("SKILL_LINES_CHANGED", function() Soon(2) end)
 NS.Register("CHAT_MSG_SKILL", function() Soon(2) end)
 NS.Register("PLAYER_LEVEL_UP", function() Soon(2) end)

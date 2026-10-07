@@ -385,8 +385,7 @@ local function InsertLink(link)
 end
 
 local function RequestText(itemID, qty)
-  local label = ItemLink(itemID) or ItemName(itemID)
-  return format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty, label)
+  return NS.Templates.Request(ItemLink(itemID) or ItemName(itemID), qty)
 end
 
 -- Opens the chat box in whisper mode to `name` with the request template typed in, so it is
@@ -1138,7 +1137,8 @@ end
 --    Professions_Recipe_Hover (309x21, alpha 0.5, HIGHLIGHT) on hover, both centred 1 px low.
 -- The row is sized to its slot (bar + the 1 px ScrollBox spacing and paddings); the hit rect
 -- covers the bar only.
-local function GroupRowFactory(onSelect, onToggle)
+-- onMenu(row, item): right-click on a recipe row (optional).
+local function GroupRowFactory(onSelect, onToggle, onMenu)
   return function(parent)
     local row = CreateFrame("Button", nil, parent)
     local midY = -(ROW.recipeBar / 2) - 1
@@ -1231,13 +1231,25 @@ local function GroupRowFactory(onSelect, onToggle)
 
     row:SetScript("OnEnter", function(self)
       local it = self.item
-      if it and not it.kind then ShowTooltip(self, it.outputItemID, it.recipeID) end
+      if it and not it.kind then
+        ShowTooltip(self, it.outputItemID, it.recipeID)
+        if onMenu and GameTooltip and GameTooltip:IsShown() then
+          GameTooltip:AddLine(L["Right-click for actions"], MUTED[1], MUTED[2], MUTED[3])
+          GameTooltip:Show()
+        end
+      end
     end)
     row:SetScript("OnLeave", HideTooltip)
-    row:SetScript("OnClick", function(self)
+    if onMenu and row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+    row:SetScript("OnClick", function(self, button)
       local it = self.item
       if not it then return end
-      if it.kind then onToggle(it) else onSelect(it) end
+      if it.kind then onToggle(it) return end
+      if button == "RightButton" then
+        if onMenu and not it.placeholder then onMenu(self, it) end
+        return
+      end
+      onSelect(it)
     end)
     return row
   end
@@ -1465,18 +1477,22 @@ local function CrafterRow(parent, rowH)
   row.name:SetPoint("RIGHT", row.state, "LEFT", -6, 0)
   row:SetScript("OnEnter", function(self)
     local c = self.crafter
-    if c and c.busy then
+    if not c then return end
+    if c.busy then
       TextTooltip(self, Short(c.name), L["Busy: not taking whispers from the board right now."])
-    elseif c and not c.mine then
+    elseif not c.mine then
       TextTooltip(self, Short(c.name), find.itemID and L["Click to whisper a request."] or nil)
     else
-      return
+      TextTooltip(self, Short(c.name))
     end
-    local crafted = NS.Trade and NS.Trade.CraftedText(c.name)
-    if crafted and GameTooltip then
-      GameTooltip:AddLine(crafted, MUTED[1], MUTED[2], MUTED[3], true)
-      GameTooltip:Show()
+    if not GameTooltip then return end
+    -- The crafter card: professions (with specialization), cooldowns, what they share.
+    for _, line in ipairs(find.CrafterCard(c)) do
+      GameTooltip:AddLine(line[1], line[2][1], line[2][2], line[2][3], true)
     end
+    local crafted = not c.mine and NS.Trade and NS.Trade.CraftedText(c.name)
+    if crafted then GameTooltip:AddLine(crafted, MUTED[1], MUTED[2], MUTED[3], true) end
+    GameTooltip:Show()
   end)
   row:SetScript("OnClick", function(self)
     local c = self.crafter
@@ -1513,8 +1529,9 @@ local function FillCrafterRow(row, c)
     state = state .. DOT .. (left <= 0 and (GREEN .. L["ready"] .. "|r") or format(L["cooldown %s"], NS.Cooldowns.Text(left)))
   end
   row.state:SetText(state)
-  -- Busy rows keep the mouse for their tooltip; OnClick ignores them.
-  row:EnableMouse(not c.mine)
+  -- Every row keeps the mouse for its tooltip (the crafter card); OnClick ignores busy rows and
+  -- my own characters.
+  row:EnableMouse(true)
   row.sel:SetShown(not c.mine and not c.busy and c.name == find.crafter)
 end
 
@@ -1562,7 +1579,15 @@ local function ReagentRow(parent, rowH)
   end)
   row:SetScript("OnLeave", HideTooltip)
   -- Like a shift-click: drop the item link into an open chat box (handy for asking guild).
-  row:SetScript("OnClick", function(self) InsertLink(ItemLink(self.itemID)) end)
+  -- Right-click: ask the board for the material, or list my recipes that use it.
+  if row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+  row:SetScript("OnClick", function(self, button)
+    if button == "RightButton" then
+      if self.itemID and find.ReagentMenu then find.ReagentMenu(self, self.itemID, self.short, self.need) end
+      return
+    end
+    InsertLink(ItemLink(self.itemID))
+  end)
   return row
 end
 
@@ -1570,6 +1595,8 @@ end
 local function FillReagentRow(row, r)
   row.itemID = r.itemID
   row.makers = r.makers
+  row.short = max(0, (r.need or 0) - (r.have or 0))
+  row.need = r.need
   row.icon:SetTexture(ItemIcon(r.itemID) or TEX.question)
   local text = format(L["%d/%d %s"], r.have, r.need, ItemName(r.itemID))
   -- What my other characters carry ("+12 on alts"), in grey, when it would help.
@@ -1718,58 +1745,73 @@ local function BuildUniverse()
   local myRecipes = R and R.Mine and R.Mine() or {}
   local profCount = {}
   universe, universeByID, universeByItem = {}, {}, {}
+  -- "Only guild crafters": Find shows only guildmates (and my characters); the chain index
+  -- (universeByItem, read by Requests and Plan too) keeps everyone.
+  local guildOnly = find.GuildOnly()
+  local guildmate = NS.Comm and NS.Comm.IsGuildmate
   for _, e in ipairs(all) do
-    local out = OutputOf(e.recipeID, e)
-    local itemName = out and I and I.ItemName and I.ItemName(out)
-    local name = e.name
-    -- Search fell back to the generic "Recipe <id>" label: the output item name reads better.
-    if itemName and name == format(L["Recipe %d"], e.recipeID) then name = itemName end
-    local u = {
-      recipeID = e.recipeID, name = name, outputItemID = out, crafters = e.crafters or {},
-      lname = strlower(name or ""), litem = itemName and strlower(itemName) or nil,
-      prof = ProfOf(e.recipeID), group = R and R.GroupOf and R.GroupOf(e.recipeID, out) or L["Other"], me = false, alt = nil, onlineN = 0, onlineName = nil,
-      peersN = 0, peerName = nil, ready = false, times = 0,
-    }
-    for _, c in ipairs(u.crafters) do
-      if c.mine then
-        if c.name == NS.Me then
-          u.me = true
-        elseif not u.alt then
-          -- An alt only counts when it can supply this realm and faction (linked orders, "Alt").
-          local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
-          local reachable = NS.Inventory and NS.Inventory.Reachable
-          if not reachable or reachable(c.name, chars[c.name]) then u.alt = Short(c.name) end
-        end
-      else
-        u.peersN = u.peersN + 1
-        u.peerName = u.peerName or Short(c.name)
-        if c.online then
-          u.onlineN = u.onlineN + 1
-          u.onlineName = u.onlineName or Short(c.name)
-        end
+    local shown = e.crafters or {}
+    if guildOnly and guildmate then
+      shown = {}
+      for _, c in ipairs(e.crafters or {}) do
+        if c.mine or guildmate(c.name) then shown[#shown + 1] = c end
       end
     end
-    local rec = myRecipes[e.recipeID]
-    if u.me and rec and I and I.CanCraft then
-      local cc = I.CanCraft(rec)
-      u.ready, u.times = cc.ready and true or false, cc.times or 0
-    end
-    if u.prof ~= nil then profCount[u.prof] = (profCount[u.prof] or 0) + 1 end
-    universe[#universe + 1] = u
-    universeByID[u.recipeID] = u
-    if out then
-      local m = universeByItem[out]
-      if not m then
-        m = { me = false, alt = nil, peersN = 0, crafters = {}, seen = {} }
-        universeByItem[out] = m
-      end
-      m.me = m.me or u.me
-      m.alt = m.alt or u.alt
+    if #(e.crafters or {}) > 0 then
+      local out = OutputOf(e.recipeID, e)
+      local itemName = out and I and I.ItemName and I.ItemName(out)
+      local name = e.name
+      -- Search fell back to the generic "Recipe <id>" label: the output item name reads better.
+      if itemName and name == format(L["Recipe %d"], e.recipeID) then name = itemName end
+      local u = {
+        recipeID = e.recipeID, name = name, outputItemID = out, crafters = shown,
+        lname = strlower(name or ""), litem = itemName and strlower(itemName) or nil,
+        prof = ProfOf(e.recipeID), group = R and R.GroupOf and R.GroupOf(e.recipeID, out) or L["Other"], me = false, alt = nil, onlineN = 0, onlineName = nil,
+        peersN = 0, peerName = nil, ready = false, times = 0,
+      }
       for _, c in ipairs(u.crafters) do
-        if type(c.name) == "string" and not m.seen[c.name] then
-          m.seen[c.name] = true
-          m.crafters[#m.crafters + 1] = c
-          if not c.mine then m.peersN = m.peersN + 1 end
+        if c.mine then
+          if c.name == NS.Me then
+            u.me = true
+          elseif not u.alt then
+            -- An alt only counts when it can supply this realm and faction (linked orders, "Alt").
+            local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+            local reachable = NS.Inventory and NS.Inventory.Reachable
+            if not reachable or reachable(c.name, chars[c.name]) then u.alt = Short(c.name) end
+          end
+        else
+          u.peersN = u.peersN + 1
+          u.peerName = u.peerName or Short(c.name)
+          if c.online then
+            u.onlineN = u.onlineN + 1
+            u.onlineName = u.onlineName or Short(c.name)
+          end
+        end
+      end
+      local rec = myRecipes[e.recipeID]
+      if u.me and rec and I and I.CanCraft then
+        local cc = I.CanCraft(rec)
+        u.ready, u.times = cc.ready and true or false, cc.times or 0
+      end
+      if #shown > 0 then
+        if u.prof ~= nil then profCount[u.prof] = (profCount[u.prof] or 0) + 1 end
+        universe[#universe + 1] = u
+        universeByID[u.recipeID] = u
+      end
+      if out then
+        local m = universeByItem[out]
+        if not m then
+          m = { me = false, alt = nil, peersN = 0, crafters = {}, seen = {} }
+          universeByItem[out] = m
+        end
+        m.me = m.me or u.me
+        m.alt = m.alt or u.alt
+        for _, c in ipairs(e.crafters) do
+          if type(c.name) == "string" and not m.seen[c.name] then
+            m.seen[c.name] = true
+            m.crafters[#m.crafters + 1] = c
+            if not c.mine then m.peersN = m.peersN + 1 end
+          end
         end
       end
     end
@@ -2001,6 +2043,66 @@ function find.SetHideMine(on)
   UI.FilterFind(false)
 end
 
+-- "Most asked for first" (CraftBoardDB.ui.findDemand): a group of the week's most-asked items.
+function find.DemandOn()
+  local db = UIDB()
+  return db ~= nil and db.findDemand == true
+end
+
+function find.SetDemand(on)
+  local db = UIDB()
+  if db then db.findDemand = on and true or nil end
+  UI.FilterFind(false)
+end
+
+-- "Only guild crafters" (CraftBoardDB.ui.findGuild): crafters outside the guild are left out.
+function find.GuildOnly()
+  local db = UIDB()
+  return db ~= nil and db.findGuild == true
+end
+
+function find.SetGuildOnly(on)
+  local db = UIDB()
+  if db then db.findGuild = on and true or nil end
+  find.universeDirty = true
+  UI.RefreshFind(false)
+end
+
+-- The week's most-asked items among entries, as a leading group (like Pinned).
+function find.WithDemand(items, nav, entries, depth)
+  if not (find.DemandOn() and NS.Stats) then return items, nav end
+  local list, seenOut = {}, {}
+  for _, u in ipairs(entries) do
+    -- One row per item (several recipes can make it).
+    local n = u.outputItemID and not seenOut[u.outputItemID] and NS.Stats.Demand(u.outputItemID) or 0
+    if u.outputItemID then seenOut[u.outputItemID] = true end
+    if n >= 2 then list[#list + 1] = { u = u, n = n } end
+  end
+  if #list == 0 then return items, nav end
+  table.sort(list, function(a, b)
+    if a.n ~= b.n then return a.n > b.n end
+    return a.u.name < b.u.name
+  end)
+  local name = L["Most asked for this week"]
+  local open = find.searching or not Collapsed()[name]
+  local out, outNav = { { kind = "cat", name = name, count = min(#list, 15), depth = depth, collapsed = not open } }, {}
+  if open then
+    for i = 1, min(#list, 15) do
+      local copy = setmetatable({ depth = depth + 1, gap = i == min(#list, 15), demand = list[i].n }, { __index = list[i].u })
+      out[#out + 1] = copy
+      copy.idx = #out
+      outNav[#outNav + 1] = copy
+    end
+  end
+  local shift = #out
+  for _, it in ipairs(items) do out[#out + 1] = it end
+  for _, e in ipairs(nav) do
+    e.idx = e.idx + shift
+    outNav[#outNav + 1] = e
+  end
+  return out, outNav
+end
+
 -- I can get it myself: this character makes it, or an alt on this realm and faction (u.alt)
 -- makes an item it can mail me. An alt's enchant with no item (no scroll) doesn't count: it is
 -- cast on the gear in a trade, and my gear can't go to my alt.
@@ -2030,6 +2132,18 @@ end
 -- closes the standalone window (inside ProfessionsFrame it only lets go of the keyboard, so the
 -- next Escape closes Blizzard's window the usual way). t.keyOf / t.selectedKey / t.selectKey map entries to the selection
 -- (default: Find's recipe IDs).
+-- Where the selection is in a list t.results, for the arrow keys and the D-pad. A recipe can be
+-- listed twice (its Pinned or Most asked copy, Plan's Best next): the row last moved to wins
+-- while it still holds the selection, so stepping goes on from there instead of jumping back.
+function UI.NavIndex(t, list, keyOf, cur)
+  local pos = t.navPos
+  if pos and list[pos] and keyOf(list[pos]) == cur then return pos end
+  for i, u in ipairs(list) do
+    if keyOf(u) == cur then return i end
+  end
+  return 0
+end
+
 local function NewSearchBox(name, parent, t)
   local keyOf = t.keyOf or function(u) return u.recipeID end
   local current = t.selectedKey or function() return selectedID end
@@ -2095,10 +2209,7 @@ local function NewSearchBox(name, parent, t)
   box:SetScript("OnArrowPressed", function(_, key)
     local list = t.results or {}
     if #list == 0 then return end
-    local idx, cur = 0, current()
-    for i, u in ipairs(list) do
-      if keyOf(u) == cur then idx = i break end
-    end
+    local idx = UI.NavIndex(t, list, keyOf, current())
     if key == "DOWN" then
       idx = min(#list, idx + 1)
     elseif key == "UP" then
@@ -2107,6 +2218,7 @@ local function NewSearchBox(name, parent, t)
       return
     end
     t.arrowed = true
+    t.navPos = idx
     selectKey(keyOf(list[idx]))
     t.list:ScrollTo(list[idx].idx)
   end)
@@ -2213,7 +2325,8 @@ local function BuildColumns(p, t, listName, fillEntry, entries, isDefault, reset
   t.search:SetPoint("RIGHT", t.filter, "LEFT", -4, 0)
 
   GroupList(t, left, listName,
-    GroupRowFactory(function(it) UI.PickRecipe(it.recipeID) end, function(it) ToggleGroup(t, it) end),
+    GroupRowFactory(function(it) UI.PickRecipe(it.recipeID) end, function(it) ToggleGroup(t, it) end,
+      t.showMenu),
     GroupFill(fillEntry))
   return CardForm(p, t, left)
 end
@@ -2315,7 +2428,7 @@ end
 local function FillFindEntry(row, u)
   row.name:SetText(u.ready and (u.name .. CountText(u.times)) or u.name)
   row.name:SetTextColor(NameRGB(u.outputItemID))
-  row.status:SetText(StatusText(u))
+  row.status:SetText(rawget(u, "demand") and format(L["%d asks"], u.demand) or StatusText(u))
   row.sel:SetShown(u.recipeID == selectedID)
 end
 
@@ -2428,19 +2541,271 @@ function find.Entries()
     local e = { { kind = "check", text = L["Hide what I can craft"],
       tip = L["Leaves out what this character can make, and items your characters on this realm and faction can make and mail you. An enchant only an alt knows stays: without a scroll it has to be put on your gear by someone who is there."],
       get = find.HideMine, set = function() find.SetHideMine(not find.HideMine()) end },
+      { kind = "check", text = L["Most asked for first"],
+        tip = L["A group at the top with what players around you asked for most this week (board requests and crafting asks in chat)."],
+        get = find.DemandOn, set = function() find.SetDemand(not find.DemandOn()) end },
+      { kind = "check", text = L["Only guild crafters"],
+        tip = L["Lists only what your guildmates (and your own characters) can craft."],
+        get = find.GuildOnly, set = function() find.SetGuildOnly(not find.GuildOnly()) end },
       { kind = "divider" } }
     for _, x in ipairs(profs()) do e[#e + 1] = x end
     return e
   end
 end
 
+-- Lines for a crafter's card ({ text, rgb }): their professions with rank and specialization,
+-- crafting cooldowns, and how many recipes they share. Peers from what their hellos said; my
+-- characters from my own records.
+-- The card's lines as one text (tests, debugging).
+function UI.CrafterCardText(c)
+  local parts = {}
+  for _, line in ipairs(find.CrafterCard(c)) do parts[#parts + 1] = line[1] end
+  return table.concat(parts, "\n")
+end
+
+function find.CrafterCard(c)
+  local out = {}
+  local profs, specs, cd, shared
+  if c.mine then
+    local ch = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars[c.name]
+    if type(ch) == "table" then
+      profs, specs, cd = {}, ch.specs, ch.cd
+      for id, e in pairs(type(ch.profs) == "table" and ch.profs or {}) do
+        if type(e) == "table" and not e.gone then profs[id] = { name = e.name or e[1], rank = e.rank or e[2], max = e.max or e[3] } end
+      end
+    end
+  else
+    local p = NS.Comm and NS.Comm.Peer and NS.Comm.Peer(c.name)
+    if p then
+      profs, specs, cd = p.profs, p.specs, p.cd
+      -- Not counted when only part of their book is known (crowded channel, asked per search).
+      if not p.partial then
+        shared = 0
+        for _ in pairs(p.recipes or {}) do shared = shared + 1 end
+      end
+    end
+  end
+  local S = NS.Skills
+  local rows = {}
+  for id, pr in pairs(profs or {}) do
+    if type(pr) == "table" and type(pr.name) == "string" then
+      local text = pr.rank and (pr.max and format(L["%s %d/%d"], pr.name, pr.rank, pr.max) or format("%s %d", pr.name, pr.rank)) or pr.name
+      local spec = S and S.SpecFor and S.SpecFor(specs, id)
+      if spec then text = text .. DOT .. spec end
+      rows[#rows + 1] = text
+    end
+  end
+  table.sort(rows)
+  for _, r in ipairs(rows) do out[#out + 1] = { r, C.label } end
+  local now, cds = time(), {}
+  for id, at in pairs(type(cd) == "table" and cd or {}) do
+    if type(id) == "number" and type(at) == "number" then
+      local name = NS.Recipes and NS.Recipes.NameOf and NS.Recipes.NameOf(id) or tostring(id)
+      cds[#cds + 1] = { name = name, left = at - now }
+    end
+  end
+  table.sort(cds, function(a, b) return a.name < b.name end)
+  for i = 1, min(#cds, 4) do
+    local e = cds[i]
+    out[#out + 1] = { e.left <= 0 and format(L["%s: ready"], e.name)
+      or format(L["%s: %s"], e.name, NS.Cooldowns and NS.Cooldowns.Text(e.left) or ""), e.left <= 0 and { 0.25, 1, 0.25 } or MUTED }
+  end
+  if shared and shared > 0 then
+    out[#out + 1] = { format(shared == 1 and L["Shares 1 recipe with you."] or L["Shares %d recipes with you."], shared), MUTED }
+  end
+  return out
+end
+
+-- A reagent slot's menu: ask the board for the material (what is short, else one stack's worth
+-- of what the slot needs), and my recipes that use it.
+function find.ReagentMenu(owner, itemID, short, need)
+  local name = ItemName(itemID)
+  local qty = min(1000, max(1, (short and short > 0) and short or need or 1))
+  local actions = {
+    { text = format(L["Ask the board for %dx %s"], qty, name), fn = function()
+      if not (NS.Comm and NS.Comm.PostRequest) then return end
+      if NS.Comm.PostRequest(itemID, qty, "", nil, "m") then
+        NS.Print(format(L["Posted: looking for %dx %s"], qty, name))
+        UI.Refresh()
+      end
+    end },
+    { text = L["My recipes that use this"], fn = function() UI.SearchReagentItem(itemID) end },
+  }
+  find.ContextMenu(owner, name, actions)
+end
+
+-- Gathering professions (Herbalism, Mining, Skinning) of my characters and of online players on
+-- the board: { "Bob (Mining 250)", ... }, mine first, at most `limit`.
+local GATHER = { [182] = true, [186] = true, [393] = true }
+-- Which gathering profession brings in an item: Trade Goods subclasses Herb, Metal & Stone and
+-- Leather (nil for anything else: cloth, crafted parts, vendor reagents).
+local GATHER_BY_SUBCLASS = { [9] = 182, [7] = 186, [6] = 393 }
+function find.GatherProfFor(itemID)
+  local instant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+  if not (instant and type(itemID) == "number") then return nil end
+  local ok, _, _, _, _, _, classID, subclassID = pcall(instant, itemID)
+  local tradeGoods = Enum and Enum.ItemClass and Enum.ItemClass.Tradegoods or 7
+  if not ok or classID ~= tradeGoods then return nil end
+  return GATHER_BY_SUBCLASS[subclassID]
+end
+
+-- Gatherers for an item: only the profession that brings it in (none when nobody gathers it).
+function find.Gatherers(limit, itemID)
+  local want = find.GatherProfFor(itemID)
+  if not want then return {} end
+  local GATHER = { [want] = true }
+  local out = {}
+  local function add(name, id, pr, mine)
+    if #out >= limit or type(pr) ~= "table" then return end
+    local pname = pr.name or pr[1]
+    local rank = pr.rank or pr[2]
+    if type(pname) ~= "string" then return end
+    out[#out + 1] = format(L["%s (%s %d)"], (mine and GOLD_HEX or "") .. Short(name) .. (mine and "|r" or ""), pname, rank or 0)
+  end
+  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+  local reachable = NS.Inventory and NS.Inventory.Reachable
+  for name, c in pairs(chars) do
+    -- Only characters who can mail it here (this realm and faction).
+    if name == NS.Me or not reachable or reachable(name, c) then
+      for id, pr in pairs(type(c) == "table" and type(c.profs) == "table" and c.profs or {}) do
+        if GATHER[id] and type(pr) == "table" and not pr.gone then add(name, id, pr, true) end
+      end
+    end
+  end
+  for name, p in pairs(NS.Comm and NS.Comm.Peers and NS.Comm.Peers() or {}) do
+    if p.online and not p.busy then
+      for id, pr in pairs(p.profs or {}) do
+        if GATHER[id] then add(name, id, pr, false) end
+      end
+    end
+  end
+  return out
+end
+
+-- A right-click menu: { {text=, fn=}, ... } under a title. Without the menu API nothing opens
+-- (every action has another way in: the card, the Filter, a slash command).
+function find.ContextMenu(owner, title, actions)
+  if #actions == 0 then return end
+  if MenuUtil and MenuUtil.CreateContextMenu then
+    pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
+      if root.CreateTitle and title then root:CreateTitle(title) end
+      for _, a in ipairs(actions) do root:CreateButton(a.text, a.fn) end
+    end)
+    return
+  end
+  find.PopupMenu(owner, title, actions)
+end
+
+-- Without the menu API: a small panel of buttons by the row (Escape or Cancel closes it).
+function find.PopupMenu(owner, title, actions)
+  local f = find.popup
+  if not f then
+    f = CreateFrame("Frame", "CraftBoardActionPopup", UIParent)
+    f:SetFrameStrata("DIALOG")
+    f:EnableMouse(true)
+    local bg = f:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.05, 0.05, 0.05, 0.95)
+    f.title = Label(f, nil, "GameFontNormal")
+    f.title:SetPoint("TOPLEFT", 8, -8)
+    f.buttons = {}
+    if type(UISpecialFrames) == "table" then table.insert(UISpecialFrames, "CraftBoardActionPopup") end
+    find.popup = f
+  end
+  f.title:SetText(title or "")
+  local list = {}
+  for _, a in ipairs(actions) do list[#list + 1] = a end
+  list[#list + 1] = { text = CANCEL or L["Hide"], fn = function() end }
+  for i, a in ipairs(list) do
+    local b = f.buttons[i]
+    if not b then
+      b = PanelButton(f, "", 200, 22)
+      b:SetPoint("TOPLEFT", 8, -28 - (i - 1) * 24)
+      f.buttons[i] = b
+    end
+    b:SetText(a.text)
+    b:SetScript("OnClick", function()
+      f:Hide()
+      a.fn()
+    end)
+    b:Show()
+  end
+  for i = #list + 1, #f.buttons do f.buttons[i]:Hide() end
+  f:SetSize(216, 36 + #list * 24)
+  f:ClearAllPoints()
+  f:SetPoint("TOPLEFT", owner, "TOPRIGHT", 4, 0)
+  f:Show()
+end
+
+-- The marks every recipe row's menu offers (Find and Plan): pin, wishlist (an item I can't get
+-- myself), and the recipes of mine that use the item.
+function find.MarkActions(recipeID, itemID, canMake)
+  local M, out = NS.Marks, {}
+  if not M then return out end
+  out[#out + 1] = { text = M.IsPinned(recipeID) and L["Unpin"] or L["Pin to the top"], fn = function()
+    M.TogglePin(recipeID)
+    UI.Refresh()
+  end }
+  -- (Already wished: it stays removable, even once I can make it myself.)
+  if itemID and (not canMake or M.IsWished(itemID)) then
+    out[#out + 1] = { text = M.IsWished(itemID) and L["Remove from wishlist"] or L["Add to wishlist"], fn = function()
+      local on = M.ToggleWish(itemID)
+      if on ~= nil then
+        NS.Print(format(on and L["Added to your wishlist: %s. You'll hear when someone links it in chat."]
+          or L["Removed from your wishlist: %s"], NS.ItemLabel and NS.ItemLabel(itemID) or ItemName(itemID)))
+      end
+    end }
+  end
+  if itemID then
+    out[#out + 1] = { text = L["My recipes that use this"], fn = function() UI.SearchReagentItem(itemID) end }
+  end
+  return out
+end
+
+function find.showMenu(row, u)
+  if not u.recipeID then return end
+  UI.PickRecipe(u.recipeID)
+  find.ContextMenu(row, u.name, find.MarkActions(u.recipeID, u.outputItemID, find.CanMakeMyself(u)))
+end
+
+-- "Pinned" leads the list: copies of the pinned recipes among items (the recipes keep their
+-- own rows too). Shifts the given items and nav along.
+function find.WithPinned(items, nav, entries, depth)
+  local M = NS.Marks
+  if not (M and M.AnyPinned()) then return items, nav end
+  local pinned = {}
+  for _, e in ipairs(entries) do
+    if M.IsPinned(e.recipeID) then pinned[#pinned + 1] = e end
+  end
+  if #pinned == 0 then return items, nav end
+  local name = L["Pinned"]
+  local open = find.searching or not Collapsed()[name]
+  local out, outNav = { { kind = "cat", name = name, count = #pinned, depth = depth, collapsed = not open } }, {}
+  if open then
+    for i, e in ipairs(pinned) do
+      local copy = setmetatable({ depth = depth + 1, gap = i == #pinned, pinnedCopy = true }, { __index = e })
+      out[#out + 1] = copy
+      copy.idx = #out
+      outNav[#outNav + 1] = copy
+    end
+  end
+  local shift = #out
+  for _, it in ipairs(items) do out[#out + 1] = it end
+  for _, e in ipairs(nav) do
+    e.idx = e.idx + shift
+    outNav[#outNav + 1] = e
+  end
+  return out, outNav
+end
+
 local function BuildFind(p)
   find.refilter = function(keep) UI.FilterFind(keep) end
   local d = BuildColumns(p, find, "CraftBoardFindScroll", FillFindEntry, find.Entries(),
-    function() return find.prof == nil and not find.HideMine() end, function()
+    function() return find.prof == nil and not find.HideMine() and not find.DemandOn() and not find.GuildOnly() end, function()
       local db = UIDB()
-      if db then db.findProf, db.findHideMine = nil, nil end
-      UI.FilterFind(false)
+      local guild = db and db.findGuild
+      if db then db.findProf, db.findHideMine, db.findDemand, db.findGuild = nil, nil, nil, nil end
+      if guild then find.universeDirty = true UI.RefreshFind(false) else UI.FilterFind(false) end
     end)
 
   find.none = Placeholder(d, L["Select a recipe to see who can craft it."])
@@ -2634,8 +2999,10 @@ function UI.RefreshDetail()
 
   local itemID = OutputOf(e.recipeID, e)
   find.itemID = itemID
-  FillHeader(find.header, e.recipeID, itemID, e.name, ProfLine(find.profNames or {}, e.prof),
-    ItemDescription(e.recipeID, itemID))
+  local sub = ProfLine(find.profNames or {}, e.prof)
+  local asks = itemID and NS.Stats and NS.Stats.Demand(itemID) or 0
+  if asks > 0 then sub = sub .. DOT .. format(asks == 1 and L["asked for once this week"] or L["asked for %d times this week"], asks) end
+  FillHeader(find.header, e.recipeID, itemID, e.name, sub, ItemDescription(e.recipeID, itemID))
   AnchorBelowHeader(find.header, find.reagLabel)
   SetDetailBackground(find, e.prof)
 
@@ -2664,6 +3031,12 @@ function UI.RefreshDetail()
     find.crafterLabel:SetPoint("TOPLEFT", find.reagents.box, "BOTTOMLEFT", -1, -12)
   end
   find.crafters:SetItems(e.crafters, L["No known crafters."], true)
+  -- Nobody else who can take it now (online, not busy) on a crowded channel: ask who makes it.
+  local others = 0
+  for _, c in ipairs(e.crafters or {}) do if not c.mine and c.online and not c.busy then others = others + 1 end end
+  if itemID and others == 0 and NS.Comm and NS.Comm.OnDemand and NS.Comm.OnDemand() and NS.Comm.AskSoon then
+    NS.Comm.AskSoon(nil, { itemID })
+  end
 
   find.post:SetEnabled(itemID ~= nil)
   UI.UpdateAdvertise()
@@ -2721,6 +3094,10 @@ function UI.FilterFind(keepScroll)
   end
 
   local results = {}
+  -- Too many players on the channel to know every recipe: the search is also asked of the board
+  -- (crafters who know a match answer within seconds and join the list).
+  local asking = searching and NS.Comm and NS.Comm.OnDemand and NS.Comm.OnDemand() or false
+  if asking and NS.Comm.AskSoon then NS.Comm.AskSoon(text) end
   if searching then
     local tokens = Tokens(text)
     local first = tokens[1] or ""
@@ -2750,6 +3127,8 @@ function UI.FilterFind(keepScroll)
   end
 
   local items, nav = Grouped(results, prof == nil, searching, find.profNames)
+  items, nav = find.WithDemand(items, nav, results, 0)
+  items, nav = find.WithPinned(items, nav, results, 0)
   find.results = nav
 
   local emptyText
@@ -2763,6 +3142,7 @@ function UI.FilterFind(keepScroll)
         if Matches(u, Tokens(text)) then mine = true break end
       end
       emptyText = mine and format(L["You can craft everything matching \"%s\" yourself."], text)
+        or asking and format(L["No known crafter for \"%s\" yet. Asking CraftBoard users..."], text)
         or format(L["No known crafter for \"%s\"."], text)
     elseif #hidden > 0 then
       emptyText = L["You can craft everything here yourself."]
@@ -2938,17 +3318,26 @@ function R.OpenTell(name)
   return false
 end
 
-function R.OfferText(item)
-  return format(L["[CraftBoard] I can craft %s for you."], ItemLink(item) or ItemName(item))
+function R.OfferText(item, qty)
+  return NS.Templates.Offer(ItemLink(item) or ItemName(item), qty)
 end
 
 -- Offer: sends the whisper right away (it only ever goes to a request I can craft), once per
 -- OFFER_GAP whichever way it is asked for (button, menu, gamepad).
+-- What an offer says: "I can craft it", or for a materials request "I have it".
+function R.OfferTextFor(e)
+  if e.mats then
+    local item = ItemLink(e.post.item) or ItemName(e.post.item)
+    return format(L["[CraftBoard] I have %s for you."], (e.post.qty or 1) > 1 and (format(L["%dx"], e.post.qty) .. " " .. item) or item)
+  end
+  return R.OfferText(e.post.item, e.post.qty)
+end
+
 function R.Offer(e)
-  if not (e and e.post and not e.mine and e.can) then return end
+  if not (e and e.post and not e.mine and (e.can or e.supply)) then return end
   local ago = R.OfferedAgo(e)
   if ago and ago < OFFER_GAP then return end
-  if NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, R.OfferText(e.post.item)) then
+  if NS.Comm and NS.Comm.Whisper and NS.Comm.Whisper(e.post.from, R.OfferTextFor(e)) then
     if NS.Comm.MarkOffered then NS.Comm.MarkOffered(e.post.id) end
     UI.RefreshRequestDetail()
     -- An offered request stops counting: recount for the tab, embedded tab and broker badges.
@@ -2963,8 +3352,8 @@ end
 -- Whisper: opens the chat box, typed in when I can craft it, empty otherwise.
 function R.WhisperPost(e)
   if not (e and e.post and not e.mine) then return end
-  if e.can then
-    OpenWhisper(e.post.from, nil, nil, R.OfferText(e.post.item))
+  if e.can or e.supply then
+    OpenWhisper(e.post.from, nil, nil, R.OfferTextFor(e))
   else
     R.OpenTell(e.post.from)
   end
@@ -2972,10 +3361,18 @@ end
 
 function R.WhisperChat(e)
   if not (e and e.chat) then return end
+  OpenWhisper(e.seen.from, nil, nil, R.ChatOfferText(e))
+end
+
+-- The offer for a chat ask: their quantity; a profession ask ("LF enchanter") names what they
+-- asked for in an own template.
+function R.ChatOfferText(e)
   local s = e.seen
   local item = s.itemID or (e.rec and e.rec.o)
-  local text = item and R.OfferText(item) or L["[CraftBoard] I can craft that for you."]
-  OpenWhisper(s.from, nil, nil, text)
+  if item then return R.OfferText(item, s.qty) end
+  local CW = NS.ChatWatch
+  local what = CW and (CW.Topic and CW.Topic(s) or CW.ProfName and CW.ProfName(s))
+  return NS.Templates.Offer(what ~= "" and what or L["that"], s.qty, L["[CraftBoard] I can craft that for you."])
 end
 
 function R.WhisperQueue(e)
@@ -3021,6 +3418,22 @@ end
 function R.Retract(e)
   if not (e and e.mine and NS.Comm and NS.Comm.Retract) then return end
   NS.Comm.Retract(e.id)
+  UI.Refresh()
+end
+
+-- My own request (not an alt's, not a linked order): it can go up again for another day.
+function R.CanRenew(e)
+  return e and e.mine and not e.altPost and e.post and not e.post.pa and NS.Comm and NS.Comm.Renew
+    and not (NS.Comm.HasOthersLinked and NS.Comm.HasOthersLinked(e.post.id)) and true or false
+end
+
+function R.Renew(e)
+  if not R.CanRenew(e) then return end
+  local nid = NS.Comm.Renew(e.id)
+  if nid then
+    reqs.selected = nid
+    NS.Print(format(L["Renewed: %s is up for another day."], ItemName(e.post.item)))
+  end
   UI.Refresh()
 end
 
@@ -3106,10 +3519,11 @@ function R.Actions(e)
     add(L["Done"], R.Done)
   elseif e.mine then
     -- An alt's request can only be retracted on that alt (its author sends the retraction).
+    if R.CanRenew(e) then add(L["Renew"], R.Renew, true) end
     if not e.altPost then add(L["Retract"], R.Retract) end
   elseif e.post then
     local ago = R.OfferedAgo(e)
-    if e.can and e.online and not (ago and ago < OFFER_GAP) then add(L["Offer"], R.Offer, true) end
+    if (e.can or e.supply) and e.online and not (ago and ago < OFFER_GAP) then add(L["Offer"], R.Offer, true) end
     add(format(L["Whisper %s"], Short(e.post.from)), R.WhisperPost, true)
     if R.CanQueue(e) then add(L["Queue"], R.AddToQueue, true) end
   end
@@ -3290,7 +3704,7 @@ function R.Buttons(e)
   local post = e and e.post and not e.mine
   local queueEntry, queueTotal = e and e.queue, e and e.queueTotal
   for _, b in ipairs({ reqs.offer, reqs.retract, reqs.chatWhisper, reqs.craft, reqs.whisper, reqs.queueBtn,
-    reqs.done, reqs.chatHide }) do b:Hide() end
+    reqs.done, reqs.chatHide, reqs.renew }) do b:Hide() end
   if not e then return end
 
   -- Red: Offer / Whisper (a request I can't craft opens the chat box) / Retract / Craft.
@@ -3301,7 +3715,7 @@ function R.Buttons(e)
     reqs.retractWhy = e.altPost and format(L["Posted by %s: log in on %s to retract it."], Short(e.post.from), Short(e.post.from)) or nil
   elseif post then
     local ago = R.OfferedAgo(e)
-    if e.can and e.online then
+    if (e.can or e.supply) and e.online then
       red = reqs.offer
       local offered = ago and ago < OFFER_GAP
       red:SetText(offered and L["Offered"] or L["Offer"])
@@ -3344,7 +3758,7 @@ function R.Buttons(e)
     b:Show()
     anchor = b
   end
-  if post and e.can and e.online then
+  if post and (e.can or e.supply) and e.online then
     place(reqs.whisper, reqs.whisper.cbSquare and -6 or -4)
     reqs.whisper:SetEnabled(true)
   elseif queueEntry and e.queue.who then
@@ -3354,6 +3768,10 @@ function R.Buttons(e)
   if queueEntry then
     place(reqs.done)
     FitButton(reqs.done, 70)
+  end
+  if R.CanRenew(e) then
+    place(reqs.renew)
+    FitButton(reqs.renew, 70)
   end
   local target = R.QueueTarget(e)
   if (post or chat) and (target or (NS.Queue and NS.Queue.Has(e.id))) then
@@ -3395,7 +3813,21 @@ function R.PostDetail(e)
   end
 
   local lines = {}
-  if not mine then
+  if e.mats then
+    -- Looking for materials: what my characters hold, and who gathers.
+    lines[#lines + 1] = GOLD_HEX .. L["Looking for the materials, not a craft."] .. "|r"
+    if not mine then
+      if (e.have or 0) + (e.haveAlts or 0) == 0 then
+        lines[#lines + 1] = GREY .. L["None of your characters has any."] .. "|r"
+      else
+        local text = (e.haveAlts or 0) > 0 and format(L["You have %d (%d more on alts)."], e.have or 0, e.haveAlts)
+          or format(L["You have %d."], e.have or 0)
+        lines[#lines + 1] = e.supply and (GREEN .. text .. "|r") or text
+      end
+    end
+    local gatherers = find.Gatherers(4, post.item)
+    if #gatherers > 0 then lines[#lines + 1] = format(L["Gatherers: %s"], table.concat(gatherers, ", ")) end
+  elseif not mine then
     lines[#lines + 1] = R.KnowLine(current, rec and not current and know.char or nil)
     if rec and not current and know.char then lines[#lines + 1] = format(L["Craft it on %s."], Short(know.char)) end
   end
@@ -3409,6 +3841,12 @@ function R.PostDetail(e)
   end
   local ago = R.OfferedAgo(e)
   if ago then lines[#lines + 1] = format(L["You offered %s."], R.AgoText(time() - ago)) end
+  -- My request near the end of its day: say so (Renew puts it up again).
+  local ttl = NS.Comm and NS.Comm.POST_TTL
+  if R.CanRenew(e) and ttl and type(post.t) == "number" and time() - post.t >= ttl - NS.Comm.RENEW_WINDOW then
+    local left = max(1, floor((ttl - (time() - post.t)) / 3600 + 0.5))
+    lines[#lines + 1] = GOLD_HEX .. format(L["Expires in about %dh. Renew keeps it up for another day."], left) .. "|r"
+  end
   lines[#lines + 1] = not mine and NS.Trade and NS.Trade.CraftedText(post.from) or nil
   R.SetInfo(lines)
 
@@ -3651,7 +4089,7 @@ function BuildRequests(p)
     if not self:IsEnabled() then
       return L["Offered"], L["You offered on this request a few minutes ago."]
     end
-    return format(L["Offer to %s"], Short(e.post.from)), format(L["Sends this whisper now: %s"], R.OfferText(e.post.item))
+    return format(L["Offer to %s"], Short(e.post.from)), format(L["Sends this whisper now: %s"], R.OfferTextFor(e))
   end)
   reqs.retract = red(L["Retract"], R.Retract, function(_, self)
     if not self:IsEnabled() then return L["Retract"], reqs.retractWhy end
@@ -3665,7 +4103,7 @@ function BuildRequests(p)
     if e.chat then
       local item = e.seen.itemID or (e.rec and e.rec.o)
       return format(L["Whisper %s"], Short(e.seen.from)),
-        format(L["Opens the chat box with: %s"], item and R.OfferText(item) or L["[CraftBoard] I can craft that for you."])
+        format(L["Opens the chat box with: %s"], R.ChatOfferText(e))
     end
     return format(L["Whisper %s"], Short(e.post.from)), L["Opens the chat box."]
   end)
@@ -3703,6 +4141,14 @@ function BuildRequests(p)
     if who then TextTooltip(self, format(L["Whisper %s"], Short(who)), L["Opens the chat box."]) end
   end)
   reqs.whisper:SetScript("OnLeave", HideTooltip)
+
+  reqs.renew = PanelButton(bar, L["Renew"], 70, 22)
+  reqs.renew:SetScript("OnClick", function() R.Renew(reqs.entry) end)
+  reqs.renew:SetScript("OnEnter", function(self)
+    TextTooltip(self, L["Renew"], L["Posts the request again, with its linked orders, so it stays up for another day."])
+  end)
+  reqs.renew:SetScript("OnLeave", HideTooltip)
+  reqs.renew:Hide()
 
   reqs.queueBtn = PanelButton(bar, L["Queue"], 70, 22)
   reqs.queueBtn:SetScript("OnClick", function() R.AddToQueue(reqs.entry) end)
@@ -3811,7 +4257,7 @@ function UI.FilterRequests(keepScroll)
     local g
     if e.queue or e.queueTotal then g = groups[2]
     elseif e.mine then g = groups[5]
-    elseif e.can then g = groups[1]
+    elseif e.can or e.supply then g = groups[1]
     elseif e.chat then g = groups[4]
     else g = groups[3] end
     if e.chat then anyChat = true end
@@ -3906,15 +4352,29 @@ local function Annotate()
       local mine = R.IsMyPost(post)
       -- Queued from their chat ask before they posted it (the chat row is left out below as a
       -- duplicate): the queued craft belongs to the post now.
-      if not mine and Q and Q.Adopt then Q.Adopt(post.from, post.item, post.id, qty) end
+      local matsPost = post.k == "m"
+      -- (Not a materials request: it asks for no craft.)
+      if not mine and not matsPost and Q and Q.Adopt then Q.Adopt(post.from, post.item, post.id, qty) end
       local alt = not mine and R.AltOf(post.from)
       local online = mine or alt or R.Online(post.from)
+      if matsPost then know = nil end
       local e = {
         post = post, id = post.id, outputItemID = post.item, mine = mine or alt and true or false, altPost = alt and true or nil,
         know = know, t = post.t, name = name, lname = strlower(name), lfrom = strlower(Short(post.from)), ready = false,
         label = qty > 1 and (format(L["%dx"], qty) .. " " .. name) or name, icon = ItemIcon(post.item),
-        online = online, can = know ~= nil and know.rec ~= nil, dim = not online,
+        online = online, can = know ~= nil and know.rec ~= nil, dim = not online, mats = matsPost or nil,
       }
+      if matsPost then
+        -- Looking for the material itself: I can help when my characters hold enough of it.
+        e.label = format(L["Materials: %s"], e.label)
+        local I = NS.Inventory
+        local bags = I and I.Count and I.Count(post.item, true) or 0
+        local all = I and I.Count and I.Count(post.item) or 0
+        local alts = I and I.AltCounts and I.AltCounts(post.item) or 0
+        e.have, e.haveAlts = all, alts
+        e.supply = all + alts >= qty
+        e.ready = bags >= qty
+      end
       if mine then
         e.status = Age(post.t)
       elseif alt then
@@ -3928,9 +4388,12 @@ local function Annotate()
         e.ready = canCraft(know.rec, qty, true).ready and true or false
       elseif e.can then
         e.readyAlt = true
+      elseif e.supply and not e.ready then
+        e.readyAlt = true
       end
-      e.counts = e.can and not e.mine and online
-      postedBy[strlower(post.from) .. ":" .. post.item] = true
+      e.counts = (e.can or e.supply) and not e.mine and online
+      -- (A materials post doesn't stand in for an ask to have it crafted.)
+      if not matsPost then postedBy[strlower(post.from) .. ":" .. post.item] = true end
       add(e)
     end
   end
@@ -4262,11 +4725,74 @@ function P.Index()
       local name = rec.n or (NS.Recipes.NameOf and NS.Recipes.NameOf(id)) or format(L["Recipe %d"], id)
       local list = byProf[rec.p] or {}
       byProf[rec.p] = list
-      list[#list + 1] = { recipeID = id, rec = rec, name = name, lname = strlower(name), diff = DiffOf(rec) }
+      -- Reagent names too, for "Search by reagent" (names still loading fill in on the next build).
+      local reag = {}
+      -- Every item a slot accepts (its other qualities and variants, r.alts) counts.
+      for _, r in ipairs(type(rec.r) == "table" and rec.r or {}) do
+        local ids = { r[1] }
+        for _, a in ipairs(type(r.alts) == "table" and r.alts or {}) do ids[#ids + 1] = a end
+        for _, rid in ipairs(ids) do
+          local n = type(rid) == "number" and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(rid)
+          if n then reag[#reag + 1] = strlower(n) end
+        end
+      end
+      list[#list + 1] = { recipeID = id, rec = rec, name = name, lname = strlower(name), diff = DiffOf(rec),
+        lreag = reag }
     end
   end
   plan.recipes, plan.dirty = byProf, false
+  plan.missingIdx = nil     -- P.Missing reads the catalogue again
   return byProf
+end
+
+-- Recipes of a profession this character hasn't learned: from the shared catalogue (my other
+-- characters' and other players' recipes), with where they are learned when anyone recorded it.
+-- { {recipeID=, name=, lname=, missing=true, status=}, ... } by name. Rebuilt with the index.
+function P.Missing(profID)
+  plan.missingIdx = plan.missingIdx or {}
+  local cached = plan.missingIdx[profID]
+  if cached then return cached end
+  local mine = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine() or {}
+  local cat = type(CraftBoardDB) == "table" and type(CraftBoardDB.recipeNames) == "table" and CraftBoardDB.recipeNames or {}
+  local out, seen = {}, {}
+  local function add(id, p, n, o)
+    if type(id) ~= "number" or p ~= profID or mine[id] or seen[id] then return end
+    seen[id] = true
+    local name = n or (o and ItemName(o)) or (NS.Recipes.NameOf and NS.Recipes.NameOf(id)) or format(L["Recipe %d"], id)
+    out[#out + 1] = { recipeID = id, name = name, lname = strlower(name), missing = true,
+      status = P.SourceText(id), rec = { o = o } }
+  end
+  -- Only recipes someone still knows: a peer's current list (the catalogue keeps names forever).
+  local known = {}
+  for _, p in pairs(NS.Comm and NS.Comm.Peers and NS.Comm.Peers() or {}) do
+    for id in pairs(p.recipes or {}) do known[id] = true end
+  end
+  for id, e in pairs(cat) do
+    if type(e) == "table" and known[id] then add(id, e.p, e.n, e.o) end
+  end
+  -- My other characters' recipes (the catalogue only learns professions from other players).
+  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+  for key, c in pairs(chars) do
+    -- Only what Find can show: alts on this realm and faction, crafts that can be handed over.
+    local reachable = NS.Inventory and NS.Inventory.Reachable
+    local tradeable = NS.Recipes and NS.Recipes.IsTradeable
+    if key ~= NS.Me and type(c) == "table" and type(c.recipes) == "table" and (not reachable or reachable(key, c)) then
+      for id, rec in pairs(c.recipes) do
+        if type(rec) == "table" and (not tradeable or tradeable(rec)) then add(id, rec.p, rec.n, rec.o) end
+      end
+    end
+  end
+  table.sort(out, function(a, b) return a.name < b.name end)
+  plan.missingIdx[profID] = out
+  return out
+end
+
+-- Where a recipe is learned, for a row: "Trainer", the recipe item's name, else "".
+function P.SourceText(recipeID)
+  local src = NS.Recipes and NS.Recipes.SourceOf and NS.Recipes.SourceOf(recipeID)
+  if src == (NS.Recipes and NS.Recipes.SRC_TRAINER) then return L["Trainer"] end
+  if type(src) == "number" then return ItemName(src) end
+  return ""
 end
 
 -- "Best next": among recipes that still give points and that the bags allow now, points per
@@ -4298,7 +4824,20 @@ function P.Best(list, pr)
 end
 
 function P.RowFactory()
-  local base = GroupRowFactory(function(it) if it.recipeID then UI.SelectPlan(it.recipeID, true, it.best) end end, P.ToggleGroup)
+  local base = GroupRowFactory(function(it)
+      if it.missing then P.OpenInFind(it.recipeID) return end
+      if it.recipeID then UI.SelectPlan(it.recipeID, true, it.best) end
+    end, P.ToggleGroup,
+    function(row, it)
+      if not it.recipeID then return end
+      if it.missing then
+        find.ContextMenu(row, it.name, find.MarkActions(it.recipeID, it.rec and it.rec.o, false))
+        return
+      end
+      UI.SelectPlan(it.recipeID, true, it.best)
+      local actions = find.MarkActions(it.recipeID, it.rec and it.rec.o, true)
+      find.ContextMenu(row, it.name, actions)
+    end)
   return function(parent)
     local row = base(parent)
     local skill = row:CreateTexture(nil, "OVERLAY")
@@ -4314,7 +4853,29 @@ function P.RowFactory()
   end
 end
 
+-- Find, on a recipe I haven't learned (who can craft it, its reagents).
+function P.OpenInFind(recipeID)
+  UI.ShowTab(1)
+  if find.search then find.search:SetText("") end
+  -- "Only guild crafters" may have left it out (known only outside the guild).
+  if find.GuildOnly() then
+    local db = UIDB()
+    if db then db.findGuild = nil end
+    BuildUniverse()
+  end
+  UI.FilterFind(false)
+  UI.PickRecipe(recipeID)
+end
+
 function P.FillEntry(row, e)
+  if e.missing then
+    row.skill:Hide()
+    row.name:SetText(e.name)
+    row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
+    row.status:SetText(e.status or "")
+    row.sel:SetShown(e.recipeID == plan.selected)
+    return
+  end
   if e.placeholder then
     row.skill:Hide()
     row.name:SetText(e.name)
@@ -4369,7 +4930,9 @@ function P.Detail()
   P.Buttons()
   if not e then
     plan.body:Hide()
-    plan.none:SetText(plan.noneText or "")
+    local m = plan.selected and plan.missingByID and plan.missingByID[plan.selected]
+    plan.none:SetText(m and format(L["%s: not learned yet. Press Enter (or A) to see who can craft it."], m.name)
+      or plan.noneText or "")
     plan.none:Show()
     SetDetailBackground(plan, nil)
     return
@@ -4416,6 +4979,12 @@ function P.Detail()
   end
   if pr.fresh then
     lines[#lines + 1] = GREY .. format(L["New recipes learned: open %s to add them."], pr.name) .. "|r"
+  end
+  local made = NS.Stats and NS.Stats.Made(e.recipeID) or 0
+  if made > 0 then
+    local now = NS.Stats.SessionMade(e.recipeID)
+    lines[#lines + 1] = GREY .. (now > 0 and format(L["Crafted %d times (%d this session)."], made, now)
+      or format(made == 1 and L["Crafted once."] or L["Crafted %d times."], made)) .. "|r"
   end
   plan.info:SetText(table.concat(lines, "\n"))
   local h = plan.info.GetStringHeight and plan.info:GetStringHeight()
@@ -4464,7 +5033,19 @@ end
 function BuildPlan(p)
   plan.keyOf = function(e) return e.recipeID end
   plan.selectedKey = function() return plan.selected end
-  plan.selectKey = function(id) UI.SelectPlan(id, true, false) end
+  -- A recipe not learned yet: the keys and the pad select it first, then open it in Find (Enter
+  -- or A again), as a click does at once.
+  plan.selectKey = function(id)
+    if plan.missingByID and plan.missingByID[id] and plan.selected == id then P.OpenInFind(id) return end
+    UI.SelectPlan(id, true, false)
+  end
+  UI.PlanOpenMissing = function()
+    if plan.selected and plan.missingByID and plan.missingByID[plan.selected] then
+      P.OpenInFind(plan.selected)
+      return true
+    end
+    return false
+  end
   plan.refilter = function(keep) UI.FilterPlan(keep) end
 
   local left = ListColumn(p, plan)
@@ -4475,10 +5056,13 @@ function BuildPlan(p)
     return {
       { kind = "check", text = L["Only what I can craft"], get = function() return P.Option("planReady") end, set = flag("planReady") },
       { kind = "check", text = L["Hide gray recipes"], get = function() return P.Option("planNoGrey") end, set = flag("planNoGrey") },
+      { kind = "divider" },
+      { kind = "check", text = L["Search by reagent"], tip = L["The search box finds your recipes that use a reagent (\"what can I make with Silk Cloth?\")."],
+        get = function() return P.Option("planByReagent") end, set = flag("planByReagent") },
     }
-  end, function() return not (P.Option("planReady") or P.Option("planNoGrey")) end, function()
+  end, function() return not (P.Option("planReady") or P.Option("planNoGrey") or P.Option("planByReagent")) end, function()
     local db = UIDB()
-    if db then db.planReady, db.planNoGrey = nil, nil end
+    if db then db.planReady, db.planNoGrey, db.planByReagent = nil, nil, nil end
     UI.FilterPlan(false)
   end)
   plan.search = NewSearchBox("CraftBoardPlanSearchBox", left, plan)
@@ -4572,9 +5156,10 @@ function UI.FilterPlan(keepScroll)
   plan.searching = searching
   local tokens = searching and Tokens(text) or {}
   local onlyReady, noGray = P.Option("planReady"), P.Option("planNoGrey")
+  local byReagent = P.Option("planByReagent")
   local index = P.Index()
   local canCraft = NS.Inventory and NS.Inventory.CanCraft
-  local items, nav, byID = {}, {}, {}
+  local items, nav, byID, missingByID = {}, {}, {}, {}
   local profs = P.Profs()
   local anyRecipes = false
   for _, pr in ipairs(profs) do
@@ -4586,9 +5171,22 @@ function UI.FilterPlan(keepScroll)
     for _, e in ipairs(list) do
       e.prof, e.best = pr, nil
       byID[e.recipeID] = e
+      -- By reagent: every word in one reagent's name ("silk cloth" isn't Silk Thread plus
+      -- Mageweave Cloth).
       local ok = true
-      for i = 1, #tokens do
-        if not e.lname:find(tokens[i], 1, true) then ok = false break end
+      local function all(hay)
+        for i = 1, #tokens do
+          if not hay:find(tokens[i], 1, true) then return false end
+        end
+        return true
+      end
+      if byReagent then
+        ok = #tokens == 0
+        for _, r in ipairs(e.lreag) do
+          if all(r) then ok = true break end
+        end
+      else
+        ok = all(e.lname)
       end
       if ok and noGray and e.diff == DIFF[3] then ok = false end
       local key = pr.profID .. ":" .. e.diff.key
@@ -4608,6 +5206,18 @@ function UI.FilterPlan(keepScroll)
         count = count + 1
       end
     end
+    -- Recipes of this profession I haven't learned that the search matches (never with "Only
+    -- what I can craft" or a reagent search): they keep the profession listed on their own.
+    local missing = {}
+    if not (onlyReady or byReagent) then
+      for _, m in ipairs(P.Missing(pr.profID)) do
+        local ok = true
+        for i = 1, #tokens do
+          if not m.lname:find(tokens[i], 1, true) then ok = false break end
+        end
+        if ok then missing[#missing + 1] = m end
+      end
+    end
     local gain = NS.Skills and NS.Skills.SessionGain and NS.Skills.SessionGain(pr.profID) or 0
     -- The name on the bar; the rank goes in the right-hand slot (a long name plus "111/150" and a
     -- recipe count don't fit in one bar).
@@ -4615,7 +5225,7 @@ function UI.FilterPlan(keepScroll)
     if gain > 0 then label = label .. " " .. format(L["(+%d)"], gain) end
     local rankText = pr.rank and pr.max and format(L["%d/%d"], pr.rank, pr.max) or count
     -- Professions with nothing to show while searching or filtering stay out of the way.
-    if count > 0 or not (searching or onlyReady) then
+    if count > 0 or #missing > 0 or not (searching or onlyReady) then
       items[#items + 1] = { kind = "prof", key = pkey, name = label, prof = pr.profID, count = rankText, depth = 0, collapsed = not pOpen }
     end
     if pOpen and count == 0 and not (searching or onlyReady) then
@@ -4634,6 +5244,24 @@ function UI.FilterPlan(keepScroll)
         items[#items + 1] = copy
         copy.idx = #items
         nav[#nav + 1] = copy
+      end
+      -- Pinned recipes next (they keep their own rows below too).
+      local pinned = {}
+      for _, e in ipairs(all) do
+        if NS.Marks and NS.Marks.IsPinned(e.recipeID) then pinned[#pinned + 1] = e end
+      end
+      if #pinned > 0 then
+        local key = pr.profID .. ":pinned"
+        local open = searching or not P.IsCollapsed(key, false)
+        items[#items + 1] = { kind = "cat", key = key, name = L["Pinned"], count = #pinned, depth = 1, collapsed = not open }
+        if open then
+          for i, e in ipairs(pinned) do
+            local copy = setmetatable({ depth = 2, gap = i == #pinned }, { __index = e })
+            items[#items + 1] = copy
+            copy.idx = #items
+            nav[#nav + 1] = copy
+          end
+        end
       end
       for _, d in ipairs(ORDER) do
         local diff = DIFF[d] or UNKNOWN
@@ -4657,8 +5285,26 @@ function UI.FilterPlan(keepScroll)
         end
       end
     end
+    -- Not learned yet (collapsed until opened, open while searching). Clicking one opens it in
+    -- Find.
+    if pOpen then
+      if #missing > 0 then
+        local key = pr.profID .. ":missing"
+        local open = searching or not P.IsCollapsed(key, true)
+        items[#items + 1] = { kind = "cat", key = key, gray = true, name = L["Not learned yet"], count = #missing, depth = 1, collapsed = not open }
+        if open then
+          for i, m in ipairs(missing) do
+            m.depth, m.gap = 2, i == #missing
+            items[#items + 1] = m
+            m.idx = #items
+            nav[#nav + 1] = m
+            missingByID[m.recipeID] = m
+          end
+        end
+      end
+    end
   end
-  plan.results, plan.byID = nav, byID
+  plan.results, plan.byID, plan.missingByID = nav, byID, missingByID
   -- A recipe the player picked stays picked while a filter hides it (the card says so); an
   -- automatic pick moves with the list.
   local visible = false
@@ -4671,6 +5317,8 @@ function UI.FilterPlan(keepScroll)
   if #items == 0 then
     if #profs == 0 then
       emptyText = L["No professions yet. Learn one from a trainer in any capital city."]
+    elseif searching and byReagent then
+      emptyText = format(L["None of your recipes here uses \"%s\"."], text)
     elseif searching then
       emptyText = format(L["No recipe matches \"%s\"."], text)
     elseif onlyReady then
@@ -4700,7 +5348,8 @@ NS.Register("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
 end)
 if NS.RegisterCallback then
   local function dirty() plan.dirty = true end
-  for _, ev in ipairs({ "RECIPES_UPDATED", "SKILLS_UPDATED", "ITEM_NAMES_UPDATED" }) do
+  -- (Other players' recipes fill the catalogue behind "Not learned yet".)
+  for _, ev in ipairs({ "RECIPES_UPDATED", "SKILLS_UPDATED", "ITEM_NAMES_UPDATED", "PEERS_UPDATED" }) do
     NS.RegisterCallback(plan, ev, dirty)
   end
 end
@@ -4932,6 +5581,35 @@ end
 -- Puts text in Find's search box (/cb find <text>).
 function UI.Search(text)
   if find.search and type(text) == "string" then find.search:SetText(text) end
+end
+
+-- Plan with "Search by reagent" on and text in its search box (/cb uses <text>, the row menus'
+-- "My recipes that use this").
+-- The same for an item: searched by its name once that has loaded (never "Item 1234").
+function UI.SearchReagentItem(itemID)
+  local I = NS.Inventory
+  if not (I and I.WhenNamed) then UI.SearchReagent(ItemName(itemID)) return end
+  -- Still loading after a few seconds: Plan opens with "Item 1234", and the real name replaces it
+  -- only while that is still what the search box says (never over a newer search).
+  local fallback = ItemName(itemID)
+  local opened = false
+  I.WhenNamed(itemID, function(name)
+    if not opened then
+      opened = true
+      UI.SearchReagent(name or fallback)
+    elseif name and plan.search and plan.search:GetText() == fallback then
+      plan.search:SetText(name)
+      UI.FilterPlan(false)
+    end
+  end)
+end
+
+function UI.SearchReagent(text)
+  local db = UIDB()
+  if db then db.planByReagent = true end
+  UI.ShowTab(3)
+  if plan.search and type(text) == "string" then plan.search:SetText(text) end
+  UI.FilterPlan(false)
 end
 
 -- Opens CraftBoard on tab i (1 Find, 2 Requests, 3 Plan), wherever it lives.
@@ -5196,11 +5874,9 @@ local function Step(t, down)
   if #list == 0 then return end
   local keyOf = t.keyOf or function(u) return u.recipeID end
   local cur = t.selectedKey and t.selectedKey() or selectedID
-  local idx = 0
-  for i, u in ipairs(list) do
-    if keyOf(u) == cur then idx = i break end
-  end
+  local idx = UI.NavIndex(t, list, keyOf, cur)
   idx = down and min(#list, idx + 1) or max(1, idx - 1)
+  t.navPos = idx
   local key = keyOf(list[idx])
   if t.selectKey then t.selectKey(key) else UI.PickRecipe(key) end
   if t.list then t.list:ScrollTo(list[idx].idx) end
@@ -5214,7 +5890,8 @@ local function OnPad(self, button)
     if activeTab == 2 then
       UI.RequestPrimary()
     elseif activeTab == 3 then
-      if plan.craft and plan.craft:IsEnabled() then plan.craft:Click() end
+      if UI.PlanOpenMissing and UI.PlanOpenMissing() then
+      elseif plan.craft and plan.craft:IsEnabled() then plan.craft:Click() end
     elseif find.whisper and find.whisper:IsEnabled() then
       -- Opens the chat box; posting a request stays a mouse click.
       find.whisper:Click()
@@ -5619,6 +6296,15 @@ end
 -- Opening or closing a profession window re-sorts Plan (the open profession first) as well.
 NS.Register("TRADE_SKILL_SHOW", function() scheduleRefresh() end)
 NS.Register("TRADE_SKILL_CLOSE", function() scheduleRefresh() end)
+-- "Only guild crafters" goes by the roster: someone joining or leaving the guild changes Find
+-- without any other event.
+find.guildRefresh = Debouncer(2, function()
+  if find.GuildOnly() then
+    find.universeDirty = true
+    UI.Refresh()
+  end
+end)
+NS.Register("GUILD_ROSTER_UPDATE", function() if find.GuildOnly() then find.guildRefresh() end end)
 
 -- Once a minute while the window is up: cooldown times on crafter rows count down (Find: only
 -- the few visible rows are re-filled), request ages and dimming move on (Requests), and the
@@ -5652,7 +6338,7 @@ end
 if NS.RegisterCallback then
   for _, ev in ipairs({ "RECIPES_UPDATED", "PEERS_UPDATED", "INVENTORY_UPDATED", "POSTS_UPDATED",
     "CHAT_SEEN_UPDATED", "BUSY_UPDATED", "QUEUE_UPDATED", "COOLDOWNS_UPDATED", "CRAFTED_UPDATED", "IGNORE_UPDATED",
-    "SKILLS_UPDATED" }) do
+    "SKILLS_UPDATED", "MARKS_UPDATED", "STATS_UPDATED" }) do
     NS.RegisterCallback(owner, ev, scheduleRefresh)
   end
   NS.RegisterCallback(owner, "ITEM_NAMES_UPDATED", scheduleNames)

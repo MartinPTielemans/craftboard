@@ -160,6 +160,13 @@ end
 
 local CHAT_TIP = L["Lists players asking for a crafter in Trade, General, LookingForGroup, say and yell under \"Seen in chat\" on the Requests tab. Nothing is sent. Works best with English shorthand (LF, WTB)."]
 local CHAT_GUILD_TIP = L["Also watch guild chat for crafting requests."]
+local GetWishNotice, SetWishNotice
+do
+  local function get() return not (type(CraftBoardDB) == "table" and CraftBoardDB.wishNotice == false) end
+  local function set(v) if type(CraftBoardDB) == "table" then CraftBoardDB.wishNotice = v and true or false end end
+  GetWishNotice, SetWishNotice = get, set
+end
+local WISH_TIP = L["One quiet chat line when someone links an item on your wishlist, or the recipe for it, in public chat. Right-click a recipe in Find to add it. Nothing is sent."]
 
 -- Auto-busy (Comm.lua): CraftBoardDB.autoBusy, default on. Addon messages can't be sent in
 -- combat, so only dungeons and raids reach other players.
@@ -189,6 +196,8 @@ end
 local GetBackOnline, SetBackOnline = Flag("backOnline")
 local GetGroupTips, SetGroupTips = Flag("groupTooltips")
 local GetGamepad, SetGamepad = Flag("gamepad")
+local GetOldPostNotice, SetOldPostNotice = Flag("oldPostNotice")
+local OLD_POST_TIP = L["One quiet chat line when one of your requests has a few hours left on the board. Renew it on the Requests tab to keep it up."]
 local BACK_ONLINE_TIP = L["One quiet chat line when a player whose request you can craft, or offered on, logs back in. Nothing is sent."]
 local GROUP_TIPS_TIP = L["In a party or raid, item tooltips name the group members who can craft the item, and their tooltips list their professions."]
 local GAMEPAD_TIP = L["With gamepad mode on: D-pad up/down moves through the list, A whispers or offers, B closes, the shoulder buttons switch tabs."]
@@ -196,6 +205,8 @@ local GAMEPAD_TIP = L["With gamepad mode on: D-pad up/down moves through the lis
 -- (Tooltips.lua).
 local GetCooldownNotice, SetCooldownNotice = Flag("cooldownNotice")
 local GetTrainerNotice, SetTrainerNotice = Flag("trainerNotice")
+local GetMilestoneNotice, SetMilestoneNotice = Flag("milestoneNotice")
+local MILESTONE_TIP = L["A gold chat line and a sound when a profession learns a new rank or is maxed out, and the first time you craft something rare or better."]
 local GetReagentTips, SetReagentTips = Flag("reagentTooltips")
 local GetRecipeTips, SetRecipeTips = Flag("recipeTooltips")
 local COOLDOWN_NOTICE_TIP = L["One quiet chat line when a crafting cooldown on one of your characters is ready again."]
@@ -220,6 +231,12 @@ local function ShowWelcome()
 end
 
 local WELCOME_TIP = L["Shows the CraftBoard welcome window again."]
+
+local function ShowTexts()
+  if NS.Templates and NS.Templates.Show then NS.Templates.Show() end
+end
+
+local TEXTS_TIP = L["Your own wording for the whispers CraftBoard types in when you ask a crafter or offer to craft."]
 
 -- Advertise channel: where Find's Advertise button posts its one line ("Trade" (cities only) by
 -- default, "General", or "Off").
@@ -260,15 +277,18 @@ local SECTIONS = {
     { "CRAFTBOARD_GUILD_SHARE", L["Share recipes with my guild"], GetGuildShare, SetGuildShare, GUILD_TIP, guild = true },
     { "CRAFTBOARD_AUTO_BUSY", L["Busy in dungeons and raids"], GetAutoBusy, SetAutoBusy, AUTO_BUSY_TIP },
     { "CRAFTBOARD_BACK_ONLINE", L["Tell me when a requester comes online"], GetBackOnline, SetBackOnline, BACK_ONLINE_TIP },
+    { "CRAFTBOARD_OLD_POST", L["Tell me when my request is about to expire"], GetOldPostNotice, SetOldPostNotice, OLD_POST_TIP },
     "advertise",
   } },
   { L["Chat"], {
     { "CRAFTBOARD_CHAT_WATCH", L["Watch chat for crafting requests"], GetChatWatch, SetChatWatch, CHAT_TIP },
     { "CRAFTBOARD_CHAT_WATCH_GUILD", L["Include guild chat"], GetChatGuild, SetChatGuild, CHAT_GUILD_TIP, default = false, nested = true },
+    { "CRAFTBOARD_WISH_NOTICE", L["Tell me when someone links my wishlist"], GetWishNotice, SetWishNotice, WISH_TIP },
   } },
   { L["Crafting notices"], {
     { "CRAFTBOARD_COOLDOWN_NOTICE", L["Tell me when a crafting cooldown is ready"], GetCooldownNotice, SetCooldownNotice, COOLDOWN_NOTICE_TIP },
     { "CRAFTBOARD_TRAINER_NOTICE", L["Tell me when I can train a new rank"], GetTrainerNotice, SetTrainerNotice, TRAINER_NOTICE_TIP },
+    { "CRAFTBOARD_MILESTONE_NOTICE", L["Celebrate crafting milestones"], GetMilestoneNotice, SetMilestoneNotice, MILESTONE_TIP },
   } },
   { L["Tooltips"], {
     { "CRAFTBOARD_REAGENT_TOOLTIPS", L["Show reagent info in item tooltips"], GetReagentTips, SetReagentTips, REAGENT_TIPS_TIP },
@@ -364,6 +384,7 @@ local function RegisterVertical()
     FORGET_TIP, true))
   layout:AddInitializer(CreateSettingsButtonInitializer(L["Show tips again"], L["Reset"], ResetTips, TIPS_TIP, true))
   layout:AddInitializer(CreateSettingsButtonInitializer(L["Show welcome"], L["Show"], ShowWelcome, WELCOME_TIP, true))
+  layout:AddInitializer(CreateSettingsButtonInitializer(L["Whisper texts"], L["Edit"], ShowTexts, TEXTS_TIP, true))
 
   S.RegisterAddOnCategory(category)
   return category:GetID()
@@ -386,9 +407,20 @@ end
 local ROW, HEADER = 24, 26   -- px per checkbox / per section header
 
 local function BuildPanel()
-  local p = CreateFrame("Frame", PANEL_NAME)
-  p.name = CATEGORY_NAME
-  p:Hide()
+  local panel = CreateFrame("Frame", PANEL_NAME)
+  panel.name = CATEGORY_NAME
+  panel:Hide()
+  -- The controls scroll: more of them than the options canvas is tall.
+  local p = panel
+  local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+  if scroll then
+    scroll:SetPoint("TOPLEFT", 0, -4)
+    scroll:SetPoint("BOTTOMRIGHT", -28, 4)
+    p = CreateFrame("Frame", nil, scroll)
+    p:SetSize(600, 800)
+    scroll:SetScrollChild(p)
+    scroll:SetScript("OnSizeChanged", function(_, w) if w and w > 0 then p:SetWidth(w) end end)
+  end
 
   local title = p:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   title:SetPoint("TOPLEFT", 16, -16)
@@ -473,13 +505,16 @@ local function BuildPanel()
   Button(L["Forget other players' data"], 200, 20, FORGET_TIP, ConfirmForget)
   Button(L["Show tips again"], 150, 228, TIPS_TIP, ResetTips)
   Button(L["Show welcome"], 150, 386, WELCOME_TIP, ShowWelcome)
+  y = y - 28
+  Button(L["Whisper texts"], 200, 20, TEXTS_TIP, ShowTexts)
+  if p ~= panel then p:SetHeight(-y + 40) end
 
-  p:SetScript("OnShow", function()
+  panel:SetScript("OnShow", function()
     for i = 1, #checks do checks[i]:SetChecked(checks[i].get()) end
     for i = 1, #syncs do syncs[i]() end
     if syncAdvertise then syncAdvertise() end
   end)
-  return p
+  return panel
 end
 
 -- Registration --------------------------------------------------------------------

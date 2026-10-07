@@ -47,7 +47,9 @@ function CreateFrame()
   return f
 end
 
-time = os.time
+-- The clock can be moved on (clock.skip) past the addon's rate limits.
+local clock = { skip = 0 }
+time = function(t) if t then return os.time(t) end return os.time() + clock.skip end
 GetTime = os.clock
 GetBuildInfo = function() return "", "", "", 16001 end
 GetLocale = function() return LOCALE end
@@ -277,6 +279,85 @@ local cid = pid and C.PostRequest(2318, 2, "", pid)
 check(cid and db.posts[cid].note == "" and db.posts[cid].pa == pid, "linked order without a note")
 eq(C.OpenSlots(), slots - 2, "open slots count my posts")
 
+-- Who can craft this (W / A): the question's text, and my recipes that answer it
+eq(C.QueryText("  LF Light   |cff00ff00Armor|r "), "lf light armor", "question text: plain, lower case, one space")
+eq(C.QueryText("a"), nil, "question text: too short to ask")
+eq(C.QueryText("ax"), "ax", "two letters are a question, as in Find")
+local m = C.MatchQuery("armor kit", nil)
+check(#m == 1 and m[1][1] == 2152 and m[1][3] == 2304, "a question matches my recipe by name")
+m = C.MatchQuery(nil, { 2304 })
+check(#m == 1 and m[1][1] == 2152, "a question matches my recipe by its output item")
+eq(#C.MatchQuery("mooncloth", { 9999 }), 0, "a peer's recipe isn't mine to answer")
+m = C.MatchQuery("light kit", nil)
+check(#m == 1 and m[1][1] == 2152, "a question matches word by word, as Find does")
+m = C.MatchQuery("enchant", { 2304 })
+check(#m == 2 and m[1][1] == 2152, "the item asked for by ID leads the answer")
+
+-- Marks: pins and the wishlist (a wished item, or the recipe item named after it, linked in chat)
+local M = NS.Marks
+M.TogglePin(2152)
+check(M.IsPinned(2152) and M.AnyPinned(), "recipe pinned")
+M.TogglePin(2152)
+check(not M.IsPinned(2152), "recipe unpinned")
+M.SetWished(2304, true)
+eq((M.WishedIn("WTS |Hitem:2304::|h[Light Armor Kit]|h")), 2304, "a wished item linked")
+local wished, linked = M.WishedIn("WTS |Hitem:9999::|h[Pattern: Light Armor Kit]|h cheap")
+check(wished == 2304 and linked == 9999, "the recipe item for a wished item")
+check(M.WishedIn("WTS |Hitem:2318::|h[Light Leather]|h") == nil, "an item not on the wishlist")
+printed = {}
+M.CheckChat("WTS |Hitem:2304::|h[Light Armor Kit]|h", "Nora Pell", "Trade")
+M.CheckChat("WTS |Hitem:2304::|h[Light Armor Kit]|h again", "Nora Pell", "Trade")
+check(#printed == 1 and printed[1]:find("Nora Pell", 1, true) ~= nil, "one wishlist line per item and player")
+check(M.RemoveWish("light armor") and not M.IsWished(2304), "/cb wish remove by part of the name")
+
+-- Old requests: one nudge near the end of the day, and Renew posts it (and its linked order) again
+do
+  local old = db.posts[pid]
+  old.t = time() - C.POST_TTL + 3600
+  printed = {}
+  C.NudgeOld()
+  C.NudgeOld()
+  check(#printed == 1, "one nudge for a request about to expire")
+  check(C.Renew(pid) == nil and db.posts[pid] ~= nil, "Renew waits out the gap between posts, keeping the request")
+  clock.skip = clock.skip + 11
+  local nid = C.Renew(pid)
+  check(nid and nid ~= pid and db.posts[pid] == nil and db.posts[nid].qty == old.qty, "renewed as a new post")
+  local kids = C.Linked(nid)
+  check(#kids == 1 and kids[1].item == 2318, "its linked order went up with it")
+  pid = nid
+  -- A linked order of the linked order goes up with them too.
+  C.PostRequest(2320, 3, "", kids[1].id)
+  clock.skip = clock.skip + 11
+  nid = C.Renew(pid)
+  local k1 = nid and C.Linked(nid) or {}
+  local k2 = k1[1] and C.Linked(k1[1].id) or {}
+  check(#k1 == 1 and #k2 == 1 and k2[1].item == 2320, "renewed with its whole chain")
+  pid = nid
+  -- Another player's linked order under it: no Renew (it would take theirs down).
+  db.posts["Bob-Forever:5:1"] = { id = "Bob-Forever:5:1", from = "Bob-Forever", item = 2318, qty = 1, t = time(), pa = pid }
+  clock.skip = clock.skip + 11
+  check(C.Renew(pid) == nil and db.posts["Bob-Forever:5:1"] ~= nil, "no Renew over another player's linked order")
+  db.posts["Bob-Forever:5:1"] = nil
+end
+
+-- Whisper texts: the built-in wording until the player saves their own
+do
+  local T = NS.Templates
+  local builtin = T.Request("[Kit]", 3)
+  check(builtin:find("[Kit]", 1, true) and builtin:find("3", 1, true), "built-in request text has the item and quantity")
+  eq(T.Get("request"):find("{qty}", 1, true) ~= nil and T.Get("request"):find("{item}", 1, true) ~= nil, true,
+    "the default as a template")
+  T.Set("offer", "hey, I can do {qty}x {item} (50% done)")
+  eq(T.Offer("[Kit]", 2), "hey, I can do 2x [Kit] (50% done)", "own offer text filled in")
+  T.Set("offer", string.rep("a", 199) .. "\195\169")
+  eq(#db.templates.offer, 199, "an own text is cut on a character boundary")
+  T.Set("offer", string.rep("b", 190) .. " {item}")
+  local long = T.Offer("|cff1eff00|Hitem:2304::|h[Light Armor Kit]|h|r", 1)
+  check(#long <= 255 and long:find("[Light Armor Kit]", 1, true) ~= nil, "an expanded text fits one message, plain name instead of the link")
+  T.Set("offer", T.Default("offer"))
+  check(db.templates.offer == nil, "saving the default goes back to the built-in text")
+end
+
 -- Back online: a player link, no "1x", and which character knows the recipe
 printed = {}
 C.NoteBackOnline("Bob-Forever")
@@ -437,6 +518,73 @@ check(not ok and type(why) == "string", "Craft explains why it can't")
 fire("NEW_RECIPE_LEARNED", 2152)
 check(me.profs[165].newRecipes == true, "new recipe flags its profession")
 check(NS.Recipes.Search("armor kit")[1] ~= nil, "search finds my recipe")
+
+-- Crafting history: casts of my recipes count, lifetime and this session
+do
+  local before = NS.Stats.Made(2152)
+  fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 2152)
+  fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 99999)
+  eq(NS.Stats.Made(2152), before + 1, "a cast of my recipe is counted")
+  eq(NS.Stats.SessionMade(2152), 1, "and counted for this session")
+  eq(NS.Stats.Made(99999), 0, "a spell that isn't a recipe of mine is not")
+  me.made = me.made or {}
+  me.made[2304] = time() - 100   -- Craft.lua's recent-craft time for the item
+  fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 2152)
+  eq(NS.Stats.Made(2152), before + 2, "lifetime counts aren't mixed with recent-craft times")
+end
+
+-- Specializations: read from the spellbook, sent as spell IDs, read back to known ones only
+do
+  IsPlayerSpell = function(id) return id == 10656 end
+  NS.Skills.ReadSpecs()
+  check(me.specs and me.specs[10656] and not me.specs[10658], "specialization read from the spellbook")
+  local sp = C.MySpecs()
+  check(sp and #sp == 1 and sp[1] == 10656, "the hello carries it")
+  local got = C.ReadSpecs({ 10656, 123, "x", 20219 })
+  check(got and got[10656] and got[20219] and not got[123], "unknown spell IDs are dropped")
+  eq(NS.Skills.SpecFor(got, 165), "Dragonscale Leatherworking", "the specialization of a profession")
+  eq(NS.Skills.SpecFor({ [9787] = true, [17039] = true }, 164), "Master Swordsmith", "a master smith over Weaponsmith")
+  local card = NS.UI and NS.UI.CrafterCardText and NS.UI.CrafterCardText({ name = NS.Me, mine = true }) or ""
+  check(card:find("Dragonscale", 1, true) ~= nil, "my crafter card names it")
+end
+
+-- Where recipes are learned: the first source heard is kept
+do
+  local R = NS.Recipes
+  R.SetSource(18560, 1)
+  R.SetSource(18560, 14468)
+  eq(R.SourceOf(18560), 1, "first recipe source kept")
+  check(R.GuessSource() == nil, "no trainer, no recipe item used: no source")
+end
+
+-- Demand: one ask per player, item and day; counts only
+do
+  local S = NS.Stats
+  S.NoteDemand(4305, "Ann Lee-Forever")
+  S.NoteDemand(4305, "Ann Lee-Forever")
+  S.NoteDemand(4305, "Bo Rin-Forever")
+  S.NoteDemand(4305, NS.Me)
+  eq(S.Demand(4305), 2, "asks counted once per player and day, mine left out")
+  CW.Add("WTB |Hitem:2304::|h[Light Armor Kit]|h and |Hitem:1::|h[Mooncloth]|h", "Cy Ward", "Trade")
+  check(S.Demand(2304) >= 1 and S.Demand(1) >= 1, "every crafted item a line links counts")
+  local listed = false
+  for _, e in ipairs(S.TopDemand(5, 7, 2)) do listed = listed or (e.itemID == 4305 and e.n == 2) end
+  check(listed, "most asked for")
+  local saved = false
+  for k in pairs(db.demand[4305]) do saved = type(k) == "number" end
+  check(saved, "only day counts are saved")
+end
+
+-- Materials requests: k="m" on the post, kept through Renew
+do
+  clock.skip = clock.skip + 11   -- past the gap between posts
+  local mid = C.PostRequest(2318, 20, "", nil, "m")
+  check(mid and db.posts[mid].k == "m", "a materials request")
+  clock.skip = clock.skip + 11
+  local rid = C.Renew(mid)
+  check(rid and db.posts[rid].k == "m", "renewed as a materials request")
+  C.Retract(rid)
+end
 
 -- Timers run cleanly (back-online checks, notices)
 runTimers()

@@ -78,6 +78,18 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
   faction.
 - UI has a third tab, Plan (recipes by skill-up colour from `rec.d`, saved at each scan).
 
+## After 1.0 (2026-10-06)
+- `Marks.lua` — pinned recipes (`CraftBoardDB.pinned[recipeID]`) and the wishlist
+  (`CraftBoardDB.wish[itemID]`), with a chat-link notice. Fires `MARKS_UPDATED`.
+- `Templates.lua` — the player's whisper wording (`CraftBoardDB.templates.request/offer`, with
+  `{item}` / `{qty}`) and its editor (`/cb texts`).
+- `Stats.lua` — private crafting history (`chars[Me].crafts[recipeID]`), session counts,
+  milestones, and demand counts (`CraftBoardDB.demand[itemID][day] = asks`, 14 days, no names).
+- Skills reads specializations (`chars[Me].specs[spellID]`); Recipes records where a recipe was
+  learned (catalogue field `s`: 1 = trainer, else the recipe item's ID).
+- Plan lists recipes not learned yet (from the catalogue); Find's Filter adds "Most asked for
+  first" and "Only guild crafters"; reagent slots ask the board for materials.
+
 ## Protocol (Comm.lua) — prefix `CBRD`, version byte first
 Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonChannel.
 - `H` hello: `{v=1, profs={[profID]={n=name,r=rank,m=max}}, n=#recipes, h=hash, b=true?, l=true?, cd={[recipeID]=secs}?}`
@@ -87,9 +99,22 @@ Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonCh
 - `Q` query → sender answers `R` recipes: `{v=1, list={{id,name,outputItemID,profID},...}, h=hash, profs=}` (names
   dropped, then the list truncated, to fit 8 KB compressed;
   compact). Whisper-distribution replies are fine (AceComm whisper → "WHISPER" addon msg).
-- `P` post: `{v=1, id=<sender..time>, item=itemID, qty=n, note=<=60 chars, t=time, pa=parent id?}`;
-  `X` retract. `pa` links an order for an intermediate to the request it is for.
+- `P` post: `{v=1, id=<sender..time>, item=itemID, qty=n, note=<=60 chars, t=time, pa=parent id?, k="m"?}`;
+  `X` retract. `pa` links an order for an intermediate to the request it is for; `k="m"` asks for
+  the materials themselves (older clients show it as an ordinary request).
+- Hello `sp={spellID,...}` (optional): the sender's specializations. R and A list entries may carry
+  a fifth field: where the recipe is learned (1 = trainer, else the recipe item's ID).
   Posts expire after 24h locally.
+- `W` who-can-craft: `{v=1, id=, q=lower-case text?, i={outputItemID,...}?}` on GUILD/CHANNEL, sent
+  from a Find search (debounced 1.5 s, one per 4 s, the same question once per 5 min). Crafters
+  with matching shareable recipes (name or output item name in their language, or the item IDs)
+  whisper `A` `{v=1, id=W id, list={{id,name,outputItemID,profID,src},...} (<=30), profs=, h=hash}` after a
+  0.5-3 s random wait (one per asker per 30 s, 20 per minute). An `A` is only taken for my own `W`
+  within 60 s and is merged into that peer's recipes. Older clients drop both unread.
+- On-demand mode (`Comm.OnDemand()`): over 150 channel players heard within a day (guildmates
+  aside), channel peers' hellos no longer trigger `Q`; Find asks `W` instead. Guild peers always
+  sync in full. At most 1000 peers are stored (the longest unheard go) and at most 12 full
+  recipe lists are whispered per minute (the rest wait). `/cb debug ondemand` forces the mode.
 - Two distributions: GUILD always (if in guild), CHANNEL when `CraftBoardDB.realmChannel` is on
   (default on). Channel name `CraftBoardF` (hidden from chat: leave it out of chat frames).
 - Rate limit: hello ≤1/10min per distribution (busy changes: ≤1/15 s), full list ≤1/min per peer;

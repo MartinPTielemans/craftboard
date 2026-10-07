@@ -159,6 +159,9 @@ local function Asked(text, links, prof)
   if not text:find("|H", 1, true) then
     local plain = text:match("%[([^%]|]+)%]")
     if plain and ChatWatch.Resolve and ChatWatch.Resolve(plain) then return plain, nil end
+    -- Or something other players craft (the shared catalogue): an unmet ask still counts.
+    local item = plain and ChatWatch.CatalogueItem and ChatWatch.CatalogueItem(plain)
+    if item and KnownOutputs()[item] then return plain, item end
   end
   return nil
 end
@@ -254,14 +257,19 @@ function ChatWatch.Detect(text, guildChat)
   local links = Links(text)
   local itemName, itemID = Asked(text, links, prof)
   if not (prof or itemName) then return nil, "nothing" end
-  local names
+  local names, ids
   if #links > 1 then
-    names = {}
-    for i = 1, #links do names[i] = links[i].name end
+    -- (ids: the linked items someone crafts, each counted toward demand.)
+    names, ids = {}, {}
+    local known = KnownOutputs()
+    for i = 1, #links do
+      names[i] = links[i].name
+      if links[i].kind == "item" and links[i].id and known[links[i].id] then ids[#ids + 1] = links[i].id end
+    end
   end
   local matsSaid, mats = Mats(s)
   return { prof = prof and prof[1], profID = prof and prof[2], itemName = itemName, itemID = itemID,
-           links = names, mats = mats or nil, matsSaid = matsSaid or nil, qty = Quantity(clean, s) }
+           links = names, linkIDs = ids, mats = mats or nil, matsSaid = matsSaid or nil, qty = Quantity(clean, s) }
 end
 
 -- Words that say nothing beyond the card's title: the ask markers and fillers, courtesy,
@@ -352,6 +360,78 @@ function ChatWatch.Resolve(name)
   local e = index[lower(name)]
   if not e then return nil end
   return e.recipeID, e.current, e.prof, e.char
+end
+
+-- Asks whose item wasn't known by name yet (its data still loading), kept a few minutes and
+-- counted when item names come in. Never saved.
+local heldDemand = {}     -- { {name=, from=, t=}, ... }
+function ChatWatch.HoldDemand(name, from)
+  if #heldDemand >= 30 then table.remove(heldDemand, 1) end
+  heldDemand[#heldDemand + 1] = { name = name, from = from, t = time() }
+end
+
+-- Arrival order of chat lines (rows and held lines), finer than time()'s seconds.
+function ChatWatch.NextSeq()
+  ChatWatch.seq = (ChatWatch.seq or 0) + 1
+  return ChatWatch.seq
+end
+
+local heldLines = {}      -- { {text=, sender=, channel=, guild=, t=}, ... }
+function ChatWatch.HoldLine(text, sender, channel, guild, seq)
+  if #heldLines >= 30 then table.remove(heldLines, 1) end
+  heldLines[#heldLines + 1] = { text = text, sender = sender, channel = channel, guild = guild, t = time(), seq = seq }
+end
+
+function ChatWatch.DropHeld(from)
+  for i = #heldLines, 1, -1 do
+    local h = heldLines[i]
+    if (NS.FullName and NS.FullName(h.sender) or h.sender) == from then table.remove(heldLines, i) end
+  end
+end
+
+function ChatWatch.RetryHeld()
+  if #heldLines == 0 then return end
+  -- A line still not placed waits for the next names (another item may have loaded first).
+  local list, now = heldLines, time()
+  heldLines = {}
+  for _, h in ipairs(list) do
+    -- Something newer from the same player came in meanwhile: the held line is out of date.
+    local from = NS.FullName and NS.FullName(h.sender)
+    local cur = from and seen[from]
+    -- (By arrival order: two lines can come in within the same second.)
+    local newer = cur and type(cur.seq) == "number" and cur.seq > h.seq
+    -- (Guild lines only while guild chat is still watched.)
+    local allowed = ChatWatch.Enabled() and not (h.guild and not ChatWatch.GuildEnabled())
+    if allowed and not newer and now - h.t < 120 then
+      local e = ChatWatch.Add(h.text, h.sender, h.channel, h.guild, h.seq)
+      -- Still no item (only its profession, or nothing): it waits for more names.
+      if not (e and e.itemName) then heldLines[#heldLines + 1] = h end
+    end
+  end
+end
+
+function ChatWatch.RetryDemand()
+  if #heldDemand == 0 then return end
+  local now = time()
+  for i = #heldDemand, 1, -1 do
+    local h = heldDemand[i]
+    local item = now - h.t < 300 and ChatWatch.CatalogueItem(h.name)
+    if item and NS.Stats and NS.Stats.NoteDemand then NS.Stats.NoteDemand(item, h.from) end
+    if item or now - h.t >= 300 then table.remove(heldDemand, i) end
+  end
+end
+
+-- The item a name is, among the catalogue's outputs (other players' recipes too), or nil.
+function ChatWatch.CatalogueItem(name)
+  local want = lower(name)
+  local cat = type(CraftBoardDB) == "table" and type(CraftBoardDB.recipeNames) == "table" and CraftBoardDB.recipeNames or {}
+  local itemName = NS.Inventory and NS.Inventory.ItemName
+  for _, e in pairs(cat) do
+    local o = type(e) == "table" and e.o
+    local n = type(o) == "number" and itemName and itemName(o)
+    if type(n) == "string" and lower(n) == want then return o end
+  end
+  return nil
 end
 
 -- Resolve an entry's item onto it (by item ID when the line linked one, else by name):
@@ -613,12 +693,30 @@ end
 -- Record a chat line (also the entry point for tests). Returns the stored entry or nil.
 -- A later line from the same player can also drop their row ("nvm, found one") or say
 -- whether they bring the reagents ("have mats" / "don't have mats") without asking again.
-function ChatWatch.Add(text, sender, channel, guild)
+-- retry: a held line read again (ChatWatch.RetryHeld; its arrival sequence number); it isn't
+-- held a second time.
+function ChatWatch.Add(text, sender, channel, guild, retry)
   if not ChatWatch.Enabled() or type(text) ~= "string" or #text > MAX_LEN then return nil end
   local from = FullName(sender)
   if not from or IsMe(from) or (NS.IsIgnored and NS.IsIgnored(from)) then return nil end
-  local hit = ChatWatch.Detect(text, guild)
+  local hit, why = ChatWatch.Detect(text, guild)
   local prev = seen[from]
+  -- Its place in arrival order (a replayed line keeps the one it arrived with; its row and its
+  -- held copy share it).
+  local seq = type(retry) == "number" and retry or ChatWatch.NextSeq()
+  -- An ask whose plain "[Name]" (no link) couldn't be placed may name an item whose data is
+  -- still loading: the line is read again once item names come in (in memory a couple of
+  -- minutes, never saved). Offers, adverts and lines that aren't asks aren't kept.
+  -- (Also an ask matched by its profession alone: "LF tailor for [Mooncloth]".)
+  if (not hit and why == "nothing" or hit and not hit.itemName) and not retry
+    and not text:find("|H", 1, true) and text:find("%[[^%]|]+%]") then
+    ChatWatch.HoldLine(text, sender, channel, guild, seq)
+  end
+  -- A call-off ("nvm", "found one") from someone whose ask is only held (no row yet) drops it.
+  if not (hit or prev) and not retry then
+    local _, off = LastCallOff(WithoutMats(Normalize(ChatWatch.Clean(text))))
+    if off then ChatWatch.DropHeld(from) end
+  end
   if not (hit or prev) then return nil end
   local clean = ChatWatch.Clean(text)
   local s = Normalize(clean)
@@ -632,6 +730,8 @@ function ChatWatch.Add(text, sender, channel, guild)
     local rest = hit and Asks(" " .. d:sub(stop)) and RawAfter(text, phrase)
     hit = rest and ChatWatch.Detect(rest, guild) or nil
     if not hit then
+      -- Called off: an ask of theirs held for its item name goes too.
+      ChatWatch.DropHeld(from)
       if prev then
         seen[from] = nil
         FireSoon()
@@ -658,17 +758,41 @@ function ChatWatch.Add(text, sender, channel, guild)
   local e = {
     from = from, text = clean, prof = hit.prof, profID = hit.profID, itemName = hit.itemName, itemID = hit.itemID,
     links = hit.links, mats = hit.mats, qty = hit.qty,
+    -- (A replayed line keeps the place it arrived in.)
     channel = channel, guild = guild or nil, t = now, first = now, asks = 1,
+    seq = seq,
   }
   -- One row per player: asking again for the same thing bumps the count and keeps when it was
   -- first seen (and what it said about quantity and reagents, unless the new line says); a
   -- different ask replaces the row.
+  -- A held line read again that still says what its row says: that row stays as it is (it isn't
+  -- another ask, and doesn't make the row any newer).
+  if type(retry) == "number" and prev and prev.seq == retry and (prev.itemName or prev.prof) == (e.itemName or e.prof) then
+    return prev
+  end
   if prev and (prev.itemName or prev.prof) == (e.itemName or e.prof) then
     e.first, e.asks = prev.first or prev.t, (prev.asks or 1) + 1
     if not hit.matsSaid then e.mats = prev.mats end
     e.qty = e.qty or prev.qty
   end
   if hit.itemName then ResolveEntry(e) end
+  -- Counted toward what is asked for around here (Stats keeps counts only, never who).
+  -- A plain "[Name]" ask has no item ID: the resolved recipe's output stands in.
+  local asked = e.itemID
+  if not asked and e.recipeID and NS.Recipes and NS.Recipes.Record then
+    local rec = NS.Recipes.Record(e.recipeID)
+    asked = type(rec) == "table" and type(rec.o) == "number" and rec.o or nil
+  end
+  -- A recipe none of my characters knows: its item by name, from the shared catalogue.
+  if not asked and type(e.itemName) == "string" then asked = ChatWatch.CatalogueItem(e.itemName) end
+  -- Every crafted item a line links counts ("WTB [A] [B]"), the first one included.
+  for _, id in ipairs(NS.Stats and NS.Stats.NoteDemand and hit.linkIDs or {}) do NS.Stats.NoteDemand(id, from) end
+  if NS.Stats and NS.Stats.NoteDemand and asked then
+    NS.Stats.NoteDemand(asked, from)
+  elseif type(e.itemName) == "string" then
+    -- Item names still loading: counted once they are in (ChatWatch.RetryDemand).
+    ChatWatch.HoldDemand(e.itemName, from)
+  end
   seen[from] = e
   Prune(from)
   FireSoon()
@@ -744,6 +868,12 @@ end
 local stats = { seen = 0, channel = 0, accepted = 0, matched = 0, last = "", bases = {}, nbases = 0 }
 ChatWatch.Stats = function() return stats end
 
+-- The label of a server channel the watcher reads (Trade, General, LookingForGroup), else nil
+-- (custom and private channels). For other modules listening to the same chat (Marks).
+function ChatWatch.PublicLabel(baseName, channelName, zoneChannelID)
+  return (PublicChannel(baseName, channelName, zoneChannelID))
+end
+
 local function OnChat(event, text, sender, _, channelName, _, _, zoneChannelID, _, baseName)
   stats.seen = stats.seen + 1
   if not ChatWatch.Enabled() then return end
@@ -797,6 +927,14 @@ if NS.RegisterCallback then
     end
     FireSoon()
   end)
-  NS.RegisterCallback(ChatWatch, "PEERS_UPDATED", function() outputs = nil end)
-  NS.RegisterCallback(ChatWatch, "ITEM_NAMES_UPDATED", function() indexDirty = true end)
+  -- (Peers' recipes are what lets a held "[Name]" be placed too.)
+  NS.RegisterCallback(ChatWatch, "PEERS_UPDATED", function()
+    outputs = nil
+    ChatWatch.RetryHeld()
+  end)
+  NS.RegisterCallback(ChatWatch, "ITEM_NAMES_UPDATED", function()
+    indexDirty = true
+    ChatWatch.RetryDemand()
+    ChatWatch.RetryHeld()
+  end)
 end

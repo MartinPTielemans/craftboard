@@ -490,6 +490,127 @@ local enUS = {
   "Post a request to the board, or whisper a crafter directly.",
   "Open Professions",
   "Later",
+
+  -- Comm: on-demand recipe questions (W / A)
+  "channel players heard today: %d; recipe lists: %s",
+  "asked per search (many players)",
+  "swapped in full",
+
+  -- Find: asking the board
+  "No known crafter for \"%s\" yet. Asking CraftBoard users...",
+
+  -- Marks: pinned recipes, wishlist, reagent search
+  "Add to wishlist",
+  "Added to your wishlist: %s. You'll hear when someone links it in chat.",
+  "My recipes that use this",
+  "None of your recipes here uses \"%s\".",
+  "Pin to the top",
+  "Pinned",
+  "Remove from wishlist",
+  "Removed from your wishlist: %s",
+  "Search by reagent",
+  "The search box finds your recipes that use a reagent (\"what can I make with Silk Cloth?\").",
+  "Unpin",
+  "Wishlist (%d):",
+  "Wishlist: %s linked %s in %s.",
+  "Wishlist: %s linked %s.",
+  "Your wishlist is empty. Right-click a recipe in Find to add its item.",
+  "Your wishlist is full (%d items). Remove one first.",
+  "/cb uses <reagent> - your recipes that use a reagent",
+  "Tell me when someone links my wishlist",
+  "One quiet chat line when someone links an item on your wishlist, or the recipe for it, in public chat. Right-click a recipe in Find to add it. Nothing is sent.",
+
+  -- Requests: renewing old requests
+  "Your request for %s expires in about %dh. Renew it on the Requests tab to keep it up.",
+  "Renew",
+  "Renewed: %s is up for another day.",
+  "Posts the request again, with its linked orders, so it stays up for another day.",
+  "Expires in about %dh. Renew keeps it up for another day.",
+  "Tell me when my request is about to expire",
+  "One quiet chat line when one of your requests has a few hours left on the board. Renew it on the Requests tab to keep it up.",
+
+  -- Templates: whisper texts
+  "CraftBoard whisper texts",
+  "{item} becomes the item's link and {qty} the quantity. CraftBoard still only types the whisper in for you: nothing is sent without your click.",
+  "Asking a crafter",
+  "Offering to craft",
+  "Save",
+  "Whisper texts saved.",
+  "Use the defaults",
+  "/cb texts - edit the whisper texts CraftBoard types in for you",
+  "Whisper texts",
+  "Edit",
+  "Your own wording for the whispers CraftBoard types in when you ask a crafter or offer to craft.",
+
+  -- Stats: crafting history and milestones
+  "First time: you crafted %s!",
+  "New rank: %s can now go up to %d.",
+  "%s maxed out at %d!",
+  "%s +%d",
+  "This session: %d crafts%s.",
+  "Crafted on this character: %d. Most made:",
+  "/cb stats - this session's crafting and your most-made recipes",
+  "Celebrate crafting milestones",
+  "A gold chat line and a sound when a profession learns a new rank or is maxed out, and the first time you craft something rare or better.",
+  "Crafted %d times (%d this session).",
+  "Crafted once.",
+  "Crafted %d times.",
+
+  -- Crafter card: professions, specializations, cooldowns
+  "%s: ready",
+  "%s: %s",
+  "Shares 1 recipe with you.",
+  "Shares %d recipes with you.",
+
+  -- Plan: recipes not learned yet, where to learn them
+  "Trainer",
+  "Not learned yet",
+
+  -- Demand and guild crafters
+  "%d asks",
+  "%d asks, %d crafters known",
+  "%d asks, no crafter known",
+  "A group at the top with what players around you asked for most this week (board requests and crafting asks in chat).",
+  "Lists only what your guildmates (and your own characters) can craft.",
+  "Most asked for first",
+  "Most asked for this week",
+  "Most asked for this week:",
+  "Nothing asked for yet this week. CraftBoard counts board requests and crafting asks it sees in chat.",
+  "Only guild crafters",
+  "asked for %d times this week",
+  "asked for once this week",
+  "You are not in a guild.",
+  "No guildmate CraftBoard knows of yet. They show up as their CraftBoard says hello.",
+  "Guild crafters (%d):",
+  "no professions shared",
+  "/cb demand - what players around you asked for most this week",
+  "/cb guild - your guildmates' professions",
+
+  -- Materials requests and gatherers
+  "Ask the board for %dx %s",
+  "Posted: looking for %dx %s",
+  "%s (%s %d)",
+  "Materials: %s",
+  "[CraftBoard] I have %s for you.",
+  "Looking for the materials, not a craft.",
+  "None of your characters has any.",
+  "You have %d (%d more on alts).",
+  "You have %d.",
+  "Gatherers: %s",
+
+  -- Chat offers
+  "that",
+
+  -- Plan: keyboard on recipes not learned yet
+  "%s: not learned yet. Press Enter (or A) to see who can craft it.",
+
+  -- Wishlist removal
+  "Not on your wishlist (see /cb wish).",
+  "/cb wish remove <name> takes one off.",
+  "/cb wish [remove <name>] - your wishlist",
+
+  -- Renew with others' linked orders
+  "Another player posted a linked order for this request: it can't be renewed without taking theirs down.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

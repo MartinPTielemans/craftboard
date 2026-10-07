@@ -7,10 +7,18 @@
 --   Q query   {v=1}                                                     WHISPER to hello sender
 --   R recipes {v=1, h=hash, profs=..., list={ {id, name, outputItemID, profID}, ... }}  WHISPER
 --             (GUILD/CHANNEL once when several peers query at once; only those who asked take it)
---   P post    {v=1, id=, item=, qty=, note=, t=, pa=parent post id}     GUILD/CHANNEL
+--   P post    {v=1, id=, item=, qty=, note=, t=, pa=parent post id, k="m"?}  GUILD/CHANNEL
 --             (pa is optional: a linked order for an intermediate of the parent request; note
---             may be "", as linked orders send it, and never carries prices)
+--             may be "", as linked orders send it, and never carries prices; k="m": looking for
+--             materials, not a craft (older clients show it as an ordinary request))
 --   X retract {v=1, id=}                                                GUILD/CHANNEL
+--   W who     {v=1, id=, q=lower-case text?, i={itemID,...}?}            GUILD/CHANNEL
+--             ("who can craft this?", sent from a Find search; crafters who know a match answer)
+--   A answer  {v=1, id=W's id, list={ {id, name, outputItemID, profID, src}, ... }, profs=, h=hash}  WHISPER
+--             (taken only for a W I sent; merged into what I know of that peer)
+--             Older clients drop W and A unread (unknown kinds).
+-- Scale: with more than SCALE_PEERS channel players heard in a day, channel peers' full recipe
+-- lists are no longer fetched (no Q on their hellos); Find asks W instead. Guild peers always sync.
 local ADDON, NS = ...
 
 local Comm = {}
@@ -56,6 +64,18 @@ local MAX_CD_SECONDS = 14 * 86400
 local R_BATCH = 3                 -- this many queries within R_BATCH_WINDOW: one broadcast R
 local R_BATCH_WINDOW = 10
 local R_BATCH_DELAY = 2           -- a broadcast R waits this long for more queries
+-- Scale: limits and state for crowded channels (kept in one table: this file is near Lua's
+-- limit of 200 locals).
+local scale = {
+  maxPeers = 1000,                -- stored peers; the longest unheard go first
+  onDemandAt = 150,               -- channel players heard within window: on-demand mode
+  window = 86400,
+  answersPerMin = 12,             -- full recipe lists (R) whispered per minute; more wait
+  peerCount = nil,                -- stored peers (counted on first need)
+  on = false, checkedAt = 0, heard = 0,
+  answerTimes = {},               -- whole lists sent within the last minute
+  sentSpecs = {},                 -- [dist] = specializations the last hello there carried
+}
 
 local LibSerialize = LibStub and LibStub("LibSerialize", true)
 local LibDeflate = LibStub and LibStub("LibDeflate", true)
@@ -493,13 +513,37 @@ local function CooldownSig()
   return table.concat(ids, ",")
 end
 
+-- Specializations in the hello (sp): my current character's, as a list of spell IDs (nil: none).
+function Comm.MySpecs()
+  local db, me = DB(), MyKey()
+  local c = db and me and type(db.chars) == "table" and db.chars[me]
+  local list = NS.Skills and NS.Skills.SpecList and type(c) == "table" and NS.Skills.SpecList(c.specs) or {}
+  return #list > 0 and list or nil
+end
+
+-- A peer's sp, kept to known specializations: { [spellID] = true } or nil.
+function Comm.ReadSpecs(sp)
+  if type(sp) ~= "table" or not (NS.Skills and NS.Skills.SPECS) then return nil end
+  local out, n = {}, 0
+  for k = 1, 8 do
+    local id = PosInt(sp[k], 1e7)
+    if id and NS.Skills.SPECS[id] then out[id], n = true, n + 1 end
+  end
+  return n > 0 and out or nil
+end
+
+function Comm.SpecKey(set)
+  return NS.Skills and NS.Skills.SpecList and table.concat(NS.Skills.SpecList(set), ",") or ""
+end
+
 -- Announce a busy or cooldown change on every distribution whose last hello carried the other
 -- state (a quick hello: see SendHello's busy argument).
 local function StateFlush()
   busyPending = false
-  local sig = CooldownSig()
+  local sig, specs = CooldownSig(), table.concat(Comm.MySpecs() or {}, ",")
   for _, dist in ipairs({ "GUILD", "CHANNEL" }) do
-    if DistAvailable(dist) and ((sentBusy[dist] or false) ~= busyNow or (sentCd[dist] or "") ~= sig) then
+    if DistAvailable(dist) and ((sentBusy[dist] or false) ~= busyNow or (sentCd[dist] or "") ~= sig
+      or (scale.sentSpecs[dist] or "") ~= specs) then
       SendHello(dist, true)
     end
   end
@@ -562,7 +606,7 @@ function SendHello(dist, busy, urgent)
   local n = tonumber(h:match("^(%d+):")) or min(CountTable(MyRecipes()), MAX_RECIPES)
   local payload = { v = VERSION, profs = MyProfs(), n = n, h = h, b = busyNow or nil,
     l = not loginHello[dist] or nil, cd = NS.Cooldowns and NS.Cooldowns.ForHello and NS.Cooldowns.ForHello(MAX_CD) or nil,
-    pg = 1 }
+    pg = 1, sp = Comm.MySpecs() }
   local target = dist == "CHANNEL" and channelId or nil
   if Send("H", payload, dist, target, "BULK") then
     lastHello[dist] = now
@@ -570,6 +614,7 @@ function SendHello(dist, busy, urgent)
     lastHelloHash = h
     sentBusy[dist] = busyNow
     sentCd[dist] = CooldownSig()
+    scale.sentSpecs[dist] = table.concat(payload.sp or {}, ",")
     loginHello[dist] = true
     -- A busy-only hello doesn't repeat the posts, unless it is the first hello there.
     if not busy or not last then SendMyPosts(dist) end
@@ -590,7 +635,9 @@ local function BuildRecipeList(withNames)
     local name = withNames and type(r) == "table" and type(r.n) == "string" and r.n:sub(1, MAX_NAME) or false
     local o = type(r) == "table" and type(r.o) == "number" and r.o or false
     local p = type(r) == "table" and type(r.p) == "number" and r.p or false
-    list[i] = { id, name, o, p }
+    -- Where it is learned (5th field; older clients read the first four).
+    local src = NS.Recipes and NS.Recipes.SourceOf and NS.Recipes.SourceOf(id) or nil
+    list[i] = { id, name, o, p, src }
   end
   return list
 end
@@ -682,13 +729,34 @@ local lastOnline = {}
 local quietUntil = math.huge
 local OnlineNow -- forward: a peer's online state as shown (roster, friends, last heard)
 
+-- At maxPeers, the peer heard from longest ago makes room for a new one.
+function scale.MakeRoom(db)
+  -- Counted again before anyone goes (the peers may have been forgotten in the settings).
+  if not scale.peerCount or scale.peerCount >= scale.maxPeers then
+    scale.peerCount = 0
+    for _ in pairs(db.peers) do scale.peerCount = scale.peerCount + 1 end
+  end
+  while scale.peerCount >= scale.maxPeers do
+    local oldest, oldestT
+    for name, p in pairs(db.peers) do
+      local t = type(p) == "table" and type(p.seen) == "number" and p.seen or 0
+      if not oldestT or t < oldestT then oldest, oldestT = name, t end
+    end
+    if not oldest then scale.peerCount = 0 break end
+    db.peers[oldest] = nil
+    scale.peerCount = scale.peerCount - 1
+  end
+end
+
 local function Touch(full)
   local db = DB()
   if not db then return nil end
   local p = db.peers[full]
   if type(p) ~= "table" then
+    scale.MakeRoom(db)
     p = { recipes = {}, profs = {} }
     db.peers[full] = p
+    scale.peerCount = (scale.peerCount or 0) + 1
   end
   if type(p.recipes) ~= "table" then p.recipes = {} end
   if type(p.profs) ~= "table" then p.profs = {} end
@@ -749,6 +817,7 @@ local function PrunePeers()
       db.peers[name] = nil
     end
   end
+  scale.peerCount = nil
 end
 
 local function GuildRoster()
@@ -861,6 +930,7 @@ if NS.Register then
   NS.Register("GUILD_ROSTER_UPDATE", function()
     rosterCache = nil
     CheckOnlineSoon()
+    if C_Timer and C_Timer.After then C_Timer.After(2, function() scale.ReconcileGuild() end) end
   end)
 end
 
@@ -873,6 +943,49 @@ function Comm.IsOnline(name)
   return OnlineOf(full, db and db.peers[full], GuildRoster(), time()) and true or false
 end
 
+-- On-demand mode: more channel players heard within scale.window (guildmates aside) than full
+-- recipe lists can be swapped with. Counted at most once a minute.
+function Comm.OnDemand()
+  local now = time()
+  if now - scale.checkedAt < 60 then return scale.on end
+  scale.checkedAt = now
+  local db = DB()
+  local roster, n = GuildRoster(), 0
+  for full, p in pairs(db and db.peers or {}) do
+    if type(p) == "table" and type(p.ch) == "number" and now - p.ch < scale.window and roster[full] == nil then
+      n = n + 1
+    end
+  end
+  scale.heard = n
+  local was = scale.on
+  scale.on = n > scale.onDemandAt or (type(CraftBoardDB) == "table" and CraftBoardDB.forceOnDemand == true)
+  -- Back to swapping full lists: the peers only partly known get theirs asked for now.
+  if was and not scale.on and scale.LeftOnDemand then scale.LeftOnDemand() end
+  return scale.on
+end
+
+-- A channel player heard now. One not heard within the window adds to the count at once, so a
+-- burst of hellos turns on-demand mode on mid-burst instead of a minute later.
+function scale.Heard(full)
+  local p = Touch(full)
+  if not p then return end
+  local now = time()
+  local fresh = type(p.ch) == "number" and now - p.ch < scale.window
+  p.ch = now
+  if fresh or GuildRoster()[full] ~= nil then return end
+  scale.heard = scale.heard + 1
+  if scale.heard > scale.onDemandAt then scale.on = true end
+end
+
+-- Count again on the next question (the forced mode was toggled).
+function Comm.RecheckScale() scale.checkedAt = 0 end
+
+-- A peer whose full recipe list isn't fetched in on-demand mode: heard on the channel, not a
+-- guildmate.
+function scale.Peer(full)
+  return heardOn[full] == "CHANNEL" and GuildRoster()[full] == nil and Comm.OnDemand()
+end
+
 -- A peer's cooldowns as stored ([recipeID] = time ready; read only), nil if unknown or ignored.
 -- Cheaper than Comm.Peers() for one crafter.
 function Comm.PeerCooldowns(name)
@@ -880,6 +993,25 @@ function Comm.PeerCooldowns(name)
   if not (db and full) or (NS.IsIgnored and NS.IsIgnored(full)) then return nil end
   local p = db.peers[full]
   return type(p) == "table" and type(p.cd) == "table" and p.cd or nil
+end
+
+-- A member of my guild (by the roster, which knows offline members too).
+function Comm.IsGuildmate(name)
+  local full = FullName(name)
+  return full ~= nil and GuildRoster()[full] ~= nil
+end
+
+-- One peer as Comm.Peers() would give it (nil if unknown or ignored), without copying them all.
+function Comm.Peer(name)
+  local db, full = DB(), FullName(name)
+  if not (db and full) or (NS.IsIgnored and NS.IsIgnored(full)) then return nil end
+  local p = db.peers[full]
+  if type(p) ~= "table" then return nil end
+  local online = OnlineOf(full, p, GuildRoster(), time())
+  -- partial: on demand, their recipes are only what searches brought in.
+  return { recipes = p.recipes or {}, profs = p.profs or {}, seen = p.seen, online = online and true or false,
+    busy = online and p.busy and true or false, cd = p.cd, specs = p.specs,
+    partial = (p.odHash ~= nil or scale.Peer(full)) and true or nil }
 end
 
 -- Returns a copy of the stored peers with `online` derived from last message time,
@@ -902,6 +1034,7 @@ function Comm.Peers()
         -- Busy only means something while online (an offline peer's last flag is stale).
         busy = online and p.busy and true or false,
         cd = p.cd,
+        specs = p.specs,
       }
     end
   end
@@ -995,7 +1128,7 @@ function SendMyPosts(dist)
   for id, p in pairs(db.posts) do
     if type(p) == "table" and p.from == me and type(p.t) == "number" and now - p.t < POST_TTL then
       local target = dist == "CHANNEL" and channelId or nil
-      if Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa }, dist, target, "BULK") then
+      if Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty, note = p.note, t = p.t, pa = p.pa, k = p.k }, dist, target, "BULK") then
         p.sentTo = p.sentTo or {}
         p.sentTo[dist] = true
       end
@@ -1037,7 +1170,8 @@ Comm.PostNote = PostNote
 -- parent: id of one of my posts this one is an intermediate for (a linked order). Linked
 -- orders posted with their parent in the same click skip the few-seconds gap. note may be
 -- nil or "" (linked orders have none); prices are taken out of it.
-function Comm.PostRequest(itemID, qty, note, parent)
+-- kind "m": looking for the materials themselves (a gatherer or anyone holding them can help).
+function Comm.PostRequest(itemID, qty, note, parent, kind)
   local db, me = DB(), MyKey()
   itemID = PosInt(tonumber(itemID), 1e8)
   qty = PosInt(floor(tonumber(qty) or 1), 1000)
@@ -1057,7 +1191,8 @@ function Comm.PostRequest(itemID, qty, note, parent)
   postCounter = postCounter + 1
   local id = me .. ":" .. now .. ":" .. postCounter
   note = PostNote(note)
-  db.posts[id] = { id = id, from = me, item = itemID, qty = qty, note = note, t = now, mine = true, pa = parent }
+  db.posts[id] = { id = id, from = me, item = itemID, qty = qty, note = note, t = now, mine = true, pa = parent,
+    k = kind == "m" and "m" or nil }
   SendPost(id)
   Fire("POSTS_UPDATED")
   return id
@@ -1079,7 +1214,7 @@ function SendPost(id)
     local wanted = (dist == "GUILD" and InGuild() and GuildShareOn()) or (dist == "CHANNEL" and RealmChannelOn())
     if wanted then
       local sent = CanSend() and DistAvailable(dist) and Send("P", { v = VERSION, id = id, item = p.item, qty = p.qty,
-        note = p.note, t = p.t, pa = p.pa }, dist, dist == "CHANNEL" and channelId or nil)
+        note = p.note, t = p.t, pa = p.pa, k = p.k }, dist, dist == "CHANNEL" and channelId or nil)
       if sent then
         -- Where it went: its retraction goes there too, whatever the sharing settings are by then.
         p.sentTo = p.sentTo or {}
@@ -1220,6 +1355,82 @@ function Comm.Retract(id)
   return true
 end
 
+-- A linked order by another player anywhere under post id.
+function Comm.HasOthersLinked(id, seen)
+  local db, me = DB(), MyKey()
+  if not db then return false end
+  seen = seen or {}
+  seen[id] = true
+  for cid, c in pairs(db.posts) do
+    if type(c) == "table" and c.pa == id and not seen[cid] then
+      if c.from ~= me or Comm.HasOthersLinked(cid, seen) then return true end
+    end
+  end
+  return false
+end
+
+-- Renew: one of my posts goes up again as a new post (the old one is retracted), with its
+-- linked orders, for another POST_TTL. Returns the new id.
+function Comm.Renew(id)
+  local db, me = DB(), MyKey()
+  local p = db and type(id) == "string" and db.posts[id]
+  if not (type(p) == "table" and p.from == me) then return nil end
+  -- Another player's linked order under it can't be posted again under the new request, and
+  -- retracting this one would take it down: no Renew then.
+  if Comm.HasOthersLinked(id) then
+    Print(L["Another player posted a linked order for this request: it can't be renewed without taking theirs down."])
+    return nil
+  end
+  -- The whole chain of my linked orders under it, however deep, goes up again the same shape.
+  local function Tree(pid, seen)
+    seen[pid] = true
+    local out = {}
+    for cid, c in pairs(db.posts) do
+      if type(c) == "table" and c.pa == pid and c.from == me and not seen[cid] then
+        out[#out + 1] = { item = c.item, qty = c.qty, k = c.k, kids = Tree(cid, seen) }
+      end
+    end
+    return out
+  end
+  -- The gap between posts holds for Renew too (checked before anything is retracted).
+  if time() - lastPost < POST_GAP then
+    Print(L["Please wait a few seconds before posting again."])
+    return nil
+  end
+  local tree = Tree(id, {})
+  Comm.Retract(id)
+  local nid = Comm.PostRequest(p.item, p.qty, p.note, nil, p.k)
+  if not nid then return nil end
+  local function Post(list, parent)
+    for _, k in ipairs(list) do
+      local kid = Comm.PostRequest(k.item, k.qty, "", parent, k.k)
+      if kid then Post(k.kids, kid) end
+    end
+  end
+  Post(tree, nid)
+  return nid
+end
+
+-- My posts that expire within RENEW_WINDOW and haven't been mentioned yet: one quiet chat line
+-- each (option oldPostNotice, default on). Checked with every hello round and at login.
+function Comm.NudgeOld()
+  if type(CraftBoardDB) == "table" and CraftBoardDB.oldPostNotice == false then return end
+  local db, me = DB(), MyKey()
+  if not (db and me) then return end
+  local now = time()
+  for _, p in pairs(db.posts) do
+    if type(p) == "table" and p.from == me and not p.pa and not p.nudged and type(p.t) == "number"
+      and now - p.t >= POST_TTL - Comm.RENEW_WINDOW and now - p.t < POST_TTL then
+      p.nudged = true
+      local label = NS.ItemLabel and NS.ItemLabel(p.item) or format(L["Item %d"], p.item)
+      local left = math.max(1, floor((POST_TTL - (now - p.t)) / 3600 + 0.5))
+      Print(format(L["Your request for %s expires in about %dh. Renew it on the Requests tab to keep it up."], label, left))
+    end
+  end
+end
+Comm.RENEW_WINDOW = 4 * 3600
+Comm.POST_TTL = POST_TTL
+
 -- Posts linked to post id (its intermediates), and the post it is linked to.
 function Comm.Linked(id)
   local db = DB()
@@ -1275,7 +1486,8 @@ function Comm.Request(itemID, qty, toName)
   end
   if not label and C_Item and C_Item.GetItemNameByID then label = C_Item.GetItemNameByID(itemID) end
   label = label or format(L["Item %d"], itemID)
-  local msg = format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty, label)
+  local msg = NS.Templates and NS.Templates.Request(label, qty)
+    or format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty, label)
   return Comm.Whisper(target, msg)
 end
 
@@ -1404,7 +1616,8 @@ local function RetryQueries()
   local db, now = DB(), time()
   for full, h in pairs(pendingQ) do
     local p = db and db.peers[full]
-    if type(p) ~= "table" or p.hash == h then
+    -- (A peer on demand by now isn't asked for its full list after all.)
+    if type(p) ~= "table" or p.hash == h or scale.Peer(full) then
       pendingQ[full] = nil
     elseif CanSend() and not (queried[full] and now - queried[full] < QUERY_GAP) then
       pendingQ[full] = nil
@@ -1415,6 +1628,42 @@ local function RetryQueries()
   if next(pendingQ) and C_Timer and C_Timer.After then
     pendingQTimer = true
     C_Timer.After(15, RetryQueries)
+  end
+end
+
+-- Guildmates the roster didn't know yet when they were heard on the channel (a login on a
+-- crowded realm) were taken for on-demand peers: their full list is asked for now.
+function scale.LeftOnDemand()
+  local db = DB()
+  local any = false
+  for full, p in pairs(db and db.peers or {}) do
+    if type(p) == "table" and p.odHash ~= nil then
+      pendingQ[full] = p.odHash
+      p.odHash, p.hash = nil, nil
+      any = true
+    end
+  end
+  if any and not pendingQTimer and C_Timer and C_Timer.After then
+    pendingQTimer = true
+    C_Timer.After(1, RetryQueries)
+  end
+end
+
+function scale.ReconcileGuild()
+  local db = DB()
+  local roster = GuildRoster()
+  if not (db and next(roster)) then return end
+  local any = false
+  for full, p in pairs(db.peers) do
+    if type(p) == "table" and p.odHash ~= nil and roster[full] ~= nil then
+      pendingQ[full] = p.odHash
+      p.odHash, p.hash = nil, nil
+      any = true
+    end
+  end
+  if any and not pendingQTimer and C_Timer and C_Timer.After then
+    pendingQTimer = true
+    C_Timer.After(1, RetryQueries)
   end
 end
 
@@ -1435,7 +1684,8 @@ function handlers.H(full, data)
     sort(ids)
     cdKey = table.concat(ids, ",")
   end
-  if Duplicate(full, "H", h .. (busy and ":b" or "") .. "|" .. cdKey) then return end
+  -- (Specializations too: a hello sent only to announce one isn't a copy of the one before.)
+  if Duplicate(full, "H", h .. (busy and ":b" or "") .. "|" .. cdKey .. "|" .. Comm.SpecKey(Comm.ReadSpecs(data.sp))) then return end
   local p = Touch(full)
   if not p then return end
   if type(data.cd) == "table" then
@@ -1470,6 +1720,12 @@ function handlers.H(full, data)
   end
   -- pg=1: this client reads recipe lists sent in pages (older ones take a single message only).
   p.paging = data.pg == 1 or nil
+  -- Specializations (sp, optional): known spell IDs only.
+  local specs = Comm.ReadSpecs(data.sp)
+  if Comm.SpecKey(specs) ~= Comm.SpecKey(p.specs) then
+    p.specs = specs
+    FirePeersSoon()
+  end
   local profs = CleanProfs(data.profs)
   if profs then
     -- New ranks with the same recipes (a skill-up): tooltips and lists showing them update.
@@ -1480,6 +1736,35 @@ function handlers.H(full, data)
     p.busy = busy or nil
     Fire("PEERS_UPDATED")
   end
+  -- Too many players on the channel to swap whole recipe lists: Find asks them (W) instead.
+  -- Checked before the same-hash shortcut: a book that changed while on demand and changed back
+  -- still drops what came in under the other hash.
+  if scale.Peer(full) then
+    -- Their book changed: what I had of it may be gone (an unlearned profession). Searches
+    -- (W / A) bring back what they still know. (The hash their full list was stored under counts
+    -- as what I knew, the first time.)
+    local known = p.odHash or p.hash
+    if known == nil then
+      -- Nothing to compare with yet (only search answers so far): they belong to this book.
+      p.odHash = h
+    elseif known ~= h then
+      -- Answers sent from this very book (the hash they carried) stay; anything older goes.
+      local keep = {}
+      for id, ah in pairs(p.aRec or {}) do
+        if ah == h then keep[id] = true end
+      end
+      if next(p.recipes) then
+        p.recipes = keep
+        Fire("PEERS_UPDATED")
+      end
+      p.odHash = h
+    end
+    p.aRec = nil
+    return
+  end
+  -- Out of on-demand mode again: what I have of them is only what searches brought in, so their
+  -- full list is asked for once, whatever the hash says.
+  if p.odHash ~= nil then p.odHash, p.hash = nil, nil end
   if p.hash == h then return end
   if data.n <= 0 then
     -- Nothing to fetch; record the empty book without a round trip. A query still open for an
@@ -1519,13 +1804,20 @@ local function FlushBatch()
     C_Timer.After(15, FlushBatch)
     return
   end
+  -- Its broadcast is a full list: it waits for room under the per-minute limit as well (counted
+  -- when it goes, not when the batch began).
+  if not scale.AnswerRoom() and C_Timer and C_Timer.After then
+    C_Timer.After(15, FlushBatch)
+    return
+  end
   local b = batch
   batch = nil
   -- Queriers who asked too long ago (a long lockdown) would no longer read the answer: they are
   -- let go, and a hello (my hash differs from theirs) makes them ask again.
-  local now, stale = time(), false
+  local now, stale, askedAt = time(), false, {}
   for peer in pairs(b) do
-    if now - (batchAsked[peer] or now) > QUERY_TTL - 15 then
+    askedAt[peer] = batchAsked[peer] or now
+    if now - askedAt[peer] > QUERY_TTL - 15 then
       b[peer], answered[peer], stale = nil, nil, true
     end
     batchAsked[peer] = nil
@@ -1536,11 +1828,16 @@ local function FlushBatch()
   local sent = {}
   for _, dist in pairs(b) do
     if sent[dist] == nil then
-      sent[dist] = CanSend() and DistAvailable(dist) and SendRecipes(dist) or false
+      -- Each distribution's broadcast is a list of its own: room is checked for each (its
+      -- askers are whispered through the limit below if there is none).
+      sent[dist] = CanSend() and DistAvailable(dist) and scale.AnswerRoom() and SendRecipes(dist) or false
+      if sent[dist] then scale.CountAnswer() end
     end
   end
+  -- The broadcast didn't go (too big for one message, or the channel was gone): each of them is
+  -- whispered after all, through the per-minute limit like any other whispered list.
   for peer, dist in pairs(b) do
-    if not sent[dist] then SendRecipes("WHISPER", ShortName(peer), ReadsPages(peer)) end
+    if not sent[dist] then scale.QueueAnswer(peer, askedAt[peer]) end
   end
 end
 
@@ -1555,6 +1852,15 @@ end
 -- when they asked. Answered by whisper once sending works, while the asker still reads the
 -- answer (QUERY_TTL); anyone past that gets a hello instead, which makes them ask again.
 local pendingR, pendingRTimer = {}, false
+function scale.AnswerRoom()
+  local now, t = time(), scale.answerTimes
+  for i = #t, 1, -1 do
+    if now - t[i] >= 60 then table.remove(t, i) end
+  end
+  return #t < scale.answersPerMin
+end
+function scale.CountAnswer() scale.answerTimes[#scale.answerTimes + 1] = time() end
+
 local function RetryAnswers()
   pendingRTimer = false
   if not CanSend() then
@@ -1564,17 +1870,40 @@ local function RetryAnswers()
     end
     return
   end
-  local now, stale = time(), false
+  local now, stale, staleGuild = time(), false, false
   for peer, t in pairs(pendingR) do
-    pendingR[peer] = nil
-    if now - t <= QUERY_TTL - 15 then
-      answered[peer] = now
-      SendRecipes("WHISPER", ShortName(peer), ReadsPages(peer))
-    else
+    if now - t > QUERY_TTL - 15 then
+      pendingR[peer] = nil
       stale = true
+      if GuildRoster()[peer] ~= nil then staleGuild = true end
+    elseif scale.AnswerRoom() and SendRecipes("WHISPER", ShortName(peer), ReadsPages(peer)) then
+      -- (Only a list that went counts; one that didn't stays queued until it goes stale.)
+      pendingR[peer] = nil
+      answered[peer] = now
+      scale.CountAnswer()
     end
   end
-  if stale then SendHello(nil, nil, true) end
+  if next(pendingR) and not pendingRTimer and C_Timer and C_Timer.After then
+    pendingRTimer = true
+    C_Timer.After(15, RetryAnswers)
+  end
+  -- Askers who waited too long ask again after a hello. With crowds on the channel only the
+  -- guild hears it (a channel hello would bring the crowd's queries back; guildmates always
+  -- sync in full).
+  if stale and not Comm.OnDemand() then
+    SendHello(nil, nil, true)
+  elseif staleGuild then
+    SendHello("GUILD", nil, true)
+  end
+end
+
+-- A query answered by whisper once the per-minute limit allows (askedAt: when they asked).
+function scale.QueueAnswer(peer, askedAt)
+  pendingR[peer] = askedAt or time()
+  if not pendingRTimer and C_Timer and C_Timer.After then
+    pendingRTimer = true
+    C_Timer.After(1, RetryAnswers)
+  end
 end
 
 function handlers.Q(full)
@@ -1589,23 +1918,40 @@ function handlers.Q(full)
     end
     return
   end
-  answered[full] = now
   for i = #queryTimes, 1, -1 do
     if now - queryTimes[i] > R_BATCH_WINDOW then table.remove(queryTimes, i) end
   end
   queryTimes[#queryTimes + 1] = now
+  -- Joining a broadcast batch costs nothing more: one R reaches them all. Only whispered lists
+  -- count toward the per-minute limit (the batch's own R counts once).
   local dist = ReadsPages(full) and heardOn[full]
+  -- A new batch is a full list too: only with room under the per-minute limit (else the queries
+  -- wait in the whisper queue below).
   if dist and C_Timer and C_Timer.After and (batch or (#queryTimes >= R_BATCH
-    and not (batchAt and now - batchAt < ANSWER_GAP))) then
+    and not (batchAt and now - batchAt < ANSWER_GAP) and scale.AnswerRoom())) then
     if not batch then
       batch = {}
       C_Timer.After(R_BATCH_DELAY, FlushBatch)
     end
+    answered[full] = now
     batch[full] = dist
     batchAsked[full] = now
     return
   end
-  SendRecipes("WHISPER", ShortName(full), ReadsPages(full))
+  if not scale.AnswerRoom() then
+    pendingR[full] = now
+    if not pendingRTimer and C_Timer and C_Timer.After then
+      pendingRTimer = true
+      C_Timer.After(15, RetryAnswers)
+    end
+    return
+  end
+  if SendRecipes("WHISPER", ShortName(full), ReadsPages(full)) then
+    answered[full] = now
+    scale.CountAnswer()
+  else
+    scale.QueueAnswer(full, now)
+  end
 end
 
 function handlers.R(full, data)
@@ -1632,6 +1978,7 @@ function handlers.R(full, data)
     acc.got[pg], acc.n = true, acc.n + 1
   end
   local recipes, count = acc and acc.recipes or {}, acc and acc.count or 0
+  local sourced = false   -- (a complete list fires PEERS_UPDATED anyway; a page with new sources too)
   for _, e in ipairs(data.list) do
     if count >= MAX_RECIPES then break end
     local id, name, o, prof
@@ -1644,6 +1991,8 @@ function handlers.R(full, data)
     if id then
       recipes[id] = true
       count = count + 1
+      local src = type(e) == "table" and PosInt(e[5], 1e8)
+      if src and NS.Recipes and NS.Recipes.SetSource and NS.Recipes.SetSource(id, src) then sourced = true end
       name = CleanString(name, MAX_NAME)
       o = PosInt(o, 1e8)
       prof = PosInt(prof, 1e6)
@@ -1660,11 +2009,14 @@ function handlers.R(full, data)
   if profs then p.profs = profs end
   if acc then
     acc.count = count
-    if acc.n < acc.pgs then return end    -- more pages to come; the query stays open for them
+    if acc.n < acc.pgs then                -- more pages to come; the query stays open for them
+      if sourced then FirePeersSoon() end
+      return
+    end
     pagesIn[full] = nil
   end
   p.recipes = recipes
-  p.hash = h
+  p.hash, p.odHash = h, nil
   -- The answer to the hash asked for closes the query; an older one (a slow answer to an
   -- earlier query) is taken but leaves it open for the one asked for.
   if queriedHash[full] == nil or queriedHash[full] == h then queried[full], queriedHash[full] = nil, nil end
@@ -1694,12 +2046,25 @@ function handlers.P(full, data)
   local count, total = 0, 0
   local oldestId, oldestT
   local me = MyKey()
+  -- Requests one of my linked orders hangs under (however far up): never made room from, or my
+  -- order would be left looking like a request of its own.
+  local mine = {}
+  for _, p in pairs(db.posts) do
+    if type(p) == "table" and p.from == me then
+      local up, steps = p.pa, 0
+      while up and not mine[up] and steps < 20 do
+        mine[up] = true
+        local parent = db.posts[up]
+        up, steps = type(parent) == "table" and parent.pa or nil, steps + 1
+      end
+    end
+  end
   for pid, p in pairs(db.posts) do
     total = total + 1
     if type(p) == "table" then
       if p.from == full then count = count + 1 end
       -- Room is made from other players' posts, never mine.
-      if p.from ~= me and (not oldestT or (p.t or 0) < oldestT) then oldestId, oldestT = pid, p.t or 0 end
+      if p.from ~= me and not mine[pid] and (not oldestT or (p.t or 0) < oldestT) then oldestId, oldestT = pid, p.t or 0 end
     end
   end
   if count >= MAX_POSTS_PER_SENDER then return end
@@ -1729,7 +2094,10 @@ function handlers.P(full, data)
     note = PostNote(data.note),
     t = (st <= now and now - st < POST_TTL) and st or now,
     pa = pa,
+    k = data.k == "m" and "m" or nil,
   }
+  -- (Ignored players' posts are hidden, and don't count toward demand either.)
+  if NS.Stats and NS.Stats.NoteDemand and not (NS.IsIgnored and NS.IsIgnored(full)) then NS.Stats.NoteDemand(item, full) end
   Fire("POSTS_UPDATED")
 end
 
@@ -1760,12 +2128,352 @@ function handlers.X(full, data)
   end
 end
 
+-- Who can craft this (W / A) ---------------------------------------------------------
+
+do
+local W_GAP = 4                   -- our own W rate limit
+local W_REPEAT = 300              -- the same question is asked again only after this long
+local W_TTL = 60                  -- an A is taken this long after our W
+local W_MAX_ITEMS = 8
+local W_MAX_TEXT = 40
+local A_MAX = 30                  -- recipes in one answer
+local A_GAP = 30                  -- one answer per asker per this long
+local A_PER_MIN = 20              -- answers we send per minute
+
+-- A Find search asks the board "who can craft <text or items>?"; crafters with a match whisper
+-- back the matching recipes, which join what I know of them. Nothing here is automatic on the
+-- crafter's side beyond the addon answer itself (no chat line, no whisper).
+
+local asked = {}          -- [W id] = time we sent it
+local askedKey = {}       -- [question key] = time: the same question isn't asked twice in W_REPEAT
+local lastAsk, askCounter = 0, 0
+local answeredW = {}      -- [asker] = time we answered them
+local wAnswerTimes = {}   -- times of our answers within the last minute
+
+-- Lower-case text cut to W_MAX_TEXT, letters, digits and spaces only (it is matched as plain text).
+local function QueryText(text)
+  if type(text) ~= "string" then return nil end
+  local q = strlower(NS.StripCodes(text)):gsub("[%c|%%]", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+  q = CutChars(q, W_MAX_TEXT)
+  if #q < 2 then return nil end   -- as Find: two letters are a search
+  return q
+end
+Comm.QueryText = QueryText
+
+-- My shareable recipes matching a W: text in the recipe or output item name (this client's
+-- language), or one of its item IDs as output. At most A_MAX, as R list entries.
+function Comm.MatchQuery(q, items)
+  local want = {}
+  for _, id in ipairs(type(items) == "table" and items or {}) do want[id] = true end
+  local out, ids, mine, added, unnamed = {}, {}, MyRecipes(), {}, false
+  for id in pairs(mine) do if type(id) == "number" then ids[#ids + 1] = id end end
+  sort(ids)
+  -- Two passes: the items asked for by ID first (they never lose their place to a broad text
+  -- match), then the text matches in what room is left.
+  for pass = 1, 2 do
+    for _, id in ipairs(ids) do
+      if #out >= A_MAX then break end
+      local r = mine[id]
+      if type(r) == "table" and not added[id] then
+        local hit = pass == 1 and type(r.o) == "number" and want[r.o]
+        if pass == 2 and q then
+          -- As Find matches: every word in the recipe name or the output item's name.
+          local name = type(r.n) == "string" and strlower(r.n) or ""
+          local item = type(r.o) == "number" and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(r.o)
+          if type(r.o) == "number" and item == nil then unnamed = true end
+          item = type(item) == "string" and strlower(item) or ""
+          hit = true
+          for w in q:gmatch("%S+") do
+            if not (name:find(w, 1, true) or item:find(w, 1, true)) then hit = false break end
+          end
+        end
+        if hit then
+          added[id] = true
+          out[#out + 1] = { id, type(r.n) == "string" and r.n:sub(1, MAX_NAME) or false,
+            type(r.o) == "number" and r.o or false, type(r.p) == "number" and r.p or false,
+            NS.Recipes and NS.Recipes.SourceOf and NS.Recipes.SourceOf(id) or nil }
+        end
+      end
+    end
+  end
+  -- unnamed: some output names weren't loaded yet (they may have matched).
+  return out, unnamed
+end
+
+-- Ask the board. text and/or items (output item IDs). Returns true when a W went out.
+function Comm.Ask(text, items)
+  local q = QueryText(text)
+  local list = {}
+  for _, id in ipairs(type(items) == "table" and items or {}) do
+    if #list >= W_MAX_ITEMS then break end
+    if PosInt(id, 1e8) then list[#list + 1] = id end
+  end
+  -- Items in my catalogue whose name in my language matches go along by ID, so a crafter on a
+  -- client in another language finds them too (the text only matches names in theirs).
+  if q and #list < W_MAX_ITEMS and NS.Inventory and NS.Inventory.ItemName then
+    local cat = type(CraftBoardDB) == "table" and type(CraftBoardDB.recipeNames) == "table" and CraftBoardDB.recipeNames or {}
+    local seenID = {}
+    for _, id in ipairs(list) do seenID[id] = true end
+    for _, e in pairs(cat) do
+      if #list >= W_MAX_ITEMS then break end
+      local o = type(e) == "table" and e.o
+      local name = type(o) == "number" and not seenID[o] and NS.Inventory.ItemName(o)
+      if type(name) == "string" then
+        -- As Find matches: each word in the item's name or the recipe's ("Transmute: ...").
+        name = strlower(name)
+        local rname = type(e.n) == "string" and strlower(e.n) or ""
+        local hit = true
+        for w in q:gmatch("%S+") do
+          if not (name:find(w, 1, true) or rname:find(w, 1, true)) then hit = false break end
+        end
+        if hit then list[#list + 1], seenID[o] = o, true end
+      end
+    end
+    sort(list)
+  end
+  if not q and #list == 0 then return false end
+  local now = time()
+  local key = (q or "") .. "|" .. table.concat(list, ",")
+  if askedKey[key] and now - askedKey[key] < W_REPEAT then return false end
+  if now - lastAsk < W_GAP or not CanSend() then return false, "wait" end
+  local me = MyKey()
+  if not me then return false end
+  askCounter = askCounter + 1
+  local id = me .. ":" .. now .. ":" .. askCounter
+  local payload = { v = VERSION, id = id, q = q, i = #list > 0 and list or nil }
+  local used = Broadcast("W", payload, "NORMAL")
+  -- Nowhere to send it yet (the realm channel still joining after login): tried again shortly.
+  if #used == 0 then return false, (RealmChannelOn() and not ResolveChannel()) and "wait" or nil end
+  lastAsk, askedKey[key], asked[id] = now, now, now
+  -- The realm channel not joined yet (just after login): the same question goes there once it
+  -- is, while answers are still taken (a few tries).
+  local onChannel = false
+  for _, d in ipairs(used) do onChannel = onChannel or d == "CHANNEL" end
+  if not onChannel and RealmChannelOn() and C_Timer and C_Timer.After then
+    local function again()
+      if time() - now > W_TTL - 5 then
+        -- Never reached the channel: the same question may be asked again at once.
+        askedKey[key] = nil
+        return
+      end
+      if CanSend() and ResolveChannel() and Send("W", payload, "CHANNEL", channelId, "NORMAL") then
+        -- Channel crafters hear it only now: their answers are taken for a full window from here.
+        asked[id] = time()
+        return
+      end
+      C_Timer.After(5, again)
+    end
+    C_Timer.After(5, again)
+  end
+  return true
+end
+
+-- Ask once the typing has stopped (Find calls this on every keystroke).
+local askPending, askText, askItems = false, nil, nil
+-- A search and the item it picks arrive together: both go in the one question.
+function Comm.AskSoon(text, items)
+  -- A new question (not a retry) gets its own set of retries.
+  if text ~= nil or items ~= nil then scale.askWaits = 0 end
+  if text ~= nil then askText = text end
+  if type(items) == "table" then
+    -- Newest first, each once: the card the player stopped on is never cut off by W_MAX_ITEMS.
+    askItems = askItems or {}
+    for _, id in ipairs(items) do
+      for k = #askItems, 1, -1 do
+        if askItems[k] == id then table.remove(askItems, k) end
+      end
+      table.insert(askItems, 1, id)
+    end
+  end
+  if askPending or not (C_Timer and C_Timer.After) then return end
+  askPending = true
+  C_Timer.After(1.5, function()
+    askPending = false
+    local t, i = askText, askItems
+    askText, askItems = nil, nil
+    local _, why = Comm.Ask(t, i)
+    -- Inside the gap between questions, or in combat: tried again shortly (unless a newer
+    -- search came in meanwhile, which goes instead).
+    -- (Put back as it was, newest first: AskSoon's items argument would reverse it.)
+    -- A few minutes at most (a channel that never joins doesn't keep it asking).
+    if why == "wait" and askText == nil and askItems == nil and scale.askWaits < 120 then
+      scale.askWaits = scale.askWaits + 1
+      askText, askItems = t, i
+      Comm.AskSoon()
+    elseif why ~= "wait" then
+      scale.askWaits = 0
+    end
+  end)
+end
+
+function handlers.W(full, data)
+  local id = CleanString(data.id, 96)
+  if not id or id == "" then return end
+  if Duplicate(full, "W", id) then return end
+  Touch(full)
+  local q = data.q ~= nil and QueryText(data.q) or nil
+  local items = {}
+  if type(data.i) == "table" then
+    for k = 1, W_MAX_ITEMS do
+      local it = PosInt(data.i[k], 1e8)
+      if it then items[#items + 1] = it end
+    end
+  end
+  if not q and #items == 0 then return end
+  scale.AnswerW(full, { id = id, q = q, items = items, t = time() })
+end
+
+-- One answer per asker per A_GAP: a newer question inside the gap waits for its end (the latest
+-- one only), and an answer held up by combat or chat lockdown is tried again, both only while the
+-- asker still takes answers (W_TTL).
+scale.heldW = {}          -- [asker] = the question waiting out the gap
+scale.capHeld = {}        -- [asker] = the question waiting for room under A_PER_MIN
+scale.wPending = 0        -- answers scheduled but not sent yet
+scale.askWaits = 0        -- times the current question was held back in a row
+scale.pendingA = {}       -- [asker] = { w=, list= }: their answer waiting to go out
+function scale.AnswerW(full, w)
+  local now = time()
+  if now - w.t > W_TTL - 1 then return end
+  local wait = answeredW[full] and A_GAP - (now - answeredW[full])
+  if wait and wait > 0 then
+    local had = scale.heldW[full]
+    scale.heldW[full] = w
+    if not had and C_Timer and C_Timer.After then
+      C_Timer.After(wait + 0.1, function()
+        local x = scale.heldW[full]
+        scale.heldW[full] = nil
+        if x then scale.AnswerW(full, x) end
+      end)
+    end
+    return
+  end
+  local list, unnamed = Comm.MatchQuery(w.q, w.items)
+  -- No match while some output names were still loading: looked at once more when they may be
+  -- in (the asker suppresses the same question for minutes).
+  -- Some output names still loading: wait for them (they may match too) while there is time
+  -- left, then answer with what matches by then.
+  if unnamed and now - w.t < W_TTL - 8 and C_Timer and C_Timer.After then
+    C_Timer.After(3, function() scale.AnswerW(full, w) end)
+    return
+  end
+  if #list == 0 then return end
+  for i = #wAnswerTimes, 1, -1 do
+    if now - wAnswerTimes[i] >= 60 then table.remove(wAnswerTimes, i) end
+  end
+  -- Answers waiting to go out (the spreading wait, a lockdown) count too, so they can't all
+  -- leave at once later.
+  if #wAnswerTimes + scale.wPending >= A_PER_MIN then
+    -- At the limit: tried again when the oldest answer leaves the minute (AnswerW drops it if
+    -- the asker has stopped listening by then).
+    -- One retry per asker, with their newest question.
+    local had = scale.capHeld[full]
+    scale.capHeld[full] = w
+    if not had and C_Timer and C_Timer.After then
+      -- Every slot may still be waiting to be sent (no time to count from yet): look again soon.
+      local wait = wAnswerTimes[1] and (60 - (now - wAnswerTimes[1]) + 0.1) or 3
+      C_Timer.After(wait, function()
+        local x = scale.capHeld[full]
+        scale.capHeld[full] = nil
+        if x then scale.AnswerW(full, x) end
+      end)
+    end
+    return
+  end
+  -- One answer per asker on its way at a time: a newer question while it waits (a lockdown)
+  -- replaces what it will say instead of sending a second one.
+  local pend = scale.pendingA[full]
+  if pend then
+    pend.w, pend.list = w, list
+    return
+  end
+  pend = { w = w, list = list }
+  scale.pendingA[full] = pend
+  -- Held for this asker meanwhile; the minute's count takes the answer when it is sent.
+  answeredW[full] = now
+  scale.wPending = scale.wPending + 1
+  -- A moment's wait, different for every crafter, so the answers don't arrive in one burst.
+  local function answer()
+    local cur = pend.w
+    if CanSend() then
+      scale.wPending = max(0, scale.wPending - 1)
+      scale.pendingA[full] = nil
+      if Send("A", { v = VERSION, id = cur.id, list = pend.list, profs = MyProfs(), h = MyHash() }, "WHISPER", ShortName(full), "BULK") then
+        answeredW[full] = time()
+        wAnswerTimes[#wAnswerTimes + 1] = time()
+      end
+    elseif time() - cur.t < W_TTL - 5 and C_Timer and C_Timer.After then
+      C_Timer.After(5, answer)
+    else
+      scale.wPending = max(0, scale.wPending - 1)
+      scale.pendingA[full] = nil
+    end
+  end
+  -- The spreading wait, cut short so the answer still arrives while the asker listens.
+  local delay = min(0.5 + random() * 2.5, max(0, W_TTL - 1 - (now - w.t)))
+  if C_Timer and C_Timer.After and delay > 0 then C_Timer.After(delay, answer) else answer() end
+end
+
+function handlers.A(full, data)
+  local id = CleanString(data.id, 96)
+  local t = id and asked[id]
+  if not t or time() - t > W_TTL then return end
+  if type(data.list) ~= "table" then return end
+  local db = DB()
+  local p = Touch(full)
+  if not (db and p) then return end
+  local added = false
+  local ah = CleanString(data.h, 64)   -- the hash of the book it was answered from
+  -- Known only from answers so far: their book is partial (from this hash), as an on-demand
+  -- peer's is, so leaving on-demand mode asks for the rest.
+  -- (An answer from a book other than the full list I hold makes that list partial too.)
+  if ah and p.odHash == nil and p.hash ~= ah then p.odHash = ah end
+  for k = 1, A_MAX do
+    local e = data.list[k]
+    if type(e) ~= "table" then break end
+    local rid = PosInt(e[1], 1e8)
+    if rid then
+      if not p.recipes[rid] then p.recipes[rid], added = true, true end
+      -- (Remembered until their next hello with the book hash it came from: that hello keeps it
+      -- if its hash is the same.)
+      p.aRec = p.aRec or {}
+      p.aRec[rid] = ah or false
+      local src = PosInt(e[5], 1e8)
+      if src and NS.Recipes and NS.Recipes.SetSource and NS.Recipes.SetSource(rid, src) then added = true end
+      local name, o, prof = CleanString(e[2], MAX_NAME), PosInt(e[3], 1e8), PosInt(e[4], 1e6)
+      if name or o then
+        local rn = db.recipeNames[rid]
+        if type(rn) ~= "table" then rn = {}; db.recipeNames[rid] = rn end
+        if name and name ~= "" then rn.n = name end
+        if o then rn.o = o end
+        if prof then rn.p = prof end
+      end
+    end
+  end
+  local profs = CleanProfs(data.profs)
+  if profs then
+    -- New ranks or names: tooltips and lists showing them follow.
+    if ProfsKey(profs) ~= ProfsKey(p.profs) then added = true end
+    p.profs = profs
+  end
+  if added then FirePeersSoon() end
+end
+
+function scale.SweepAsked()
+  local now = time()
+  for k, t in pairs(asked) do if now - t > W_TTL then asked[k] = nil end end
+  for k, t in pairs(askedKey) do if now - t > W_REPEAT then askedKey[k] = nil end end
+  for k, t in pairs(answeredW) do if now - t > A_GAP then answeredW[k] = nil end end
+end
+end
+
 local ALLOWED = {
   H = { GUILD = true, CHANNEL = true },
   P = { GUILD = true, CHANNEL = true },
   X = { GUILD = true, CHANNEL = true },
   Q = { WHISPER = true },
   R = { WHISPER = true, GUILD = true, CHANNEL = true },
+  W = { GUILD = true, CHANNEL = true },
+  A = { WHISPER = true },
 }
 
 function commObj:OnCommReceived(prefix, message, distribution, from)
@@ -1787,6 +2495,8 @@ function commObj:OnCommReceived(prefix, message, distribution, from)
   if not RateOk(full) then return end
   local data = Decode(message:sub(2))
   if not data then return end
+  -- Heard on the channel (on-demand mode counts these players), before the handler reads it.
+  if distribution == "CHANNEL" then scale.Heard(full) end
   local ok, err = pcall(handlers[kind], full, data)
   if not ok and NS.debug then Print("comm error: " .. tostring(err)) end
 end
@@ -1799,6 +2509,8 @@ local function ScheduleHello()
     PrunePeers()
     PrunePosts()
     SweepDedupe()
+    scale.SweepAsked()
+    Comm.NudgeOld()
     SendHello()
     ScheduleHello()
   end)
@@ -1830,6 +2542,11 @@ local function Start()
     -- A cast of a cooldown craft (or one newly tracked) reaches peers within seconds, not with the
     -- next periodic hello: they would otherwise see it ready for up to ten minutes.
     pcall(NS.RegisterCallback, Comm, "COOLDOWNS_UPDATED", function() ScheduleStateFlush(BUSY_DEBOUNCE) end)
+    -- A specialization learned or dropped goes out the same way (only when it differs from what
+    -- the last hello said).
+    pcall(NS.RegisterCallback, Comm, "SKILLS_UPDATED", function()
+      if lastHelloAt then ScheduleStateFlush(BUSY_DEBOUNCE) end   -- (the login hello carries them)
+    end)
   end
   InstallChatFilter()
   PrunePeers()
@@ -1840,6 +2557,7 @@ local function Start()
     C_Timer.After(15, RetryRetracts)
   end
   C_Timer.After(10, function() SendHello() end)
+  C_Timer.After(30, function() Comm.NudgeOld() end)
   ScheduleHello()
   if C_Timer.NewTicker then
     C_Timer.NewTicker(300, function()
@@ -2048,5 +2766,8 @@ function Comm.Debug()
   Print(format(L["peers: %d (%d online), open posts: %d"], total, online, #PostList()))
   Print(format(L["last hello: %s (guild %s, channel %s), my hash %s"], ago(lastHelloAt), ago(lastHello.GUILD),
     ago(lastHello.CHANNEL), tostring(MyHash())))
+  local od = Comm.OnDemand()
+  Print(format(L["channel players heard today: %d; recipe lists: %s"], scale.heard,
+    od and L["asked per search (many players)"] or L["swapped in full"]))
   if not (LibSerialize and LibDeflate and AceComm) then Print(L["missing comm libraries; sync disabled"]) end
 end
