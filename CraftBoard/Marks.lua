@@ -188,13 +188,21 @@ local function ChannelLabel(name)
   return name:match("^(.-)%s+%-%s+") or name
 end
 
-NS.Register("CHAT_MSG_CHANNEL", function(_, text, sender, _, channelName, _, _, _, _, baseName)
-  if Secret(text, sender, channelName, baseName) then return end
-  Marks.CheckChat(text, sender, ChannelLabel(baseName ~= "" and baseName or channelName))
+-- Public chat only, as the chat watcher reads it: server channels (not custom or private ones),
+-- say and yell, and guild chat only with "Include guild chat" on.
+NS.Register("CHAT_MSG_CHANNEL", function(_, text, sender, _, channelName, _, _, zoneChannelID, _, baseName)
+  if Secret(text, sender, channelName, baseName, zoneChannelID) then return end
+  local CW = NS.ChatWatch
+  local label = CW and CW.PublicLabel and CW.PublicLabel(baseName, channelName, zoneChannelID)
+  if CW and CW.PublicLabel and not label then return end
+  Marks.CheckChat(text, sender, label or ChannelLabel(baseName ~= "" and baseName or channelName))
 end)
 for event, label in pairs({ CHAT_MSG_SAY = "SAY", CHAT_MSG_YELL = "YELL", CHAT_MSG_GUILD = "GUILD" }) do
   NS.Register(event, function(_, text, sender)
     if Secret(text, sender) then return end
+    if event == "CHAT_MSG_GUILD" and not (NS.ChatWatch and NS.ChatWatch.GuildEnabled and NS.ChatWatch.GuildEnabled()) then
+      return
+    end
     local name = _G[label]
     Marks.CheckChat(text, sender, type(name) == "string" and name or nil)
   end)

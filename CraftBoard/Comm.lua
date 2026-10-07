@@ -2272,6 +2272,8 @@ end
 local askPending, askText, askItems = false, nil, nil
 -- A search and the item it picks arrive together: both go in the one question.
 function Comm.AskSoon(text, items)
+  -- A new question (not a retry) gets its own set of retries.
+  if text ~= nil or items ~= nil then scale.askWaits = 0 end
   if text ~= nil then askText = text end
   if type(items) == "table" then
     -- Newest first, each once: the card the player stopped on is never cut off by W_MAX_ITEMS.
@@ -2421,6 +2423,9 @@ function handlers.A(full, data)
   if not (db and p) then return end
   local added = false
   local ah = CleanString(data.h, 64)   -- the hash of the book it was answered from
+  -- Known only from answers so far: their book is partial (from this hash), as an on-demand
+  -- peer's is, so leaving on-demand mode asks for the rest.
+  if ah and p.hash == nil and p.odHash == nil then p.odHash = ah end
   for k = 1, A_MAX do
     local e = data.list[k]
     if type(e) ~= "table" then break end

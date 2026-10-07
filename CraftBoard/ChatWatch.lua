@@ -868,6 +868,12 @@ end
 local stats = { seen = 0, channel = 0, accepted = 0, matched = 0, last = "", bases = {}, nbases = 0 }
 ChatWatch.Stats = function() return stats end
 
+-- The label of a server channel the watcher reads (Trade, General, LookingForGroup), else nil
+-- (custom and private channels). For other modules listening to the same chat (Marks).
+function ChatWatch.PublicLabel(baseName, channelName, zoneChannelID)
+  return (PublicChannel(baseName, channelName, zoneChannelID))
+end
+
 local function OnChat(event, text, sender, _, channelName, _, _, zoneChannelID, _, baseName)
   stats.seen = stats.seen + 1
   if not ChatWatch.Enabled() then return end
