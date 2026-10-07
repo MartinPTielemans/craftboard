@@ -378,10 +378,13 @@ end
 
 function ChatWatch.RetryHeld()
   if #heldLines == 0 then return end
+  -- A line still not placed waits for the next names (another item may have loaded first).
   local list, now = heldLines, time()
   heldLines = {}
   for _, h in ipairs(list) do
-    if now - h.t < 120 then ChatWatch.Add(h.text, h.sender, h.channel, h.guild, true) end
+    if now - h.t < 120 and not ChatWatch.Add(h.text, h.sender, h.channel, h.guild, true) then
+      heldLines[#heldLines + 1] = h
+    end
   end
 end
 

@@ -629,6 +629,8 @@ local function OnRecipeLearned(recipeID)
   if issecretvalue and issecretvalue(recipeID) then return end
   local src = Recipes.GuessSource()
   if src then Recipes.SetSource(recipeID, src) end
+  -- One recipe item teaches one recipe: the next one learned isn't put down to it as well.
+  if src and src ~= SRC_TRAINER then lastUse = nil end
   local marked = false
   for _, id in ipairs(LinesOfRecipe(recipeID)) do
     local p = c.profs[id]
