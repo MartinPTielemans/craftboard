@@ -580,3 +580,6 @@ L["Gatherers: %s"] = "Recolectores: %s"
 -- Chat offers
 L["that"] = "eso"
 
+-- Plan: keyboard on recipes not learned yet
+L["%s: not learned yet. Press Enter (or A) to see who can craft it."] = "%s: aún sin aprender. Pulsa Intro (o A) para ver quién puede fabricarlo."
+

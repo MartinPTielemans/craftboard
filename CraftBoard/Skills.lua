@@ -321,7 +321,8 @@ Skills.SPECS = {
 }
 
 local function Knows(spellID)
-  for _, fn in ipairs({ IsPlayerSpell, IsSpellKnown }) do
+  -- (Either API may be missing: a list with a nil first entry would stop ipairs.)
+  for _, fn in pairs({ IsPlayerSpell or false, IsSpellKnown or false }) do
     if type(fn) == "function" then
       local ok, yes = pcall(fn, spellID)
       if ok and yes and not IsSecret(yes) then return true end

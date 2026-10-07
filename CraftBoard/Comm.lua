@@ -1665,20 +1665,13 @@ function handlers.H(full, data)
     p.busy = busy or nil
     Fire("PEERS_UPDATED")
   end
-  if p.hash == h then return end
-  if data.n <= 0 then
-    -- Nothing to fetch; record the empty book without a round trip. A query still open for an
-    -- older list is closed with it, so a late answer can't bring the recipes back.
-    p.recipes, p.hash = {}, h
-    queried[full], queriedHash[full], pagesIn[full], pendingQ[full] = nil, nil, nil, nil
-    Fire("PEERS_UPDATED")
-    return
-  end
   -- Too many players on the channel to swap whole recipe lists: Find asks them (W) instead.
+  -- Checked before the same-hash shortcut: a book that changed while on demand and changed back
+  -- still drops what came in under the other hash.
   if scale.Peer(full) then
     -- Their book changed: what I had of it may be gone (an unlearned profession). Searches
-    -- (W / A) bring back what they still know.
-    -- (The hash their full list was stored under counts as what I knew, the first time.)
+    -- (W / A) bring back what they still know. (The hash their full list was stored under counts
+    -- as what I knew, the first time.)
     if (p.odHash or p.hash) ~= h then
       if next(p.recipes) then
         p.recipes = {}
@@ -1686,6 +1679,15 @@ function handlers.H(full, data)
       end
       p.odHash = h
     end
+    return
+  end
+  if p.hash == h then return end
+  if data.n <= 0 then
+    -- Nothing to fetch; record the empty book without a round trip. A query still open for an
+    -- older list is closed with it, so a late answer can't bring the recipes back.
+    p.recipes, p.hash = {}, h
+    queried[full], queriedHash[full], pagesIn[full], pendingQ[full] = nil, nil, nil, nil
+    Fire("PEERS_UPDATED")
     return
   end
   local now = time()

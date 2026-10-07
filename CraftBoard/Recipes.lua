@@ -583,10 +583,11 @@ end
 
 function Recipes.GuessSource(now)
   now = now or time()
+  -- A recipe item used just now wins (it may have been used right after leaving a trainer).
+  if lastUse and now - lastUse.t <= 10 and IsRecipeItem(lastUse.id) then return lastUse.id end
   if trainerShownAt and (not trainerClosedAt or trainerClosedAt < trainerShownAt or now - trainerClosedAt <= 3) then
     return SRC_TRAINER
   end
-  if lastUse and now - lastUse.t <= 10 and IsRecipeItem(lastUse.id) then return lastUse.id end
   return nil
 end
 

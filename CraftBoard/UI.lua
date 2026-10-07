@@ -1529,8 +1529,9 @@ local function FillCrafterRow(row, c)
     state = state .. DOT .. (left <= 0 and (GREEN .. L["ready"] .. "|r") or format(L["cooldown %s"], NS.Cooldowns.Text(left)))
   end
   row.state:SetText(state)
-  -- Busy rows keep the mouse for their tooltip; OnClick ignores them.
-  row:EnableMouse(not c.mine)
+  -- Every row keeps the mouse for its tooltip (the crafter card); OnClick ignores busy rows and
+  -- my own characters.
+  row:EnableMouse(true)
   row.sel:SetShown(not c.mine and not c.busy and c.name == find.crafter)
 end
 
@@ -4683,8 +4684,13 @@ function P.Missing(profID)
     out[#out + 1] = { recipeID = id, name = name, lname = strlower(name), missing = true,
       status = P.SourceText(id), rec = { o = o } }
   end
+  -- Only recipes someone still knows: a peer's current list (the catalogue keeps names forever).
+  local known = {}
+  for _, p in pairs(NS.Comm and NS.Comm.Peers and NS.Comm.Peers() or {}) do
+    for id in pairs(p.recipes or {}) do known[id] = true end
+  end
   for id, e in pairs(cat) do
-    if type(e) == "table" then add(id, e.p, e.n, e.o) end
+    if type(e) == "table" and known[id] then add(id, e.p, e.n, e.o) end
   end
   -- My other characters' recipes (the catalogue only learns professions from other players).
   local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
@@ -4786,7 +4792,7 @@ function P.FillEntry(row, e)
     row.name:SetText(e.name)
     row.name:SetTextColor(MUTED[1], MUTED[2], MUTED[3])
     row.status:SetText(e.status or "")
-    row.sel:Hide()
+    row.sel:SetShown(e.recipeID == plan.selected)
     return
   end
   if e.placeholder then
@@ -4843,7 +4849,9 @@ function P.Detail()
   P.Buttons()
   if not e then
     plan.body:Hide()
-    plan.none:SetText(plan.noneText or "")
+    local m = plan.selected and plan.missingByID and plan.missingByID[plan.selected]
+    plan.none:SetText(m and format(L["%s: not learned yet. Press Enter (or A) to see who can craft it."], m.name)
+      or plan.noneText or "")
     plan.none:Show()
     SetDetailBackground(plan, nil)
     return
@@ -4944,7 +4952,19 @@ end
 function BuildPlan(p)
   plan.keyOf = function(e) return e.recipeID end
   plan.selectedKey = function() return plan.selected end
-  plan.selectKey = function(id) UI.SelectPlan(id, true, false) end
+  -- A recipe not learned yet: the keys and the pad select it first, then open it in Find (Enter
+  -- or A again), as a click does at once.
+  plan.selectKey = function(id)
+    if plan.missingByID and plan.missingByID[id] and plan.selected == id then P.OpenInFind(id) return end
+    UI.SelectPlan(id, true, false)
+  end
+  UI.PlanOpenMissing = function()
+    if plan.selected and plan.missingByID and plan.missingByID[plan.selected] then
+      P.OpenInFind(plan.selected)
+      return true
+    end
+    return false
+  end
   plan.refilter = function(keep) UI.FilterPlan(keep) end
 
   local left = ListColumn(p, plan)
@@ -5058,7 +5078,7 @@ function UI.FilterPlan(keepScroll)
   local byReagent = P.Option("planByReagent")
   local index = P.Index()
   local canCraft = NS.Inventory and NS.Inventory.CanCraft
-  local items, nav, byID = {}, {}, {}
+  local items, nav, byID, missingByID = {}, {}, {}, {}
   local profs = P.Profs()
   local anyRecipes = false
   for _, pr in ipairs(profs) do
@@ -5183,12 +5203,15 @@ function UI.FilterPlan(keepScroll)
           for i, m in ipairs(missing) do
             m.depth, m.gap = 2, i == #missing
             items[#items + 1] = m
+            m.idx = #items
+            nav[#nav + 1] = m
+            missingByID[m.recipeID] = m
           end
         end
       end
     end
   end
-  plan.results, plan.byID = nav, byID
+  plan.results, plan.byID, plan.missingByID = nav, byID, missingByID
   -- A recipe the player picked stays picked while a filter hides it (the card says so); an
   -- automatic pick moves with the list.
   local visible = false
@@ -5757,7 +5780,8 @@ local function OnPad(self, button)
     if activeTab == 2 then
       UI.RequestPrimary()
     elseif activeTab == 3 then
-      if plan.craft and plan.craft:IsEnabled() then plan.craft:Click() end
+      if UI.PlanOpenMissing and UI.PlanOpenMissing() then
+      elseif plan.craft and plan.craft:IsEnabled() then plan.craft:Click() end
     elseif find.whisper and find.whisper:IsEnabled() then
       -- Opens the chat box; posting a request stays a mouse click.
       find.whisper:Click()

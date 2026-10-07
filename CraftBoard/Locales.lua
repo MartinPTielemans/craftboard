@@ -601,6 +601,9 @@ local enUS = {
 
   -- Chat offers
   "that",
+
+  -- Plan: keyboard on recipes not learned yet
+  "%s: not learned yet. Press Enter (or A) to see who can craft it.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 
