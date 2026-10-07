@@ -320,14 +320,21 @@ Skills.SPECS = {
   [17041] = { prof = 164, name = "Master Axesmith" },
 }
 
+-- true / false, or nil when the client won't say right now (a secret value).
 local function Knows(spellID)
+  local unknown = false
   -- (Either API may be missing: a list with a nil first entry would stop ipairs.)
   for _, fn in pairs({ IsPlayerSpell or false, IsSpellKnown or false }) do
     if type(fn) == "function" then
       local ok, yes = pcall(fn, spellID)
-      if ok and not IsSecret(yes) and yes then return true end
+      if ok and IsSecret(yes) then
+        unknown = true
+      elseif ok and yes then
+        return true
+      end
     end
   end
+  if unknown then return nil end
   return false
 end
 
@@ -348,7 +355,10 @@ function Skills.ReadSpecs()
   if not c then return end
   local found, n = {}, 0
   for id in pairs(Skills.SPECS) do
-    if Knows(id) then found[id], n = true, n + 1 end
+    local known = Knows(id)
+    -- Can't tell now: the saved set stays as it is until the next read.
+    if known == nil then return end
+    if known then found[id], n = true, n + 1 end
   end
   local old = type(c.specs) == "table" and c.specs or {}
   local changed = false

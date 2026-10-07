@@ -676,11 +676,12 @@ function ChatWatch.Add(text, sender, channel, guild, retry)
   if not ChatWatch.Enabled() or type(text) ~= "string" or #text > MAX_LEN then return nil end
   local from = FullName(sender)
   if not from or IsMe(from) or (NS.IsIgnored and NS.IsIgnored(from)) then return nil end
-  local hit = ChatWatch.Detect(text, guild)
+  local hit, why = ChatWatch.Detect(text, guild)
   local prev = seen[from]
-  -- A plain "[Name]" (no link) may name an item whose data is still loading: the line is read
-  -- again once item names come in (kept in memory a couple of minutes, never saved).
-  if not hit and not retry and not text:find("|H", 1, true) and text:find("%[[^%]|]+%]") then
+  -- An ask whose plain "[Name]" (no link) couldn't be placed may name an item whose data is
+  -- still loading: the line is read again once item names come in (in memory a couple of
+  -- minutes, never saved). Offers, adverts and lines that aren't asks aren't kept.
+  if not hit and why == "nothing" and not retry and not text:find("|H", 1, true) and text:find("%[[^%]|]+%]") then
     ChatWatch.HoldLine(text, sender, channel, guild)
   end
   if not (hit or prev) then return nil end

@@ -930,6 +930,7 @@ if NS.Register then
   NS.Register("GUILD_ROSTER_UPDATE", function()
     rosterCache = nil
     CheckOnlineSoon()
+    if C_Timer and C_Timer.After then C_Timer.After(2, function() scale.ReconcileGuild() end) end
   end)
 end
 
@@ -1607,6 +1608,26 @@ local function RetryQueries()
   end
 end
 
+-- Guildmates the roster didn't know yet when they were heard on the channel (a login on a
+-- crowded realm) were taken for on-demand peers: their full list is asked for now.
+function scale.ReconcileGuild()
+  local db = DB()
+  local roster = GuildRoster()
+  if not (db and next(roster)) then return end
+  local any = false
+  for full, p in pairs(db.peers) do
+    if type(p) == "table" and p.odHash ~= nil and roster[full] ~= nil then
+      pendingQ[full] = p.odHash
+      p.odHash, p.hash = nil, nil
+      any = true
+    end
+  end
+  if any and not pendingQTimer and C_Timer and C_Timer.After then
+    pendingQTimer = true
+    C_Timer.After(1, RetryQueries)
+  end
+end
+
 function handlers.H(full, data)
   local h = CleanString(data.h, 64)
   if not h or type(data.n) ~= "number" then return end
@@ -1814,11 +1835,11 @@ local function RetryAnswers()
       pendingR[peer] = nil
       stale = true
       if GuildRoster()[peer] ~= nil then staleGuild = true end
-    elseif scale.AnswerRoom() then
+    elseif scale.AnswerRoom() and SendRecipes("WHISPER", ShortName(peer), ReadsPages(peer)) then
+      -- (Only a list that went counts; one that didn't stays queued until it goes stale.)
       pendingR[peer] = nil
       answered[peer] = now
       scale.CountAnswer()
-      SendRecipes("WHISPER", ShortName(peer), ReadsPages(peer))
     end
   end
   if next(pendingR) and not pendingRTimer and C_Timer and C_Timer.After then
@@ -1884,9 +1905,12 @@ function handlers.Q(full)
     end
     return
   end
-  answered[full] = now
-  scale.CountAnswer()
-  SendRecipes("WHISPER", ShortName(full), ReadsPages(full))
+  if SendRecipes("WHISPER", ShortName(full), ReadsPages(full)) then
+    answered[full] = now
+    scale.CountAnswer()
+  else
+    scale.QueueAnswer(full, now)
+  end
 end
 
 function handlers.R(full, data)

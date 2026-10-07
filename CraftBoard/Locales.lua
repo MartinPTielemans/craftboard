@@ -517,7 +517,6 @@ local enUS = {
   "Your wishlist is empty. Right-click a recipe in Find to add its item.",
   "Your wishlist is full (%d items). Remove one first.",
   "/cb uses <reagent> - your recipes that use a reagent",
-  "/cb wish - your wishlist",
   "Tell me when someone links my wishlist",
   "One quiet chat line when someone links an item on your wishlist, or the recipe for it, in public chat. Right-click a recipe in Find to add it. Nothing is sent.",
 
@@ -604,6 +603,11 @@ local enUS = {
 
   -- Plan: keyboard on recipes not learned yet
   "%s: not learned yet. Press Enter (or A) to see who can craft it.",
+
+  -- Wishlist removal
+  "Not on your wishlist (see /cb wish).",
+  "/cb wish remove <name> takes one off.",
+  "/cb wish [remove <name>] - your wishlist",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

@@ -184,6 +184,30 @@ if NS.RegisterCallback then
   NS.RegisterCallback(Marks, "ITEM_NAMES_UPDATED", function() byNameDirty = true end)
 end
 
+-- /cb wish remove <name or link>: by the item's link, else its name (the whole name, else the
+-- one entry whose name contains the text).
+function Marks.RemoveWish(text)
+  text = type(text) == "string" and strtrim(text) or ""
+  local id = tonumber(text:match("|Hitem:(%d+)") or "")
+  if not id and text ~= "" then
+    local want = strlower(NS.StripCodes(text):gsub("^%[", ""):gsub("%]$", ""))
+    local partial
+    for _, e in ipairs(Marks.WishList()) do
+      local name = strlower(e.name)
+      if name == want then id = e.itemID break end
+      if name:find(want, 1, true) then partial = partial == nil and e.itemID or false end
+    end
+    id = id or partial or nil
+  end
+  if not (id and Marks.IsWished(id)) then
+    NS.Print(L["Not on your wishlist (see /cb wish)."])
+    return false
+  end
+  Marks.SetWished(id, false)
+  NS.Print(format(L["Removed from your wishlist: %s"], NS.ItemLabel and NS.ItemLabel(id) or tostring(id)))
+  return true
+end
+
 -- /cb wish: the wishlist in chat.
 function Marks.PrintWishes()
   local list = Marks.WishList()
@@ -195,4 +219,5 @@ function Marks.PrintWishes()
   for _, e in ipairs(list) do
     NS.Print("  " .. (NS.ItemLabel and NS.ItemLabel(e.itemID) or e.name))
   end
+  NS.Print(L["/cb wish remove <name> takes one off."])
 end

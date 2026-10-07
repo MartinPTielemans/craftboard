@@ -308,7 +308,7 @@ printed = {}
 M.CheckChat("WTS |Hitem:2304::|h[Light Armor Kit]|h", "Nora Pell", "Trade")
 M.CheckChat("WTS |Hitem:2304::|h[Light Armor Kit]|h again", "Nora Pell", "Trade")
 check(#printed == 1 and printed[1]:find("Nora Pell", 1, true) ~= nil, "one wishlist line per item and player")
-M.SetWished(2304, false)
+check(M.RemoveWish("light armor") and not M.IsWished(2304), "/cb wish remove by part of the name")
 
 -- Old requests: one nudge near the end of the day, and Renew posts it (and its linked order) again
 do

@@ -494,7 +494,6 @@ L["Wishlist: %s linked %s."] = "Liste de souhaits : %s a lié %s."
 L["Your wishlist is empty. Right-click a recipe in Find to add its item."] = "Votre liste de souhaits est vide. Faites un clic droit sur une recette dans Chercher pour ajouter son objet."
 L["Your wishlist is full (%d items). Remove one first."] = "Votre liste de souhaits est pleine (%d objets). Retirez-en un d'abord."
 L["/cb uses <reagent> - your recipes that use a reagent"] = "/cb uses <composant> - vos recettes qui utilisent un composant"
-L["/cb wish - your wishlist"] = "/cb wish - votre liste de souhaits"
 L["Tell me when someone links my wishlist"] = "Me prévenir quand quelqu'un lie ma liste de souhaits"
 L["One quiet chat line when someone links an item on your wishlist, or the recipe for it, in public chat. Right-click a recipe in Find to add it. Nothing is sent."] = "Une ligne discrète dans le chat quand quelqu'un lie un objet de votre liste de souhaits, ou sa recette, dans un canal public. Clic droit sur une recette dans Chercher pour l'ajouter. Rien n'est envoyé."
 
@@ -581,4 +580,9 @@ L["that"] = "cela"
 
 -- Plan: keyboard on recipes not learned yet
 L["%s: not learned yet. Press Enter (or A) to see who can craft it."] = "%s : pas encore apprise. Appuyez sur Entrée (ou A) pour voir qui peut la fabriquer."
+
+-- Wishlist removal
+L["Not on your wishlist (see /cb wish)."] = "Pas dans votre liste de souhaits (voir /cb wish)."
+L["/cb wish remove <name> takes one off."] = "/cb wish remove <nom> en retire un."
+L["/cb wish [remove <name>] - your wishlist"] = "/cb wish [remove <nom>] - votre liste de souhaits"
 

@@ -381,7 +381,7 @@ local function PrintHelp()
   NS.Print(L["/cb busy - toggle busy (CraftBoard users can't whisper you from the board)"])
   NS.Print(L["/cb cd - crafting cooldowns on your characters"])
   NS.Print(L["/cb uses <reagent> - your recipes that use a reagent"])
-  NS.Print(L["/cb wish - your wishlist"])
+  NS.Print(L["/cb wish [remove <name>] - your wishlist"])
   NS.Print(L["/cb demand - what players around you asked for most this week"])
   NS.Print(L["/cb guild - your guildmates' professions"])
   NS.Print(L["/cb stats - this session's crafting and your most-made recipes"])
@@ -505,7 +505,13 @@ SlashCmdList["CRAFTBOARD"] = function(msg)
   elseif cmd == "texts" or cmd == "templates" then
     if NS.Templates and NS.Templates.Show then NS.Templates.Show() end
   elseif cmd == "wish" or cmd == "wishlist" then
-    if NS.Marks and NS.Marks.PrintWishes then NS.Marks.PrintWishes() end
+    -- /cb wish remove <name or link>: takes it off (also items no list shows any more).
+    local sub, what = strsplit(" ", strtrim(rest or ""), 2)
+    if NS.Marks and strlower(sub or "") == "remove" and NS.Marks.RemoveWish then
+      NS.Marks.RemoveWish(what)
+    elseif NS.Marks and NS.Marks.PrintWishes then
+      NS.Marks.PrintWishes()
+    end
   elseif cmd == "uses" then
     -- /cb uses <reagent>: Plan's recipes that use it.
     if NS.UI and NS.UI.SearchReagent then NS.UI.SearchReagent(strtrim(rest or "")) end
