@@ -5093,6 +5093,18 @@ function UI.FilterPlan(keepScroll)
         count = count + 1
       end
     end
+    -- Recipes of this profession I haven't learned that the search matches (never with "Only
+    -- what I can craft" or a reagent search): they keep the profession listed on their own.
+    local missing = {}
+    if not (onlyReady or byReagent) then
+      for _, m in ipairs(P.Missing(pr.profID)) do
+        local ok = true
+        for i = 1, #tokens do
+          if not m.lname:find(tokens[i], 1, true) then ok = false break end
+        end
+        if ok then missing[#missing + 1] = m end
+      end
+    end
     local gain = NS.Skills and NS.Skills.SessionGain and NS.Skills.SessionGain(pr.profID) or 0
     -- The name on the bar; the rank goes in the right-hand slot (a long name plus "111/150" and a
     -- recipe count don't fit in one bar).
@@ -5100,7 +5112,7 @@ function UI.FilterPlan(keepScroll)
     if gain > 0 then label = label .. " " .. format(L["(+%d)"], gain) end
     local rankText = pr.rank and pr.max and format(L["%d/%d"], pr.rank, pr.max) or count
     -- Professions with nothing to show while searching or filtering stay out of the way.
-    if count > 0 or not (searching or onlyReady) then
+    if count > 0 or #missing > 0 or not (searching or onlyReady) then
       items[#items + 1] = { kind = "prof", key = pkey, name = label, prof = pr.profID, count = rankText, depth = 0, collapsed = not pOpen }
     end
     if pOpen and count == 0 and not (searching or onlyReady) then
@@ -5160,17 +5172,9 @@ function UI.FilterPlan(keepScroll)
         end
       end
     end
-    -- Recipes of this profession I haven't learned (collapsed until opened; never with "Only
-    -- what I can craft" or a reagent search). Clicking one opens it in Find.
-    if pOpen and not (onlyReady or byReagent) and (count > 0 or not searching) then
-      local missing = {}
-      for _, m in ipairs(P.Missing(pr.profID)) do
-        local ok = true
-        for i = 1, #tokens do
-          if not m.lname:find(tokens[i], 1, true) then ok = false break end
-        end
-        if ok then missing[#missing + 1] = m end
-      end
+    -- Not learned yet (collapsed until opened, open while searching). Clicking one opens it in
+    -- Find.
+    if pOpen then
       if #missing > 0 then
         local key = pr.profID .. ":missing"
         local open = searching or not P.IsCollapsed(key, true)

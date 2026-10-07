@@ -1722,9 +1722,10 @@ local function FlushBatch()
   batch = nil
   -- Queriers who asked too long ago (a long lockdown) would no longer read the answer: they are
   -- let go, and a hello (my hash differs from theirs) makes them ask again.
-  local now, stale = time(), false
+  local now, stale, askedAt = time(), false, {}
   for peer in pairs(b) do
-    if now - (batchAsked[peer] or now) > QUERY_TTL - 15 then
+    askedAt[peer] = batchAsked[peer] or now
+    if now - askedAt[peer] > QUERY_TTL - 15 then
       b[peer], answered[peer], stale = nil, nil, true
     end
     batchAsked[peer] = nil
@@ -1738,8 +1739,10 @@ local function FlushBatch()
       sent[dist] = CanSend() and DistAvailable(dist) and SendRecipes(dist) or false
     end
   end
+  -- The broadcast didn't go (too big for one message, or the channel was gone): each of them is
+  -- whispered after all, through the per-minute limit like any other whispered list.
   for peer, dist in pairs(b) do
-    if not sent[dist] then SendRecipes("WHISPER", ShortName(peer), ReadsPages(peer)) end
+    if not sent[dist] then scale.QueueAnswer(peer, askedAt[peer]) end
   end
 end
 
@@ -1791,6 +1794,15 @@ local function RetryAnswers()
   -- Askers who waited too long ask again after a hello; with crowds on the channel they don't
   -- (that hello would bring the crowd's queries back).
   if stale and not Comm.OnDemand() then SendHello(nil, nil, true) end
+end
+
+-- A query answered by whisper once the per-minute limit allows (askedAt: when they asked).
+function scale.QueueAnswer(peer, askedAt)
+  pendingR[peer] = askedAt or time()
+  if not pendingRTimer and C_Timer and C_Timer.After then
+    pendingRTimer = true
+    C_Timer.After(1, RetryAnswers)
+  end
 end
 
 function handlers.Q(full)
@@ -2139,12 +2151,19 @@ function scale.AnswerW(full, w)
     end
     return
   end
+  local list = Comm.MatchQuery(w.q, w.items)
+  if #list == 0 then return end
   for i = #wAnswerTimes, 1, -1 do
     if now - wAnswerTimes[i] >= 60 then table.remove(wAnswerTimes, i) end
   end
-  if #wAnswerTimes >= A_PER_MIN then return end
-  local list = Comm.MatchQuery(w.q, w.items)
-  if #list == 0 then return end
+  if #wAnswerTimes >= A_PER_MIN then
+    -- At the limit: tried again when the oldest answer leaves the minute (AnswerW drops it if
+    -- the asker has stopped listening by then).
+    if C_Timer and C_Timer.After then
+      C_Timer.After(60 - (now - wAnswerTimes[1]) + 0.1, function() scale.AnswerW(full, w) end)
+    end
+    return
+  end
   answeredW[full] = now
   wAnswerTimes[#wAnswerTimes + 1] = now
   -- A moment's wait, different for every crafter, so the answers don't arrive in one burst.
