@@ -1805,6 +1805,25 @@ function handlers.Q(full)
     end
     return
   end
+  for i = #queryTimes, 1, -1 do
+    if now - queryTimes[i] > R_BATCH_WINDOW then table.remove(queryTimes, i) end
+  end
+  queryTimes[#queryTimes + 1] = now
+  -- Joining a broadcast batch costs nothing more: one R reaches them all. Only whispered lists
+  -- count toward the per-minute limit (the batch's own R counts once).
+  local dist = ReadsPages(full) and heardOn[full]
+  if dist and C_Timer and C_Timer.After and (batch or (#queryTimes >= R_BATCH
+    and not (batchAt and now - batchAt < ANSWER_GAP))) then
+    if not batch then
+      batch = {}
+      scale.CountAnswer()
+      C_Timer.After(R_BATCH_DELAY, FlushBatch)
+    end
+    answered[full] = now
+    batch[full] = dist
+    batchAsked[full] = now
+    return
+  end
   if not scale.AnswerRoom() then
     pendingR[full] = now
     if not pendingRTimer and C_Timer and C_Timer.After then
@@ -1815,21 +1834,6 @@ function handlers.Q(full)
   end
   answered[full] = now
   scale.CountAnswer()
-  for i = #queryTimes, 1, -1 do
-    if now - queryTimes[i] > R_BATCH_WINDOW then table.remove(queryTimes, i) end
-  end
-  queryTimes[#queryTimes + 1] = now
-  local dist = ReadsPages(full) and heardOn[full]
-  if dist and C_Timer and C_Timer.After and (batch or (#queryTimes >= R_BATCH
-    and not (batchAt and now - batchAt < ANSWER_GAP))) then
-    if not batch then
-      batch = {}
-      C_Timer.After(R_BATCH_DELAY, FlushBatch)
-    end
-    batch[full] = dist
-    batchAsked[full] = now
-    return
-  end
   SendRecipes("WHISPER", ShortName(full), ReadsPages(full))
 end
 
