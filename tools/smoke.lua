@@ -341,6 +341,9 @@ do
   eq(T.Offer("[Kit]", 2), "hey, I can do 2x [Kit] (50% done)", "own offer text filled in")
   T.Set("offer", string.rep("a", 199) .. "\195\169")
   eq(#db.templates.offer, 199, "an own text is cut on a character boundary")
+  T.Set("offer", string.rep("b", 190) .. " {item}")
+  local long = T.Offer("|cff1eff00|Hitem:2304::|h[Light Armor Kit]|h|r", 1)
+  check(#long <= 255 and long:find("[Light Armor Kit]", 1, true) ~= nil, "an expanded text fits one message, plain name instead of the link")
   T.Set("offer", T.Default("offer"))
   check(db.templates.offer == nil, "saving the default goes back to the built-in text")
 end

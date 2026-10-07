@@ -20,10 +20,28 @@ local function Saved(kind)
   return type(t) == "string" and t ~= "" and t or nil
 end
 
--- {item} and {qty} filled in (a % in the player's text stays a %).
-local function Fill(text, item, qty)
+local MAX_WHISPER = 255   -- bytes in one chat message
+
+-- s cut to at most n bytes on a UTF-8 character boundary.
+local function CutBytes(s, n)
+  if #s <= n then return s end
+  local i = n
+  while i > 0 and (s:byte(i + 1) or 0) >= 128 and (s:byte(i + 1) or 0) < 192 do i = i - 1 end
+  return s:sub(1, i)
+end
+
+local function Expand(text, item, qty)
   item = tostring(item or ""):gsub("%%", "%%%%")
   return (text:gsub("{item}", item):gsub("{qty}", tostring(qty or 1)))
+end
+
+-- {item} and {qty} filled in (a % in the player's text stays a %), within one chat message:
+-- too long with the item's link, the plain "[Name]" goes in instead, then the text is cut.
+local function Fill(text, item, qty)
+  local out = Expand(text, item, qty)
+  if #out <= MAX_WHISPER then return out end
+  out = Expand(text, NS.StripCodes(tostring(item or "")), qty)
+  return CutBytes(out, MAX_WHISPER)
 end
 Templates.Fill = Fill
 
@@ -56,12 +74,7 @@ function Templates.Set(kind, text)
   if type(CraftBoardDB) ~= "table" then return end
   if type(CraftBoardDB.templates) ~= "table" then CraftBoardDB.templates = {} end
   text = type(text) == "string" and NS.StripCodes(text):gsub("[%c|]", ""):gsub("^%s+", ""):gsub("%s+$", "") or ""
-  if #text > MAX_LEN then
-    -- Cut on a character boundary (a UTF-8 continuation byte never starts the next one).
-    local i = MAX_LEN
-    while i > 0 and (text:byte(i + 1) or 0) >= 128 and (text:byte(i + 1) or 0) < 192 do i = i - 1 end
-    text = text:sub(1, i)
-  end
+  text = CutBytes(text, MAX_LEN)
   if text == "" or text == DefaultTemplate(kind) then text = nil end
   CraftBoardDB.templates[kind] = text
 end

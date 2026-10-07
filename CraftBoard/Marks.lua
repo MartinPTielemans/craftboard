@@ -168,7 +168,7 @@ local function ChannelLabel(name)
 end
 
 NS.Register("CHAT_MSG_CHANNEL", function(_, text, sender, _, channelName, _, _, _, _, baseName)
-  if Secret(text, sender) then return end
+  if Secret(text, sender, channelName, baseName) then return end
   Marks.CheckChat(text, sender, ChannelLabel(baseName ~= "" and baseName or channelName))
 end)
 for event, label in pairs({ CHAT_MSG_SAY = "SAY", CHAT_MSG_YELL = "YELL", CHAT_MSG_GUILD = "GUILD" }) do

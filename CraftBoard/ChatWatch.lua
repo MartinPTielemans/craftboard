@@ -670,7 +670,13 @@ function ChatWatch.Add(text, sender, channel, guild)
   end
   if hit.itemName then ResolveEntry(e) end
   -- Counted toward what is asked for around here (Stats keeps counts only, never who).
-  if NS.Stats and NS.Stats.NoteDemand and e.itemID then NS.Stats.NoteDemand(e.itemID, from) end
+  -- A plain "[Name]" ask has no item ID: the resolved recipe's output stands in.
+  local asked = e.itemID
+  if not asked and e.recipeID and NS.Recipes and NS.Recipes.Record then
+    local rec = NS.Recipes.Record(e.recipeID)
+    asked = type(rec) == "table" and type(rec.o) == "number" and rec.o or nil
+  end
+  if NS.Stats and NS.Stats.NoteDemand and asked then NS.Stats.NoteDemand(asked, from) end
   seen[from] = e
   Prune(from)
   FireSoon()

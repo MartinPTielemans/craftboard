@@ -2069,9 +2069,11 @@ end
 -- The week's most-asked items among entries, as a leading group (like Pinned).
 function find.WithDemand(items, nav, entries, depth)
   if not (find.DemandOn() and NS.Stats) then return items, nav end
-  local list = {}
+  local list, seenOut = {}, {}
   for _, u in ipairs(entries) do
-    local n = u.outputItemID and NS.Stats.Demand(u.outputItemID) or 0
+    -- One row per item (several recipes can make it).
+    local n = u.outputItemID and not seenOut[u.outputItemID] and NS.Stats.Demand(u.outputItemID) or 0
+    if u.outputItemID then seenOut[u.outputItemID] = true end
     if n >= 2 then list[#list + 1] = { u = u, n = n } end
   end
   if #list == 0 then return items, nav end
@@ -4646,9 +4648,14 @@ function P.Index()
       byProf[rec.p] = list
       -- Reagent names too, for "Search by reagent" (names still loading fill in on the next build).
       local reag = {}
+      -- Every item a slot accepts (its other qualities and variants, r.alts) counts.
       for _, r in ipairs(type(rec.r) == "table" and rec.r or {}) do
-        local n = type(r[1]) == "number" and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(r[1])
-        if n then reag[#reag + 1] = strlower(n) end
+        local ids = { r[1] }
+        for _, a in ipairs(type(r.alts) == "table" and r.alts or {}) do ids[#ids + 1] = a end
+        for _, rid in ipairs(ids) do
+          local n = type(rid) == "number" and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(rid)
+          if n then reag[#reag + 1] = strlower(n) end
+        end
       end
       list[#list + 1] = { recipeID = id, rec = rec, name = name, lname = strlower(name), diff = DiffOf(rec),
         lreag = table.concat(reag, "\n") }
@@ -4668,12 +4675,24 @@ function P.Missing(profID)
   if cached then return cached end
   local mine = NS.Recipes and NS.Recipes.Mine and NS.Recipes.Mine() or {}
   local cat = type(CraftBoardDB) == "table" and type(CraftBoardDB.recipeNames) == "table" and CraftBoardDB.recipeNames or {}
-  local out = {}
+  local out, seen = {}, {}
+  local function add(id, p, n, o)
+    if type(id) ~= "number" or p ~= profID or mine[id] or seen[id] then return end
+    seen[id] = true
+    local name = n or (o and ItemName(o)) or (NS.Recipes.NameOf and NS.Recipes.NameOf(id)) or format(L["Recipe %d"], id)
+    out[#out + 1] = { recipeID = id, name = name, lname = strlower(name), missing = true,
+      status = P.SourceText(id), rec = { o = o } }
+  end
   for id, e in pairs(cat) do
-    if type(id) == "number" and type(e) == "table" and e.p == profID and not mine[id] then
-      local name = e.n or (e.o and ItemName(e.o)) or (NS.Recipes.NameOf and NS.Recipes.NameOf(id)) or format(L["Recipe %d"], id)
-      out[#out + 1] = { recipeID = id, name = name, lname = strlower(name), missing = true,
-        status = P.SourceText(id), rec = { o = e.o } }
+    if type(e) == "table" then add(id, e.p, e.n, e.o) end
+  end
+  -- My other characters' recipes (the catalogue only learns professions from other players).
+  local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+  for key, c in pairs(chars) do
+    if key ~= NS.Me and type(c) == "table" and type(c.recipes) == "table" then
+      for id, rec in pairs(c.recipes) do
+        if type(rec) == "table" then add(id, rec.p, rec.n, rec.o) end
+      end
     end
   end
   table.sort(out, function(a, b) return a.name < b.name end)
