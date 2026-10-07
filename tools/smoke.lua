@@ -320,6 +320,14 @@ do
   local kids = C.Linked(nid)
   check(#kids == 1 and kids[1].item == 2318, "its linked order went up with it")
   pid = nid
+  -- A linked order of the linked order goes up with them too.
+  C.PostRequest(2320, 3, "", kids[1].id)
+  clock.skip = clock.skip + 11
+  nid = C.Renew(pid)
+  local k1 = nid and C.Linked(nid) or {}
+  local k2 = k1[1] and C.Linked(k1[1].id) or {}
+  check(#k1 == 1 and #k2 == 1 and k2[1].item == 2320, "renewed with its whole chain")
+  pid = nid
 end
 
 -- Whisper texts: the built-in wording until the player saves their own

@@ -1352,15 +1352,29 @@ function Comm.Renew(id)
   local db, me = DB(), MyKey()
   local p = db and type(id) == "string" and db.posts[id]
   if not (type(p) == "table" and p.from == me) then return nil end
-  local kids = {}
-  for _, c in pairs(db.posts) do
-    if type(c) == "table" and c.pa == id and c.from == me then kids[#kids + 1] = { item = c.item, qty = c.qty } end
+  -- The whole chain of my linked orders under it, however deep, goes up again the same shape.
+  local function Tree(pid, seen)
+    seen[pid] = true
+    local out = {}
+    for cid, c in pairs(db.posts) do
+      if type(c) == "table" and c.pa == pid and c.from == me and not seen[cid] then
+        out[#out + 1] = { item = c.item, qty = c.qty, k = c.k, kids = Tree(cid, seen) }
+      end
+    end
+    return out
   end
+  local tree = Tree(id, {})
   Comm.Retract(id)
   lastPost = 0
   local nid = Comm.PostRequest(p.item, p.qty, p.note, nil, p.k)
   if not nid then return nil end
-  for _, k in ipairs(kids) do Comm.PostRequest(k.item, k.qty, "", nid) end
+  local function Post(list, parent)
+    for _, k in ipairs(list) do
+      local kid = Comm.PostRequest(k.item, k.qty, "", parent, k.k)
+      if kid then Post(k.kids, kid) end
+    end
+  end
+  Post(tree, nid)
   return nid
 end
 
@@ -1664,8 +1678,9 @@ function handlers.H(full, data)
   if scale.Peer(full) then
     -- Their book changed: what I had of it may be gone (an unlearned profession). Searches
     -- (W / A) bring back what they still know.
-    if p.odHash ~= h then
-      if p.odHash ~= nil and next(p.recipes) then
+    -- (The hash their full list was stored under counts as what I knew, the first time.)
+    if (p.odHash or p.hash) ~= h then
+      if next(p.recipes) then
         p.recipes = {}
         Fire("PEERS_UPDATED")
       end
@@ -1876,7 +1891,7 @@ function handlers.R(full, data)
     pagesIn[full] = nil
   end
   p.recipes = recipes
-  p.hash = h
+  p.hash, p.odHash = h, nil
   -- The answer to the hash asked for closes the query; an older one (a slow answer to an
   -- earlier query) is taken but leaves it open for the one asked for.
   if queriedHash[full] == nil or queriedHash[full] == h then queried[full], queriedHash[full] = nil, nil end
@@ -2097,19 +2112,44 @@ function handlers.W(full, data)
     end
   end
   if not q and #items == 0 then return end
+  scale.AnswerW(full, { id = id, q = q, items = items, t = time() })
+end
+
+-- One answer per asker per A_GAP: a newer question inside the gap waits for its end (the latest
+-- one only), and an answer held up by combat or chat lockdown is tried again, both only while the
+-- asker still takes answers (W_TTL).
+scale.heldW = {}          -- [asker] = the question waiting out the gap
+function scale.AnswerW(full, w)
   local now = time()
-  if answeredW[full] and now - answeredW[full] < A_GAP then return end
+  if now - w.t > W_TTL - 10 then return end
+  local wait = answeredW[full] and A_GAP - (now - answeredW[full])
+  if wait and wait > 0 then
+    local had = scale.heldW[full]
+    scale.heldW[full] = w
+    if not had and C_Timer and C_Timer.After then
+      C_Timer.After(wait + 0.1, function()
+        local x = scale.heldW[full]
+        scale.heldW[full] = nil
+        if x then scale.AnswerW(full, x) end
+      end)
+    end
+    return
+  end
   for i = #wAnswerTimes, 1, -1 do
     if now - wAnswerTimes[i] >= 60 then table.remove(wAnswerTimes, i) end
   end
   if #wAnswerTimes >= A_PER_MIN then return end
-  local list = Comm.MatchQuery(q, items)
+  local list = Comm.MatchQuery(w.q, w.items)
   if #list == 0 then return end
   answeredW[full] = now
   wAnswerTimes[#wAnswerTimes + 1] = now
   -- A moment's wait, different for every crafter, so the answers don't arrive in one burst.
   local function answer()
-    if CanSend() then Send("A", { v = VERSION, id = id, list = list, profs = MyProfs() }, "WHISPER", ShortName(full), "BULK") end
+    if CanSend() then
+      Send("A", { v = VERSION, id = w.id, list = list, profs = MyProfs() }, "WHISPER", ShortName(full), "BULK")
+    elseif time() - w.t < W_TTL - 5 and C_Timer and C_Timer.After then
+      C_Timer.After(5, answer)
+    end
   end
   if C_Timer and C_Timer.After then C_Timer.After(0.5 + random() * 2.5, answer) else answer() end
 end

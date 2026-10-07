@@ -1743,16 +1743,17 @@ local function BuildUniverse()
   local myRecipes = R and R.Mine and R.Mine() or {}
   local profCount = {}
   universe, universeByID, universeByItem = {}, {}, {}
-  -- "Only guild crafters": everyone else's crafts are left out (mine stay).
+  -- "Only guild crafters": Find shows only guildmates (and my characters); the chain index
+  -- (universeByItem, read by Requests and Plan too) keeps everyone.
   local guildOnly = find.GuildOnly()
   local guildmate = NS.Comm and NS.Comm.IsGuildmate
   for _, e in ipairs(all) do
+    local shown = e.crafters or {}
     if guildOnly and guildmate then
-      local kept = {}
+      shown = {}
       for _, c in ipairs(e.crafters or {}) do
-        if c.mine or guildmate(c.name) then kept[#kept + 1] = c end
+        if c.mine or guildmate(c.name) then shown[#shown + 1] = c end
       end
-      e.crafters = kept
     end
     if #(e.crafters or {}) > 0 then
       local out = OutputOf(e.recipeID, e)
@@ -1761,7 +1762,7 @@ local function BuildUniverse()
       -- Search fell back to the generic "Recipe <id>" label: the output item name reads better.
       if itemName and name == format(L["Recipe %d"], e.recipeID) then name = itemName end
       local u = {
-        recipeID = e.recipeID, name = name, outputItemID = out, crafters = e.crafters or {},
+        recipeID = e.recipeID, name = name, outputItemID = out, crafters = shown,
         lname = strlower(name or ""), litem = itemName and strlower(itemName) or nil,
         prof = ProfOf(e.recipeID), group = R and R.GroupOf and R.GroupOf(e.recipeID, out) or L["Other"], me = false, alt = nil, onlineN = 0, onlineName = nil,
         peersN = 0, peerName = nil, ready = false, times = 0,
@@ -1790,9 +1791,11 @@ local function BuildUniverse()
         local cc = I.CanCraft(rec)
         u.ready, u.times = cc.ready and true or false, cc.times or 0
       end
-      if u.prof ~= nil then profCount[u.prof] = (profCount[u.prof] or 0) + 1 end
-      universe[#universe + 1] = u
-      universeByID[u.recipeID] = u
+      if #shown > 0 then
+        if u.prof ~= nil then profCount[u.prof] = (profCount[u.prof] or 0) + 1 end
+        universe[#universe + 1] = u
+        universeByID[u.recipeID] = u
+      end
       if out then
         local m = universeByItem[out]
         if not m then
@@ -1801,7 +1804,7 @@ local function BuildUniverse()
         end
         m.me = m.me or u.me
         m.alt = m.alt or u.alt
-        for _, c in ipairs(u.crafters) do
+        for _, c in ipairs(e.crafters) do
           if type(c.name) == "string" and not m.seen[c.name] then
             m.seen[c.name] = true
             m.crafters[#m.crafters + 1] = c
