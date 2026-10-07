@@ -68,10 +68,20 @@ function Stats.Crafted(recipeID, rec)
   sessionTotal = sessionTotal + 1
   -- A first rare (or better) craft of this recipe on this character.
   local out = type(rec) == "table" and rec.o
-  local q = Quality(out)
-  if before == 0 and q and q >= 3 and NoticeOn() then
-    local label = NS.ItemLabel and NS.ItemLabel(out) or format(L["Item %d"], out)
-    Flourish(format(L["First time: you crafted %s!"], label))
+  if before == 0 and type(out) == "number" then
+    local function check()
+      local q = Quality(out)
+      if q and q >= 3 and NoticeOn() then
+        local label = NS.ItemLabel and NS.ItemLabel(out) or format(L["Item %d"], out)
+        Flourish(format(L["First time: you crafted %s!"], label))
+      end
+      return q ~= nil
+    end
+    -- The item may not be cached yet: ask for it and look again once it has had time to load.
+    if not check() and C_Timer and C_Timer.After then
+      if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, out) end
+      C_Timer.After(2, check)
+    end
   end
   NS.Fire("STATS_UPDATED")
 end

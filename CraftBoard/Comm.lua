@@ -2129,10 +2129,12 @@ function Comm.Ask(text, items)
       local o = type(e) == "table" and e.o
       local name = type(o) == "number" and not seenID[o] and NS.Inventory.ItemName(o)
       if type(name) == "string" then
+        -- As Find matches: each word in the item's name or the recipe's ("Transmute: ...").
         name = strlower(name)
+        local rname = type(e.n) == "string" and strlower(e.n) or ""
         local hit = true
         for w in q:gmatch("%S+") do
-          if not name:find(w, 1, true) then hit = false break end
+          if not (name:find(w, 1, true) or rname:find(w, 1, true)) then hit = false break end
         end
         if hit then list[#list + 1], seenID[o] = o, true end
       end
@@ -2177,7 +2179,11 @@ function Comm.AskSoon(text, items)
     local _, why = Comm.Ask(t, i)
     -- Inside the gap between questions, or in combat: tried again shortly (unless a newer
     -- search came in meanwhile, which goes instead).
-    if why == "wait" and askText == nil and askItems == nil then Comm.AskSoon(t, i) end
+    -- (Put back as it was, newest first: AskSoon's items argument would reverse it.)
+    if why == "wait" and askText == nil and askItems == nil then
+      askText, askItems = t, i
+      Comm.AskSoon()
+    end
   end)
 end
 

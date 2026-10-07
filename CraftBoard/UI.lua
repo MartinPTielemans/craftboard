@@ -1583,7 +1583,7 @@ local function ReagentRow(parent, rowH)
   if row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
   row:SetScript("OnClick", function(self, button)
     if button == "RightButton" then
-      if self.itemID and find.ReagentMenu then find.ReagentMenu(self, self.itemID, self.short) end
+      if self.itemID and find.ReagentMenu then find.ReagentMenu(self, self.itemID, self.short, self.need) end
       return
     end
     InsertLink(ItemLink(self.itemID))
@@ -1596,6 +1596,7 @@ local function FillReagentRow(row, r)
   row.itemID = r.itemID
   row.makers = r.makers
   row.short = max(0, (r.need or 0) - (r.have or 0))
+  row.need = r.need
   row.icon:SetTexture(ItemIcon(r.itemID) or TEX.question)
   local text = format(L["%d/%d %s"], r.have, r.need, ItemName(r.itemID))
   -- What my other characters carry ("+12 on alts"), in grey, when it would help.
@@ -2617,9 +2618,9 @@ end
 
 -- A reagent slot's menu: ask the board for the material (what is short, else one stack's worth
 -- of what the slot needs), and my recipes that use it.
-function find.ReagentMenu(owner, itemID, short)
+function find.ReagentMenu(owner, itemID, short, need)
   local name = ItemName(itemID)
-  local qty = min(1000, max(1, short or 0))
+  local qty = min(1000, max(1, (short and short > 0) and short or need or 1))
   local actions = {
     { text = format(L["Ask the board for %dx %s"], qty, name), fn = function()
       if not (NS.Comm and NS.Comm.PostRequest) then return end
