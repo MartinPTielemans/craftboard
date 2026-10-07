@@ -290,6 +290,8 @@ check(#m == 1 and m[1][1] == 2152, "a question matches my recipe by its output i
 eq(#C.MatchQuery("mooncloth", { 9999 }), 0, "a peer's recipe isn't mine to answer")
 m = C.MatchQuery("light kit", nil)
 check(#m == 1 and m[1][1] == 2152, "a question matches word by word, as Find does")
+m = C.MatchQuery("enchant", { 2304 })
+check(#m == 2 and m[1][1] == 2152, "the item asked for by ID leads the answer")
 
 -- Marks: pins and the wishlist (a wished item, or the recipe item named after it, linked in chat)
 local M = NS.Marks

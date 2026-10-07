@@ -2066,28 +2066,33 @@ Comm.QueryText = QueryText
 function Comm.MatchQuery(q, items)
   local want = {}
   for _, id in ipairs(type(items) == "table" and items or {}) do want[id] = true end
-  local out, ids, mine = {}, {}, MyRecipes()
+  local out, ids, mine, added = {}, {}, MyRecipes(), {}
   for id in pairs(mine) do if type(id) == "number" then ids[#ids + 1] = id end end
   sort(ids)
-  for _, id in ipairs(ids) do
-    if #out >= A_MAX then break end
-    local r = mine[id]
-    if type(r) == "table" then
-      local hit = type(r.o) == "number" and want[r.o]
-      if not hit and q then
-        -- As Find matches: every word in the recipe name or the output item's name.
-        local name = type(r.n) == "string" and strlower(r.n) or ""
-        local item = type(r.o) == "number" and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(r.o)
-        item = type(item) == "string" and strlower(item) or ""
-        hit = true
-        for w in q:gmatch("%S+") do
-          if not (name:find(w, 1, true) or item:find(w, 1, true)) then hit = false break end
+  -- Two passes: the items asked for by ID first (they never lose their place to a broad text
+  -- match), then the text matches in what room is left.
+  for pass = 1, 2 do
+    for _, id in ipairs(ids) do
+      if #out >= A_MAX then break end
+      local r = mine[id]
+      if type(r) == "table" and not added[id] then
+        local hit = pass == 1 and type(r.o) == "number" and want[r.o]
+        if pass == 2 and q then
+          -- As Find matches: every word in the recipe name or the output item's name.
+          local name = type(r.n) == "string" and strlower(r.n) or ""
+          local item = type(r.o) == "number" and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(r.o)
+          item = type(item) == "string" and strlower(item) or ""
+          hit = true
+          for w in q:gmatch("%S+") do
+            if not (name:find(w, 1, true) or item:find(w, 1, true)) then hit = false break end
+          end
         end
-      end
-      if hit then
-        out[#out + 1] = { id, type(r.n) == "string" and r.n:sub(1, MAX_NAME) or false,
-          type(r.o) == "number" and r.o or false, type(r.p) == "number" and r.p or false,
-          NS.Recipes and NS.Recipes.SourceOf and NS.Recipes.SourceOf(id) or nil }
+        if hit then
+          added[id] = true
+          out[#out + 1] = { id, type(r.n) == "string" and r.n:sub(1, MAX_NAME) or false,
+            type(r.o) == "number" and r.o or false, type(r.p) == "number" and r.p or false,
+            NS.Recipes and NS.Recipes.SourceOf and NS.Recipes.SourceOf(id) or nil }
+        end
       end
     end
   end
@@ -2160,6 +2165,7 @@ end
 -- asker still takes answers (W_TTL).
 scale.heldW = {}          -- [asker] = the question waiting out the gap
 scale.capHeld = {}        -- [asker] = the question waiting for room under A_PER_MIN
+scale.wPending = 0        -- answers scheduled but not sent yet
 function scale.AnswerW(full, w)
   local now = time()
   if now - w.t > W_TTL - 1 then return end
@@ -2181,7 +2187,9 @@ function scale.AnswerW(full, w)
   for i = #wAnswerTimes, 1, -1 do
     if now - wAnswerTimes[i] >= 60 then table.remove(wAnswerTimes, i) end
   end
-  if #wAnswerTimes >= A_PER_MIN then
+  -- Answers waiting to go out (the spreading wait, a lockdown) count too, so they can't all
+  -- leave at once later.
+  if #wAnswerTimes + scale.wPending >= A_PER_MIN then
     -- At the limit: tried again when the oldest answer leaves the minute (AnswerW drops it if
     -- the asker has stopped listening by then).
     -- One retry per asker, with their newest question.
@@ -2196,14 +2204,21 @@ function scale.AnswerW(full, w)
     end
     return
   end
+  -- Held for this asker meanwhile; the minute's count takes the answer when it is sent.
   answeredW[full] = now
-  wAnswerTimes[#wAnswerTimes + 1] = now
+  scale.wPending = scale.wPending + 1
   -- A moment's wait, different for every crafter, so the answers don't arrive in one burst.
   local function answer()
     if CanSend() then
-      Send("A", { v = VERSION, id = w.id, list = list, profs = MyProfs() }, "WHISPER", ShortName(full), "BULK")
+      scale.wPending = max(0, scale.wPending - 1)
+      if Send("A", { v = VERSION, id = w.id, list = list, profs = MyProfs() }, "WHISPER", ShortName(full), "BULK") then
+        answeredW[full] = time()
+        wAnswerTimes[#wAnswerTimes + 1] = time()
+      end
     elseif time() - w.t < W_TTL - 5 and C_Timer and C_Timer.After then
       C_Timer.After(5, answer)
+    else
+      scale.wPending = max(0, scale.wPending - 1)
     end
   end
   -- The spreading wait, cut short so the answer still arrives while the asker listens.

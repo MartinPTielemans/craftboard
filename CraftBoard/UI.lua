@@ -2690,7 +2690,8 @@ function find.MarkActions(recipeID, itemID, canMake)
     M.TogglePin(recipeID)
     UI.Refresh()
   end }
-  if itemID and not canMake then
+  -- (Already wished: it stays removable, even once I can make it myself.)
+  if itemID and (not canMake or M.IsWished(itemID)) then
     out[#out + 1] = { text = M.IsWished(itemID) and L["Remove from wishlist"] or L["Add to wishlist"], fn = function()
       local on = M.ToggleWish(itemID)
       if on ~= nil then
