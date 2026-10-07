@@ -1688,12 +1688,16 @@ function handlers.H(full, data)
       -- Nothing to compare with yet (only search answers so far): they belong to this book.
       p.odHash = h
     elseif known ~= h then
+      -- Answers since their last hello come from this book already: they stay.
+      local keep = {}
+      for id in pairs(p.aRec or {}) do keep[id] = true end
       if next(p.recipes) then
-        p.recipes = {}
+        p.recipes = keep
         Fire("PEERS_UPDATED")
       end
       p.odHash = h
     end
+    p.aRec = nil
     return
   end
   -- Out of on-demand mode again: what I have of them is only what searches brought in, so their
@@ -2301,6 +2305,9 @@ function handlers.A(full, data)
     local rid = PosInt(e[1], 1e8)
     if rid then
       if not p.recipes[rid] then p.recipes[rid], added = true, true end
+      -- (Remembered until their next hello, which keeps them whatever its hash.)
+      p.aRec = p.aRec or {}
+      p.aRec[rid] = true
       local src = PosInt(e[5], 1e8)
       if src and NS.Recipes and NS.Recipes.SetSource then NS.Recipes.SetSource(rid, src) end
       local name, o, prof = CleanString(e[2], MAX_NAME), PosInt(e[3], 1e8), PosInt(e[4], 1e6)

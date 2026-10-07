@@ -370,6 +370,21 @@ function ChatWatch.HoldDemand(name, from)
   heldDemand[#heldDemand + 1] = { name = name, from = from, t = time() }
 end
 
+local heldLines = {}      -- { {text=, sender=, channel=, guild=, t=}, ... }
+function ChatWatch.HoldLine(text, sender, channel, guild)
+  if #heldLines >= 30 then table.remove(heldLines, 1) end
+  heldLines[#heldLines + 1] = { text = text, sender = sender, channel = channel, guild = guild, t = time() }
+end
+
+function ChatWatch.RetryHeld()
+  if #heldLines == 0 then return end
+  local list, now = heldLines, time()
+  heldLines = {}
+  for _, h in ipairs(list) do
+    if now - h.t < 120 then ChatWatch.Add(h.text, h.sender, h.channel, h.guild, true) end
+  end
+end
+
 function ChatWatch.RetryDemand()
   if #heldDemand == 0 then return end
   local now = time()
@@ -653,12 +668,18 @@ end
 -- Record a chat line (also the entry point for tests). Returns the stored entry or nil.
 -- A later line from the same player can also drop their row ("nvm, found one") or say
 -- whether they bring the reagents ("have mats" / "don't have mats") without asking again.
-function ChatWatch.Add(text, sender, channel, guild)
+-- retry: a held line read again (ChatWatch.RetryHeld); it isn't held a second time.
+function ChatWatch.Add(text, sender, channel, guild, retry)
   if not ChatWatch.Enabled() or type(text) ~= "string" or #text > MAX_LEN then return nil end
   local from = FullName(sender)
   if not from or IsMe(from) or (NS.IsIgnored and NS.IsIgnored(from)) then return nil end
   local hit = ChatWatch.Detect(text, guild)
   local prev = seen[from]
+  -- A plain "[Name]" (no link) may name an item whose data is still loading: the line is read
+  -- again once item names come in (kept in memory a couple of minutes, never saved).
+  if not hit and not retry and not text:find("|H", 1, true) and text:find("%[[^%]|]+%]") then
+    ChatWatch.HoldLine(text, sender, channel, guild)
+  end
   if not (hit or prev) then return nil end
   local clean = ChatWatch.Clean(text)
   local s = Normalize(clean)
@@ -858,5 +879,6 @@ if NS.RegisterCallback then
   NS.RegisterCallback(ChatWatch, "ITEM_NAMES_UPDATED", function()
     indexDirty = true
     ChatWatch.RetryDemand()
+    ChatWatch.RetryHeld()
   end)
 end
