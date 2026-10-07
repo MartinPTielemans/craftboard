@@ -921,7 +921,11 @@ if NS.RegisterCallback then
     end
     FireSoon()
   end)
-  NS.RegisterCallback(ChatWatch, "PEERS_UPDATED", function() outputs = nil end)
+  -- (Peers' recipes are what lets a held "[Name]" be placed too.)
+  NS.RegisterCallback(ChatWatch, "PEERS_UPDATED", function()
+    outputs = nil
+    ChatWatch.RetryHeld()
+  end)
   NS.RegisterCallback(ChatWatch, "ITEM_NAMES_UPDATED", function()
     indexDirty = true
     ChatWatch.RetryDemand()

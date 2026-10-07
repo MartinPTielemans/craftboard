@@ -2046,12 +2046,25 @@ function handlers.P(full, data)
   local count, total = 0, 0
   local oldestId, oldestT
   local me = MyKey()
+  -- Requests one of my linked orders hangs under (however far up): never made room from, or my
+  -- order would be left looking like a request of its own.
+  local mine = {}
+  for _, p in pairs(db.posts) do
+    if type(p) == "table" and p.from == me then
+      local up, steps = p.pa, 0
+      while up and not mine[up] and steps < 20 do
+        mine[up] = true
+        local parent = db.posts[up]
+        up, steps = type(parent) == "table" and parent.pa or nil, steps + 1
+      end
+    end
+  end
   for pid, p in pairs(db.posts) do
     total = total + 1
     if type(p) == "table" then
       if p.from == full then count = count + 1 end
       -- Room is made from other players' posts, never mine.
-      if p.from ~= me and (not oldestT or (p.t or 0) < oldestT) then oldestId, oldestT = pid, p.t or 0 end
+      if p.from ~= me and not mine[pid] and (not oldestT or (p.t or 0) < oldestT) then oldestId, oldestT = pid, p.t or 0 end
     end
   end
   if count >= MAX_POSTS_PER_SENDER then return end
@@ -2243,7 +2256,11 @@ function Comm.Ask(text, items)
         askedKey[key] = nil
         return
       end
-      if CanSend() and ResolveChannel() and Send("W", payload, "CHANNEL", channelId, "NORMAL") then return end
+      if CanSend() and ResolveChannel() and Send("W", payload, "CHANNEL", channelId, "NORMAL") then
+        -- Channel crafters hear it only now: their answers are taken for a full window from here.
+        asked[id] = time()
+        return
+      end
       C_Timer.After(5, again)
     end
     C_Timer.After(5, again)
