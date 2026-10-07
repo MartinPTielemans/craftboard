@@ -129,6 +129,8 @@ function Inventory.ItemName(itemID)
   return nil
 end
 
+local waiters = {}   -- [itemID] = { fn, ... }: WhenNamed callers without the item mixin
+
 -- fn(name) with the item's name: now when it is cached, else once it has loaded. An item still
 -- loading after a few seconds gets fn(nil) then, and fn(name) again when the name does arrive.
 function Inventory.WhenNamed(itemID, fn)
@@ -143,6 +145,11 @@ function Inventory.WhenNamed(itemID, fn)
   end
   if Item and Item.CreateFromItemID then
     pcall(function() Item:CreateFromItemID(itemID):ContinueOnItemLoad(loaded) end)
+  else
+    -- No item mixin: woken by GET_ITEM_INFO_RECEIVED (below).
+    waiters[itemID] = waiters[itemID] or {}
+    table.insert(waiters[itemID], loaded)
+    if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, itemID) end
   end
   if C_Timer and C_Timer.After then
     C_Timer.After(3, function()
@@ -159,6 +166,11 @@ end
 -- Retry failed lookups when the client reports item data arriving (fallback path).
 NS.Register("GET_ITEM_INFO_RECEIVED", function(_, itemID, success)
   if itemID and requested[itemID] and success then FireNamesUpdated() end
+  local list = itemID and success and waiters[itemID]
+  if list then
+    waiters[itemID] = nil
+    for _, f in ipairs(list) do pcall(f) end
+  end
 end)
 
 -- Reagent-like items ---------------------------------------------------------------

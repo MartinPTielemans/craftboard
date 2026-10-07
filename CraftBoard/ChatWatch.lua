@@ -382,6 +382,13 @@ function ChatWatch.HoldLine(text, sender, channel, guild, seq)
   heldLines[#heldLines + 1] = { text = text, sender = sender, channel = channel, guild = guild, t = time(), seq = seq }
 end
 
+function ChatWatch.DropHeld(from)
+  for i = #heldLines, 1, -1 do
+    local h = heldLines[i]
+    if (NS.FullName and NS.FullName(h.sender) or h.sender) == from then table.remove(heldLines, i) end
+  end
+end
+
 function ChatWatch.RetryHeld()
   if #heldLines == 0 then return end
   -- A line still not placed waits for the next names (another item may have loaded first).
@@ -716,6 +723,8 @@ function ChatWatch.Add(text, sender, channel, guild, retry)
     local rest = hit and Asks(" " .. d:sub(stop)) and RawAfter(text, phrase)
     hit = rest and ChatWatch.Detect(rest, guild) or nil
     if not hit then
+      -- Called off: an ask of theirs held for its item name goes too.
+      ChatWatch.DropHeld(from)
       if prev then
         seen[from] = nil
         FireSoon()
