@@ -2623,7 +2623,23 @@ end
 -- Gathering professions (Herbalism, Mining, Skinning) of my characters and of online players on
 -- the board: { "Bob (Mining 250)", ... }, mine first, at most `limit`.
 local GATHER = { [182] = true, [186] = true, [393] = true }
-function find.Gatherers(limit)
+-- Which gathering profession brings in an item: Trade Goods subclasses Herb, Metal & Stone and
+-- Leather (nil for anything else: cloth, crafted parts, vendor reagents).
+local GATHER_BY_SUBCLASS = { [9] = 182, [7] = 186, [6] = 393 }
+function find.GatherProfFor(itemID)
+  local instant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+  if not (instant and type(itemID) == "number") then return nil end
+  local ok, _, _, _, _, _, classID, subclassID = pcall(instant, itemID)
+  local tradeGoods = Enum and Enum.ItemClass and Enum.ItemClass.Tradegoods or 7
+  if not ok or classID ~= tradeGoods then return nil end
+  return GATHER_BY_SUBCLASS[subclassID]
+end
+
+-- Gatherers for an item: only the profession that brings it in (none when nobody gathers it).
+function find.Gatherers(limit, itemID)
+  local want = find.GatherProfFor(itemID)
+  if not want then return {} end
+  local GATHER = { [want] = true }
   local out = {}
   local function add(name, id, pr, mine)
     if #out >= limit or type(pr) ~= "table" then return end
@@ -3748,7 +3764,7 @@ function R.PostDetail(e)
         lines[#lines + 1] = e.supply and (GREEN .. text .. "|r") or text
       end
     end
-    local gatherers = find.Gatherers(4)
+    local gatherers = find.Gatherers(4, post.item)
     if #gatherers > 0 then lines[#lines + 1] = format(L["Gatherers: %s"], table.concat(gatherers, ", ")) end
   elseif not mine then
     lines[#lines + 1] = R.KnowLine(current, rec and not current and know.char or nil)
@@ -4315,7 +4331,8 @@ local function Annotate()
         e.readyAlt = true
       end
       e.counts = (e.can or e.supply) and not e.mine and online
-      postedBy[strlower(post.from) .. ":" .. post.item] = true
+      -- (A materials post doesn't stand in for an ask to have it crafted.)
+      if not matsPost then postedBy[strlower(post.from) .. ":" .. post.item] = true end
       add(e)
     end
   end
@@ -4695,9 +4712,12 @@ function P.Missing(profID)
   -- My other characters' recipes (the catalogue only learns professions from other players).
   local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
   for key, c in pairs(chars) do
-    if key ~= NS.Me and type(c) == "table" and type(c.recipes) == "table" then
+    -- Only what Find can show: alts on this realm and faction, crafts that can be handed over.
+    local reachable = NS.Inventory and NS.Inventory.Reachable
+    local tradeable = NS.Recipes and NS.Recipes.IsTradeable
+    if key ~= NS.Me and type(c) == "table" and type(c.recipes) == "table" and (not reachable or reachable(key, c)) then
       for id, rec in pairs(c.recipes) do
-        if type(rec) == "table" then add(id, rec.p, rec.n, rec.o) end
+        if type(rec) == "table" and (not tradeable or tradeable(rec)) then add(id, rec.p, rec.n, rec.o) end
       end
     end
   end
@@ -6186,6 +6206,15 @@ end
 -- Opening or closing a profession window re-sorts Plan (the open profession first) as well.
 NS.Register("TRADE_SKILL_SHOW", function() scheduleRefresh() end)
 NS.Register("TRADE_SKILL_CLOSE", function() scheduleRefresh() end)
+-- "Only guild crafters" goes by the roster: someone joining or leaving the guild changes Find
+-- without any other event.
+find.guildRefresh = Debouncer(2, function()
+  if find.GuildOnly() then
+    find.universeDirty = true
+    UI.Refresh()
+  end
+end)
+NS.Register("GUILD_ROSTER_UPDATE", function() if find.GuildOnly() then find.guildRefresh() end end)
 
 -- Once a minute while the window is up: cooldown times on crafter rows count down (Find: only
 -- the few visible rows are re-filled), request ages and dimming move on (Requests), and the
