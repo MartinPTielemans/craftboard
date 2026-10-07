@@ -394,7 +394,7 @@ function ChatWatch.RetryHeld()
     local cur = from and seen[from]
     -- (By arrival order: two lines can come in within the same second.)
     local newer = cur and type(cur.seq) == "number" and cur.seq > h.seq
-    if not newer and now - h.t < 120 and not ChatWatch.Add(h.text, h.sender, h.channel, h.guild, true) then
+    if not newer and now - h.t < 120 and not ChatWatch.Add(h.text, h.sender, h.channel, h.guild, h.seq) then
       heldLines[#heldLines + 1] = h
     end
   end
@@ -683,7 +683,8 @@ end
 -- Record a chat line (also the entry point for tests). Returns the stored entry or nil.
 -- A later line from the same player can also drop their row ("nvm, found one") or say
 -- whether they bring the reagents ("have mats" / "don't have mats") without asking again.
--- retry: a held line read again (ChatWatch.RetryHeld); it isn't held a second time.
+-- retry: a held line read again (ChatWatch.RetryHeld; its arrival sequence number); it isn't
+-- held a second time.
 function ChatWatch.Add(text, sender, channel, guild, retry)
   if not ChatWatch.Enabled() or type(text) ~= "string" or #text > MAX_LEN then return nil end
   local from = FullName(sender)
@@ -735,7 +736,9 @@ function ChatWatch.Add(text, sender, channel, guild, retry)
   local e = {
     from = from, text = clean, prof = hit.prof, profID = hit.profID, itemName = hit.itemName, itemID = hit.itemID,
     links = hit.links, mats = hit.mats, qty = hit.qty,
-    channel = channel, guild = guild or nil, t = now, first = now, asks = 1, seq = ChatWatch.NextSeq(),
+    -- (A replayed line keeps the place it arrived in.)
+    channel = channel, guild = guild or nil, t = now, first = now, asks = 1,
+    seq = type(retry) == "number" and retry or ChatWatch.NextSeq(),
   }
   -- One row per player: asking again for the same thing bumps the count and keeps when it was
   -- first seen (and what it said about quantity and reagents, unless the new line says); a
