@@ -2192,14 +2192,16 @@ function Comm.Ask(text, items)
   local onChannel = false
   for _, d in ipairs(used) do onChannel = onChannel or d == "CHANNEL" end
   if not onChannel and RealmChannelOn() and C_Timer and C_Timer.After then
-    local tries = 0
     local function again()
-      tries = tries + 1
-      if time() - now > W_TTL - 15 then return end
+      if time() - now > W_TTL - 5 then
+        -- Never reached the channel: the same question may be asked again at once.
+        askedKey[key] = nil
+        return
+      end
       if CanSend() and ResolveChannel() and Send("W", payload, "CHANNEL", channelId, "NORMAL") then return end
-      if tries < 4 then C_Timer.After(10, again) end
+      C_Timer.After(5, again)
     end
-    C_Timer.After(10, again)
+    C_Timer.After(5, again)
   end
   return true
 end
@@ -2284,9 +2286,8 @@ function scale.AnswerW(full, w)
   local list, unnamed = Comm.MatchQuery(w.q, w.items)
   -- No match while some output names were still loading: looked at once more when they may be
   -- in (the asker suppresses the same question for minutes).
-  if #list == 0 and unnamed and not w.again and C_Timer and C_Timer.After then
-    w.again = true
-    C_Timer.After(2, function() scale.AnswerW(full, w) end)
+  if #list == 0 and unnamed and C_Timer and C_Timer.After then
+    C_Timer.After(3, function() scale.AnswerW(full, w) end)   -- (AnswerW stops once it expires)
     return
   end
   if #list == 0 then return end
