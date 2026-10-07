@@ -325,7 +325,7 @@ local function Knows(spellID)
   for _, fn in pairs({ IsPlayerSpell or false, IsSpellKnown or false }) do
     if type(fn) == "function" then
       local ok, yes = pcall(fn, spellID)
-      if ok and yes and not IsSecret(yes) then return true end
+      if ok and not IsSecret(yes) and yes then return true end
     end
   end
   return false

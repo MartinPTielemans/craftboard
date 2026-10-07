@@ -159,6 +159,9 @@ local function Asked(text, links, prof)
   if not text:find("|H", 1, true) then
     local plain = text:match("%[([^%]|]+)%]")
     if plain and ChatWatch.Resolve and ChatWatch.Resolve(plain) then return plain, nil end
+    -- Or something other players craft (the shared catalogue): an unmet ask still counts.
+    local item = plain and ChatWatch.CatalogueItem and ChatWatch.CatalogueItem(plain)
+    if item and KnownOutputs()[item] then return plain, item end
   end
   return nil
 end

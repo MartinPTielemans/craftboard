@@ -2211,6 +2211,7 @@ end
 scale.heldW = {}          -- [asker] = the question waiting out the gap
 scale.capHeld = {}        -- [asker] = the question waiting for room under A_PER_MIN
 scale.wPending = 0        -- answers scheduled but not sent yet
+scale.pendingA = {}       -- [asker] = { w=, list= }: their answer waiting to go out
 function scale.AnswerW(full, w)
   local now = time()
   if now - w.t > W_TTL - 1 then return end
@@ -2251,21 +2252,33 @@ function scale.AnswerW(full, w)
     end
     return
   end
+  -- One answer per asker on its way at a time: a newer question while it waits (a lockdown)
+  -- replaces what it will say instead of sending a second one.
+  local pend = scale.pendingA[full]
+  if pend then
+    pend.w, pend.list = w, list
+    return
+  end
+  pend = { w = w, list = list }
+  scale.pendingA[full] = pend
   -- Held for this asker meanwhile; the minute's count takes the answer when it is sent.
   answeredW[full] = now
   scale.wPending = scale.wPending + 1
   -- A moment's wait, different for every crafter, so the answers don't arrive in one burst.
   local function answer()
+    local cur = pend.w
     if CanSend() then
       scale.wPending = max(0, scale.wPending - 1)
-      if Send("A", { v = VERSION, id = w.id, list = list, profs = MyProfs() }, "WHISPER", ShortName(full), "BULK") then
+      scale.pendingA[full] = nil
+      if Send("A", { v = VERSION, id = cur.id, list = pend.list, profs = MyProfs() }, "WHISPER", ShortName(full), "BULK") then
         answeredW[full] = time()
         wAnswerTimes[#wAnswerTimes + 1] = time()
       end
-    elseif time() - w.t < W_TTL - 5 and C_Timer and C_Timer.After then
+    elseif time() - cur.t < W_TTL - 5 and C_Timer and C_Timer.After then
       C_Timer.After(5, answer)
     else
       scale.wPending = max(0, scale.wPending - 1)
+      scale.pendingA[full] = nil
     end
   end
   -- The spreading wait, cut short so the answer still arrives while the asker listens.

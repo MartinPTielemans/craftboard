@@ -4211,7 +4211,7 @@ function UI.FilterRequests(keepScroll)
     local g
     if e.queue or e.queueTotal then g = groups[2]
     elseif e.mine then g = groups[5]
-    elseif e.can then g = groups[1]
+    elseif e.can or e.supply then g = groups[1]
     elseif e.chat then g = groups[4]
     else g = groups[3] end
     if e.chat then anyChat = true end
@@ -4691,7 +4691,7 @@ function P.Index()
         end
       end
       list[#list + 1] = { recipeID = id, rec = rec, name = name, lname = strlower(name), diff = DiffOf(rec),
-        lreag = table.concat(reag, "\n") }
+        lreag = reag }
     end
   end
   plan.recipes, plan.dirty = byProf, false
@@ -5125,10 +5125,22 @@ function UI.FilterPlan(keepScroll)
     for _, e in ipairs(list) do
       e.prof, e.best = pr, nil
       byID[e.recipeID] = e
+      -- By reagent: every word in one reagent's name ("silk cloth" isn't Silk Thread plus
+      -- Mageweave Cloth).
       local ok = true
-      local hay = byReagent and e.lreag or e.lname
-      for i = 1, #tokens do
-        if not hay:find(tokens[i], 1, true) then ok = false break end
+      local function all(hay)
+        for i = 1, #tokens do
+          if not hay:find(tokens[i], 1, true) then return false end
+        end
+        return true
+      end
+      if byReagent then
+        ok = #tokens == 0
+        for _, r in ipairs(e.lreag) do
+          if all(r) then ok = true break end
+        end
+      else
+        ok = all(e.lname)
       end
       if ok and noGray and e.diff == DIFF[3] then ok = false end
       local key = pr.profID .. ":" .. e.diff.key

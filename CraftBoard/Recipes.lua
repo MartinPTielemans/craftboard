@@ -558,6 +558,7 @@ end
 local SRC_TRAINER = 1
 Recipes.SRC_TRAINER = SRC_TRAINER
 local trainerShownAt, trainerClosedAt = nil, nil
+local closeEvent = false   -- the client has TRAINER_CLOSED
 local lastUse = nil    -- { id = itemID, t = time, n = count in the bags then }
 
 -- How many of an item the bags hold (nil when the client can't tell).
@@ -598,14 +599,18 @@ function Recipes.GuessSource(now)
     and (Recipes.BagCount(lastUse.id) or lastUse.n) < lastUse.n then
     return lastUse.id
   end
-  if trainerShownAt and (not trainerClosedAt or trainerClosedAt < trainerShownAt or now - trainerClosedAt <= 3) then
+  -- Still open: shown and not closed since (a client without the close event: shown within the
+  -- last few minutes), or closed a moment ago.
+  local open = trainerShownAt and (trainerClosedAt and trainerClosedAt < trainerShownAt
+    or not trainerClosedAt and (closeEvent and true or now - trainerShownAt <= 300))
+  if trainerShownAt and (open or (trainerClosedAt and now - trainerClosedAt <= 3)) then
     return SRC_TRAINER
   end
   return nil
 end
 
 NS.Register("TRAINER_SHOW", function() trainerShownAt = time() end)
-pcall(NS.Register, "TRAINER_CLOSED", function() trainerClosedAt = time() end)
+closeEvent = pcall(NS.Register, "TRAINER_CLOSED", function() trainerClosedAt = time() end)
 -- The item a recipe is learned from: noted when a bag item is used (observing only).
 if hooksecurefunc and C_Container and C_Container.UseContainerItem then
   pcall(hooksecurefunc, C_Container, "UseContainerItem", function(bag, slot)
