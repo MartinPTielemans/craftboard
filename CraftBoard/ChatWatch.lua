@@ -254,14 +254,19 @@ function ChatWatch.Detect(text, guildChat)
   local links = Links(text)
   local itemName, itemID = Asked(text, links, prof)
   if not (prof or itemName) then return nil, "nothing" end
-  local names
+  local names, ids
   if #links > 1 then
-    names = {}
-    for i = 1, #links do names[i] = links[i].name end
+    -- (ids: the linked items someone crafts, each counted toward demand.)
+    names, ids = {}, {}
+    local known = KnownOutputs()
+    for i = 1, #links do
+      names[i] = links[i].name
+      if links[i].kind == "item" and links[i].id and known[links[i].id] then ids[#ids + 1] = links[i].id end
+    end
   end
   local matsSaid, mats = Mats(s)
   return { prof = prof and prof[1], profID = prof and prof[2], itemName = itemName, itemID = itemID,
-           links = names, mats = mats or nil, matsSaid = matsSaid or nil, qty = Quantity(clean, s) }
+           links = names, linkIDs = ids, mats = mats or nil, matsSaid = matsSaid or nil, qty = Quantity(clean, s) }
 end
 
 -- Words that say nothing beyond the card's title: the ask markers and fillers, courtesy,
@@ -710,6 +715,8 @@ function ChatWatch.Add(text, sender, channel, guild)
   end
   -- A recipe none of my characters knows: its item by name, from the shared catalogue.
   if not asked and type(e.itemName) == "string" then asked = ChatWatch.CatalogueItem(e.itemName) end
+  -- Every crafted item a line links counts ("WTB [A] [B]"), the first one included.
+  for _, id in ipairs(NS.Stats and NS.Stats.NoteDemand and hit.linkIDs or {}) do NS.Stats.NoteDemand(id, from) end
   if NS.Stats and NS.Stats.NoteDemand and asked then
     NS.Stats.NoteDemand(asked, from)
   elseif type(e.itemName) == "string" then

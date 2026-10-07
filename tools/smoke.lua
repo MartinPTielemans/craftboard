@@ -560,6 +560,8 @@ do
   S.NoteDemand(4305, "Bo Rin-Forever")
   S.NoteDemand(4305, NS.Me)
   eq(S.Demand(4305), 2, "asks counted once per player and day, mine left out")
+  CW.Add("WTB |Hitem:2304::|h[Light Armor Kit]|h and |Hitem:1::|h[Mooncloth]|h", "Cy Ward", "Trade")
+  check(S.Demand(2304) >= 1 and S.Demand(1) >= 1, "every crafted item a line links counts")
   local listed = false
   for _, e in ipairs(S.TopDemand(5, 7, 2)) do listed = listed or (e.itemID == 4305 and e.n == 2) end
   check(listed, "most asked for")

@@ -43,6 +43,13 @@ local function Quality(itemID)
     local ok, q = pcall(C_Item.GetItemQualityByID, itemID)
     if ok and type(q) == "number" then return q end
   end
+  -- Older API: GetItemInfo's third value (C_Item's returns the same, or a table on some clients).
+  local get = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+  if get then
+    local ok, a, _, q = pcall(get, itemID)
+    if ok and type(a) == "table" then q = a.itemQuality or a.quality end
+    if ok and type(q) == "number" then return q end
+  end
   return nil
 end
 
