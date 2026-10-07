@@ -1726,6 +1726,12 @@ local function FlushBatch()
     C_Timer.After(15, FlushBatch)
     return
   end
+  -- Its broadcast is a full list: it waits for room under the per-minute limit as well (counted
+  -- when it goes, not when the batch began).
+  if not scale.AnswerRoom() and C_Timer and C_Timer.After then
+    C_Timer.After(15, FlushBatch)
+    return
+  end
   local b = batch
   batch = nil
   -- Queriers who asked too long ago (a long lockdown) would no longer read the answer: they are
@@ -1745,6 +1751,7 @@ local function FlushBatch()
   for _, dist in pairs(b) do
     if sent[dist] == nil then
       sent[dist] = CanSend() and DistAvailable(dist) and SendRecipes(dist) or false
+      if sent[dist] then scale.CountAnswer() end
     end
   end
   -- The broadcast didn't go (too big for one message, or the channel was gone): each of them is
@@ -1783,11 +1790,12 @@ local function RetryAnswers()
     end
     return
   end
-  local now, stale = time(), false
+  local now, stale, staleGuild = time(), false, false
   for peer, t in pairs(pendingR) do
     if now - t > QUERY_TTL - 15 then
       pendingR[peer] = nil
       stale = true
+      if GuildRoster()[peer] ~= nil then staleGuild = true end
     elseif scale.AnswerRoom() then
       pendingR[peer] = nil
       answered[peer] = now
@@ -1799,9 +1807,14 @@ local function RetryAnswers()
     pendingRTimer = true
     C_Timer.After(15, RetryAnswers)
   end
-  -- Askers who waited too long ask again after a hello; with crowds on the channel they don't
-  -- (that hello would bring the crowd's queries back).
-  if stale and not Comm.OnDemand() then SendHello(nil, nil, true) end
+  -- Askers who waited too long ask again after a hello. With crowds on the channel only the
+  -- guild hears it (a channel hello would bring the crowd's queries back; guildmates always
+  -- sync in full).
+  if stale and not Comm.OnDemand() then
+    SendHello(nil, nil, true)
+  elseif staleGuild then
+    SendHello("GUILD", nil, true)
+  end
 end
 
 -- A query answered by whisper once the per-minute limit allows (askedAt: when they asked).
@@ -1838,7 +1851,6 @@ function handlers.Q(full)
     and not (batchAt and now - batchAt < ANSWER_GAP) and scale.AnswerRoom())) then
     if not batch then
       batch = {}
-      scale.CountAnswer()
       C_Timer.After(R_BATCH_DELAY, FlushBatch)
     end
     answered[full] = now
@@ -2145,6 +2157,7 @@ end
 -- one only), and an answer held up by combat or chat lockdown is tried again, both only while the
 -- asker still takes answers (W_TTL).
 scale.heldW = {}          -- [asker] = the question waiting out the gap
+scale.capHeld = {}        -- [asker] = the question waiting for room under A_PER_MIN
 function scale.AnswerW(full, w)
   local now = time()
   if now - w.t > W_TTL - 1 then return end
@@ -2169,8 +2182,15 @@ function scale.AnswerW(full, w)
   if #wAnswerTimes >= A_PER_MIN then
     -- At the limit: tried again when the oldest answer leaves the minute (AnswerW drops it if
     -- the asker has stopped listening by then).
-    if C_Timer and C_Timer.After then
-      C_Timer.After(60 - (now - wAnswerTimes[1]) + 0.1, function() scale.AnswerW(full, w) end)
+    -- One retry per asker, with their newest question.
+    local had = scale.capHeld[full]
+    scale.capHeld[full] = w
+    if not had and C_Timer and C_Timer.After then
+      C_Timer.After(60 - (now - wAnswerTimes[1]) + 0.1, function()
+        local x = scale.capHeld[full]
+        scale.capHeld[full] = nil
+        if x then scale.AnswerW(full, x) end
+      end)
     end
     return
   end

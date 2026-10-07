@@ -558,7 +558,15 @@ end
 local SRC_TRAINER = 1
 Recipes.SRC_TRAINER = SRC_TRAINER
 local trainerShownAt, trainerClosedAt = nil, nil
-local lastUse = nil    -- { id = itemID, t = time }
+local lastUse = nil    -- { id = itemID, t = time, n = count in the bags then }
+
+-- How many of an item the bags hold (nil when the client can't tell).
+function Recipes.BagCount(itemID)
+  local get = C_Item and C_Item.GetItemCount or GetItemCount
+  if not get then return nil end
+  local ok, n = pcall(get, itemID, false)
+  return ok and type(n) == "number" and not (issecretvalue and issecretvalue(n)) and n or nil
+end
 
 function Recipes.SourceOf(recipeID)
   local cat = Catalogue()
@@ -584,7 +592,12 @@ end
 function Recipes.GuessSource(now)
   now = now or time()
   -- A recipe item used just now wins (it may have been used right after leaving a trainer).
-  if lastUse and now - lastUse.t <= 10 and IsRecipeItem(lastUse.id) then return lastUse.id end
+  -- Only a use that went through: the recipe item is gone from the bags (a known or
+  -- unlearnable recipe stays where it was).
+  if lastUse and now - lastUse.t <= 10 and IsRecipeItem(lastUse.id) and lastUse.n
+    and (Recipes.BagCount(lastUse.id) or lastUse.n) < lastUse.n then
+    return lastUse.id
+  end
   if trainerShownAt and (not trainerClosedAt or trainerClosedAt < trainerShownAt or now - trainerClosedAt <= 3) then
     return SRC_TRAINER
   end
@@ -598,7 +611,10 @@ if hooksecurefunc and C_Container and C_Container.UseContainerItem then
   pcall(hooksecurefunc, C_Container, "UseContainerItem", function(bag, slot)
     local get = C_Container.GetContainerItemID
     local ok, id = pcall(get, bag, slot)
-    if ok and type(id) == "number" and not (issecretvalue and issecretvalue(id)) then lastUse = { id = id, t = time() } end
+    -- With how many there were: the item is only used up once the recipe is learned.
+    if ok and type(id) == "number" and not (issecretvalue and issecretvalue(id)) then
+      lastUse = { id = id, t = time(), n = Recipes.BagCount(id) }
+    end
   end)
 end
 
