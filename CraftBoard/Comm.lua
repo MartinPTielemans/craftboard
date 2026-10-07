@@ -2038,7 +2038,8 @@ function handlers.P(full, data)
     pa = pa,
     k = data.k == "m" and "m" or nil,
   }
-  if NS.Stats and NS.Stats.NoteDemand then NS.Stats.NoteDemand(item, full) end
+  -- (Ignored players' posts are hidden, and don't count toward demand either.)
+  if NS.Stats and NS.Stats.NoteDemand and not (NS.IsIgnored and NS.IsIgnored(full)) then NS.Stats.NoteDemand(item, full) end
   Fire("POSTS_UPDATED")
 end
 
@@ -2183,7 +2184,8 @@ function Comm.Ask(text, items)
   local id = me .. ":" .. now .. ":" .. askCounter
   local payload = { v = VERSION, id = id, q = q, i = #list > 0 and list or nil }
   local used = Broadcast("W", payload, "NORMAL")
-  if #used == 0 then return false end
+  -- Nowhere to send it yet (the realm channel still joining after login): tried again shortly.
+  if #used == 0 then return false, (RealmChannelOn() and not ResolveChannel()) and "wait" or nil end
   lastAsk, askedKey[key], asked[id] = now, now, now
   -- The realm channel not joined yet (just after login): the same question goes there once it
   -- is, while answers are still taken (a few tries).
@@ -2227,9 +2229,13 @@ function Comm.AskSoon(text, items)
     -- Inside the gap between questions, or in combat: tried again shortly (unless a newer
     -- search came in meanwhile, which goes instead).
     -- (Put back as it was, newest first: AskSoon's items argument would reverse it.)
-    if why == "wait" and askText == nil and askItems == nil then
+    -- A few minutes at most (a channel that never joins doesn't keep it asking).
+    if why == "wait" and askText == nil and askItems == nil and scale.askWaits < 120 then
+      scale.askWaits = scale.askWaits + 1
       askText, askItems = t, i
       Comm.AskSoon()
+    elseif why ~= "wait" then
+      scale.askWaits = 0
     end
   end)
 end
@@ -2257,6 +2263,7 @@ end
 scale.heldW = {}          -- [asker] = the question waiting out the gap
 scale.capHeld = {}        -- [asker] = the question waiting for room under A_PER_MIN
 scale.wPending = 0        -- answers scheduled but not sent yet
+scale.askWaits = 0        -- times the current question was held back in a row
 scale.pendingA = {}       -- [asker] = { w=, list= }: their answer waiting to go out
 function scale.AnswerW(full, w)
   local now = time()

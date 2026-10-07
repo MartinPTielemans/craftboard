@@ -370,10 +370,17 @@ function ChatWatch.HoldDemand(name, from)
   heldDemand[#heldDemand + 1] = { name = name, from = from, t = time() }
 end
 
+-- Arrival order of chat lines (rows and held lines), finer than time()'s seconds.
+function ChatWatch.NextSeq()
+  ChatWatch.seq = (ChatWatch.seq or 0) + 1
+  return ChatWatch.seq
+end
+
 local heldLines = {}      -- { {text=, sender=, channel=, guild=, t=}, ... }
 function ChatWatch.HoldLine(text, sender, channel, guild)
   if #heldLines >= 30 then table.remove(heldLines, 1) end
-  heldLines[#heldLines + 1] = { text = text, sender = sender, channel = channel, guild = guild, t = time() }
+  ChatWatch.seq = (ChatWatch.seq or 0) + 1
+  heldLines[#heldLines + 1] = { text = text, sender = sender, channel = channel, guild = guild, t = time(), seq = ChatWatch.seq }
 end
 
 function ChatWatch.RetryHeld()
@@ -385,7 +392,8 @@ function ChatWatch.RetryHeld()
     -- Something newer from the same player came in meanwhile: the held line is out of date.
     local from = NS.FullName and NS.FullName(h.sender)
     local cur = from and seen[from]
-    local newer = cur and type(cur.t) == "number" and cur.t >= h.t
+    -- (By arrival order: two lines can come in within the same second.)
+    local newer = cur and type(cur.seq) == "number" and cur.seq > h.seq
     if not newer and now - h.t < 120 and not ChatWatch.Add(h.text, h.sender, h.channel, h.guild, true) then
       heldLines[#heldLines + 1] = h
     end
@@ -727,7 +735,7 @@ function ChatWatch.Add(text, sender, channel, guild, retry)
   local e = {
     from = from, text = clean, prof = hit.prof, profID = hit.profID, itemName = hit.itemName, itemID = hit.itemID,
     links = hit.links, mats = hit.mats, qty = hit.qty,
-    channel = channel, guild = guild or nil, t = now, first = now, asks = 1,
+    channel = channel, guild = guild or nil, t = now, first = now, asks = 1, seq = ChatWatch.NextSeq(),
   }
   -- One row per player: asking again for the same thing bumps the count and keeps when it was
   -- first seen (and what it said about quantity and reagents, unless the new line says); a

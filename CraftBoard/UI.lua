@@ -1233,7 +1233,7 @@ local function GroupRowFactory(onSelect, onToggle, onMenu)
       local it = self.item
       if it and not it.kind then
         ShowTooltip(self, it.outputItemID, it.recipeID)
-        if onMenu and GameTooltip and GameTooltip:IsShown() and MenuUtil and MenuUtil.CreateContextMenu then
+        if onMenu and GameTooltip and GameTooltip:IsShown() then
           GameTooltip:AddLine(L["Right-click for actions"], MUTED[1], MUTED[2], MUTED[3])
           GameTooltip:Show()
         end
@@ -2685,11 +2685,56 @@ end
 -- A right-click menu: { {text=, fn=}, ... } under a title. Without the menu API nothing opens
 -- (every action has another way in: the card, the Filter, a slash command).
 function find.ContextMenu(owner, title, actions)
-  if #actions == 0 or not (MenuUtil and MenuUtil.CreateContextMenu) then return end
-  pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
-    if root.CreateTitle and title then root:CreateTitle(title) end
-    for _, a in ipairs(actions) do root:CreateButton(a.text, a.fn) end
-  end)
+  if #actions == 0 then return end
+  if MenuUtil and MenuUtil.CreateContextMenu then
+    pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
+      if root.CreateTitle and title then root:CreateTitle(title) end
+      for _, a in ipairs(actions) do root:CreateButton(a.text, a.fn) end
+    end)
+    return
+  end
+  find.PopupMenu(owner, title, actions)
+end
+
+-- Without the menu API: a small panel of buttons by the row (Escape or Cancel closes it).
+function find.PopupMenu(owner, title, actions)
+  local f = find.popup
+  if not f then
+    f = CreateFrame("Frame", "CraftBoardActionPopup", UIParent)
+    f:SetFrameStrata("DIALOG")
+    f:EnableMouse(true)
+    local bg = f:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.05, 0.05, 0.05, 0.95)
+    f.title = Label(f, nil, "GameFontNormal")
+    f.title:SetPoint("TOPLEFT", 8, -8)
+    f.buttons = {}
+    if type(UISpecialFrames) == "table" then table.insert(UISpecialFrames, "CraftBoardActionPopup") end
+    find.popup = f
+  end
+  f.title:SetText(title or "")
+  local list = {}
+  for _, a in ipairs(actions) do list[#list + 1] = a end
+  list[#list + 1] = { text = CANCEL or L["Hide"], fn = function() end }
+  for i, a in ipairs(list) do
+    local b = f.buttons[i]
+    if not b then
+      b = PanelButton(f, "", 200, 22)
+      b:SetPoint("TOPLEFT", 8, -28 - (i - 1) * 24)
+      f.buttons[i] = b
+    end
+    b:SetText(a.text)
+    b:SetScript("OnClick", function()
+      f:Hide()
+      a.fn()
+    end)
+    b:Show()
+  end
+  for i = #list + 1, #f.buttons do f.buttons[i]:Hide() end
+  f:SetSize(216, 36 + #list * 24)
+  f:ClearAllPoints()
+  f:SetPoint("TOPLEFT", owner, "TOPRIGHT", 4, 0)
+  f:Show()
 end
 
 -- The marks every recipe row's menu offers (Find and Plan): pin, wishlist (an item I can't get
