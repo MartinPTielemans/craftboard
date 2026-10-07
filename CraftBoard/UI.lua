@@ -2986,9 +2986,9 @@ function UI.RefreshDetail()
     find.crafterLabel:SetPoint("TOPLEFT", find.reagents.box, "BOTTOMLEFT", -1, -12)
   end
   find.crafters:SetItems(e.crafters, L["No known crafters."], true)
-  -- Nobody else known for it on a crowded channel: ask who makes this item.
+  -- Nobody else who can take it now (online, not busy) on a crowded channel: ask who makes it.
   local others = 0
-  for _, c in ipairs(e.crafters or {}) do if not c.mine then others = others + 1 end end
+  for _, c in ipairs(e.crafters or {}) do if not c.mine and c.online and not c.busy then others = others + 1 end end
   if itemID and others == 0 and NS.Comm and NS.Comm.OnDemand and NS.Comm.OnDemand() and NS.Comm.AskSoon then
     NS.Comm.AskSoon(nil, { itemID })
   end

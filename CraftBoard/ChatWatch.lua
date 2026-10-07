@@ -354,6 +354,25 @@ function ChatWatch.Resolve(name)
   return e.recipeID, e.current, e.prof, e.char
 end
 
+-- Asks whose item wasn't known by name yet (its data still loading), kept a few minutes and
+-- counted when item names come in. Never saved.
+local heldDemand = {}     -- { {name=, from=, t=}, ... }
+function ChatWatch.HoldDemand(name, from)
+  if #heldDemand >= 30 then table.remove(heldDemand, 1) end
+  heldDemand[#heldDemand + 1] = { name = name, from = from, t = time() }
+end
+
+function ChatWatch.RetryDemand()
+  if #heldDemand == 0 then return end
+  local now = time()
+  for i = #heldDemand, 1, -1 do
+    local h = heldDemand[i]
+    local item = now - h.t < 300 and ChatWatch.CatalogueItem(h.name)
+    if item and NS.Stats and NS.Stats.NoteDemand then NS.Stats.NoteDemand(item, h.from) end
+    if item or now - h.t >= 300 then table.remove(heldDemand, i) end
+  end
+end
+
 -- The item a name is, among the catalogue's outputs (other players' recipes too), or nil.
 function ChatWatch.CatalogueItem(name)
   local want = lower(name)
@@ -691,7 +710,12 @@ function ChatWatch.Add(text, sender, channel, guild)
   end
   -- A recipe none of my characters knows: its item by name, from the shared catalogue.
   if not asked and type(e.itemName) == "string" then asked = ChatWatch.CatalogueItem(e.itemName) end
-  if NS.Stats and NS.Stats.NoteDemand and asked then NS.Stats.NoteDemand(asked, from) end
+  if NS.Stats and NS.Stats.NoteDemand and asked then
+    NS.Stats.NoteDemand(asked, from)
+  elseif type(e.itemName) == "string" then
+    -- Item names still loading: counted once they are in (ChatWatch.RetryDemand).
+    ChatWatch.HoldDemand(e.itemName, from)
+  end
   seen[from] = e
   Prune(from)
   FireSoon()
@@ -821,5 +845,8 @@ if NS.RegisterCallback then
     FireSoon()
   end)
   NS.RegisterCallback(ChatWatch, "PEERS_UPDATED", function() outputs = nil end)
-  NS.RegisterCallback(ChatWatch, "ITEM_NAMES_UPDATED", function() indexDirty = true end)
+  NS.RegisterCallback(ChatWatch, "ITEM_NAMES_UPDATED", function()
+    indexDirty = true
+    ChatWatch.RetryDemand()
+  end)
 end
