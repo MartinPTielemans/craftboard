@@ -2131,6 +2131,18 @@ end
 -- closes the standalone window (inside ProfessionsFrame it only lets go of the keyboard, so the
 -- next Escape closes Blizzard's window the usual way). t.keyOf / t.selectedKey / t.selectKey map entries to the selection
 -- (default: Find's recipe IDs).
+-- Where the selection is in a list t.results, for the arrow keys and the D-pad. A recipe can be
+-- listed twice (its Pinned or Most asked copy, Plan's Best next): the row last moved to wins
+-- while it still holds the selection, so stepping goes on from there instead of jumping back.
+function UI.NavIndex(t, list, keyOf, cur)
+  local pos = t.navPos
+  if pos and list[pos] and keyOf(list[pos]) == cur then return pos end
+  for i, u in ipairs(list) do
+    if keyOf(u) == cur then return i end
+  end
+  return 0
+end
+
 local function NewSearchBox(name, parent, t)
   local keyOf = t.keyOf or function(u) return u.recipeID end
   local current = t.selectedKey or function() return selectedID end
@@ -2196,10 +2208,7 @@ local function NewSearchBox(name, parent, t)
   box:SetScript("OnArrowPressed", function(_, key)
     local list = t.results or {}
     if #list == 0 then return end
-    local idx, cur = 0, current()
-    for i, u in ipairs(list) do
-      if keyOf(u) == cur then idx = i break end
-    end
+    local idx = UI.NavIndex(t, list, keyOf, current())
     if key == "DOWN" then
       idx = min(#list, idx + 1)
     elseif key == "UP" then
@@ -2208,6 +2217,7 @@ local function NewSearchBox(name, parent, t)
       return
     end
     t.arrowed = true
+    t.navPos = idx
     selectKey(keyOf(list[idx]))
     t.list:ScrollTo(list[idx].idx)
   end)
@@ -5786,11 +5796,9 @@ local function Step(t, down)
   if #list == 0 then return end
   local keyOf = t.keyOf or function(u) return u.recipeID end
   local cur = t.selectedKey and t.selectedKey() or selectedID
-  local idx = 0
-  for i, u in ipairs(list) do
-    if keyOf(u) == cur then idx = i break end
-  end
+  local idx = UI.NavIndex(t, list, keyOf, cur)
   idx = down and min(#list, idx + 1) or max(1, idx - 1)
+  t.navPos = idx
   local key = keyOf(list[idx])
   if t.selectKey then t.selectKey(key) else UI.PickRecipe(key) end
   if t.list then t.list:ScrollTo(list[idx].idx) end

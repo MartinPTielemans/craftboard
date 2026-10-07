@@ -74,6 +74,7 @@ local scale = {
   peerCount = nil,                -- stored peers (counted on first need)
   on = false, checkedAt = 0, heard = 0,
   answerTimes = {},               -- whole lists sent within the last minute
+  sentSpecs = {},                 -- [dist] = specializations the last hello there carried
 }
 
 local LibSerialize = LibStub and LibStub("LibSerialize", true)
@@ -539,9 +540,10 @@ end
 -- state (a quick hello: see SendHello's busy argument).
 local function StateFlush()
   busyPending = false
-  local sig = CooldownSig()
+  local sig, specs = CooldownSig(), table.concat(Comm.MySpecs() or {}, ",")
   for _, dist in ipairs({ "GUILD", "CHANNEL" }) do
-    if DistAvailable(dist) and ((sentBusy[dist] or false) ~= busyNow or (sentCd[dist] or "") ~= sig) then
+    if DistAvailable(dist) and ((sentBusy[dist] or false) ~= busyNow or (sentCd[dist] or "") ~= sig
+      or (scale.sentSpecs[dist] or "") ~= specs) then
       SendHello(dist, true)
     end
   end
@@ -612,6 +614,7 @@ function SendHello(dist, busy, urgent)
     lastHelloHash = h
     sentBusy[dist] = busyNow
     sentCd[dist] = CooldownSig()
+    scale.sentSpecs[dist] = table.concat(payload.sp or {}, ",")
     loginHello[dist] = true
     -- A busy-only hello doesn't repeat the posts, unless it is the first hello there.
     if not busy or not last then SendMyPosts(dist) end
@@ -2196,7 +2199,9 @@ function scale.AnswerW(full, w)
     local had = scale.capHeld[full]
     scale.capHeld[full] = w
     if not had and C_Timer and C_Timer.After then
-      C_Timer.After(60 - (now - wAnswerTimes[1]) + 0.1, function()
+      -- Every slot may still be waiting to be sent (no time to count from yet): look again soon.
+      local wait = wAnswerTimes[1] and (60 - (now - wAnswerTimes[1]) + 0.1) or 3
+      C_Timer.After(wait, function()
         local x = scale.capHeld[full]
         scale.capHeld[full] = nil
         if x then scale.AnswerW(full, x) end
@@ -2342,6 +2347,11 @@ local function Start()
     -- A cast of a cooldown craft (or one newly tracked) reaches peers within seconds, not with the
     -- next periodic hello: they would otherwise see it ready for up to ten minutes.
     pcall(NS.RegisterCallback, Comm, "COOLDOWNS_UPDATED", function() ScheduleStateFlush(BUSY_DEBOUNCE) end)
+    -- A specialization learned or dropped goes out the same way (only when it differs from what
+    -- the last hello said).
+    pcall(NS.RegisterCallback, Comm, "SKILLS_UPDATED", function()
+      if lastHelloAt then ScheduleStateFlush(BUSY_DEBOUNCE) end   -- (the login hello carries them)
+    end)
   end
   InstallChatFilter()
   PrunePeers()
