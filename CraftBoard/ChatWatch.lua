@@ -377,10 +377,9 @@ function ChatWatch.NextSeq()
 end
 
 local heldLines = {}      -- { {text=, sender=, channel=, guild=, t=}, ... }
-function ChatWatch.HoldLine(text, sender, channel, guild)
+function ChatWatch.HoldLine(text, sender, channel, guild, seq)
   if #heldLines >= 30 then table.remove(heldLines, 1) end
-  ChatWatch.seq = (ChatWatch.seq or 0) + 1
-  heldLines[#heldLines + 1] = { text = text, sender = sender, channel = channel, guild = guild, t = time(), seq = ChatWatch.seq }
+  heldLines[#heldLines + 1] = { text = text, sender = sender, channel = channel, guild = guild, t = time(), seq = seq }
 end
 
 function ChatWatch.RetryHeld()
@@ -693,13 +692,16 @@ function ChatWatch.Add(text, sender, channel, guild, retry)
   if not from or IsMe(from) or (NS.IsIgnored and NS.IsIgnored(from)) then return nil end
   local hit, why = ChatWatch.Detect(text, guild)
   local prev = seen[from]
+  -- Its place in arrival order (a replayed line keeps the one it arrived with; its row and its
+  -- held copy share it).
+  local seq = type(retry) == "number" and retry or ChatWatch.NextSeq()
   -- An ask whose plain "[Name]" (no link) couldn't be placed may name an item whose data is
   -- still loading: the line is read again once item names come in (in memory a couple of
   -- minutes, never saved). Offers, adverts and lines that aren't asks aren't kept.
   -- (Also an ask matched by its profession alone: "LF tailor for [Mooncloth]".)
   if (not hit and why == "nothing" or hit and not hit.itemName) and not retry
     and not text:find("|H", 1, true) and text:find("%[[^%]|]+%]") then
-    ChatWatch.HoldLine(text, sender, channel, guild)
+    ChatWatch.HoldLine(text, sender, channel, guild, seq)
   end
   if not (hit or prev) then return nil end
   local clean = ChatWatch.Clean(text)
@@ -742,11 +744,16 @@ function ChatWatch.Add(text, sender, channel, guild, retry)
     links = hit.links, mats = hit.mats, qty = hit.qty,
     -- (A replayed line keeps the place it arrived in.)
     channel = channel, guild = guild or nil, t = now, first = now, asks = 1,
-    seq = type(retry) == "number" and retry or ChatWatch.NextSeq(),
+    seq = seq,
   }
   -- One row per player: asking again for the same thing bumps the count and keeps when it was
   -- first seen (and what it said about quantity and reagents, unless the new line says); a
   -- different ask replaces the row.
+  -- A held line read again that still says what its row says: that row stays as it is (it isn't
+  -- another ask, and doesn't make the row any newer).
+  if type(retry) == "number" and prev and prev.seq == retry and (prev.itemName or prev.prof) == (e.itemName or e.prof) then
+    return prev
+  end
   if prev and (prev.itemName or prev.prof) == (e.itemName or e.prof) then
     e.first, e.asks = prev.first or prev.t, (prev.asks or 1) + 1
     if not hit.matsSaid then e.mats = prev.mats end

@@ -76,18 +76,24 @@ function Stats.Crafted(recipeID, rec)
   -- A first rare (or better) craft of this recipe on this character.
   local out = type(rec) == "table" and rec.o
   if before == 0 and type(out) == "number" then
+    local said = false
     local function check()
+      if said then return true end
       local q = Quality(out)
       if q and q >= 3 and NoticeOn() then
+        said = true
         local label = NS.ItemLabel and NS.ItemLabel(out) or format(L["Item %d"], out)
         Flourish(format(L["First time: you crafted %s!"], label))
       end
       return q ~= nil
     end
-    -- The item may not be cached yet: ask for it and look again once it has had time to load.
-    if not check() and C_Timer and C_Timer.After then
-      if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, out) end
-      C_Timer.After(2, check)
+    -- The item may not be cached yet: looked at again once it has loaded, however long that takes.
+    if not check() then
+      if NS.Inventory and NS.Inventory.WhenNamed then
+        NS.Inventory.WhenNamed(out, function() check() end)
+      elseif C_Timer and C_Timer.After then
+        C_Timer.After(2, check)
+      end
     end
   end
   NS.Fire("STATS_UPDATED")
@@ -105,6 +111,12 @@ end)
 -- after login only sets the baseline.
 function Stats.CheckRanks()
   local list = NS.Skills and NS.Skills.Ranks and NS.Skills.Ranks() or {}
+  -- A profession no longer listed (unlearned) starts from a fresh baseline if learned again.
+  local present = {}
+  for _, r in ipairs(list) do present[r.profID] = true end
+  for id in pairs(ranks) do
+    if not present[id] then ranks[id] = nil end
+  end
   for _, r in ipairs(list) do
     local was = ranks[r.profID]
     if type(r.rank) == "number" and type(r.max) == "number" then

@@ -2306,8 +2306,10 @@ function scale.AnswerW(full, w)
   local list, unnamed = Comm.MatchQuery(w.q, w.items)
   -- No match while some output names were still loading: looked at once more when they may be
   -- in (the asker suppresses the same question for minutes).
-  if #list == 0 and unnamed and C_Timer and C_Timer.After then
-    C_Timer.After(3, function() scale.AnswerW(full, w) end)   -- (AnswerW stops once it expires)
+  -- Some output names still loading: wait for them (they may match too) while there is time
+  -- left, then answer with what matches by then.
+  if unnamed and now - w.t < W_TTL - 8 and C_Timer and C_Timer.After then
+    C_Timer.After(3, function() scale.AnswerW(full, w) end)
     return
   end
   if #list == 0 then return end
