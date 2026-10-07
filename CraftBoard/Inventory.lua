@@ -129,6 +129,23 @@ function Inventory.ItemName(itemID)
   return nil
 end
 
+-- fn(name) with the item's name: now when it is cached, else once it has loaded (or, failing
+-- that, after a few seconds with whatever is known then, possibly nil).
+function Inventory.WhenNamed(itemID, fn)
+  local name = Inventory.ItemName(itemID)
+  if name or type(itemID) ~= "number" then fn(name) return end
+  local done = false
+  local function finish()
+    if done then return end
+    done = true
+    fn(CachedName(itemID))
+  end
+  if Item and Item.CreateFromItemID then
+    pcall(function() Item:CreateFromItemID(itemID):ContinueOnItemLoad(finish) end)
+  end
+  if C_Timer and C_Timer.After then C_Timer.After(3, finish) else finish() end
+end
+
 -- Retry failed lookups when the client reports item data arriving (fallback path).
 NS.Register("GET_ITEM_INFO_RECEIVED", function(_, itemID, success)
   if itemID and requested[itemID] and success then FireNamesUpdated() end

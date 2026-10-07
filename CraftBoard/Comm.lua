@@ -2106,7 +2106,7 @@ Comm.QueryText = QueryText
 function Comm.MatchQuery(q, items)
   local want = {}
   for _, id in ipairs(type(items) == "table" and items or {}) do want[id] = true end
-  local out, ids, mine, added = {}, {}, MyRecipes(), {}
+  local out, ids, mine, added, unnamed = {}, {}, MyRecipes(), {}, false
   for id in pairs(mine) do if type(id) == "number" then ids[#ids + 1] = id end end
   sort(ids)
   -- Two passes: the items asked for by ID first (they never lose their place to a broad text
@@ -2121,6 +2121,7 @@ function Comm.MatchQuery(q, items)
           -- As Find matches: every word in the recipe name or the output item's name.
           local name = type(r.n) == "string" and strlower(r.n) or ""
           local item = type(r.o) == "number" and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(r.o)
+          if type(r.o) == "number" and item == nil then unnamed = true end
           item = type(item) == "string" and strlower(item) or ""
           hit = true
           for w in q:gmatch("%S+") do
@@ -2136,7 +2137,8 @@ function Comm.MatchQuery(q, items)
       end
     end
   end
-  return out
+  -- unnamed: some output names weren't loaded yet (they may have matched).
+  return out, unnamed
 end
 
 -- Ask the board. text and/or items (output item IDs). Returns true when a W went out.
@@ -2256,7 +2258,14 @@ function scale.AnswerW(full, w)
     end
     return
   end
-  local list = Comm.MatchQuery(w.q, w.items)
+  local list, unnamed = Comm.MatchQuery(w.q, w.items)
+  -- No match while some output names were still loading: looked at once more when they may be
+  -- in (the asker suppresses the same question for minutes).
+  if #list == 0 and unnamed and not w.again and C_Timer and C_Timer.After then
+    w.again = true
+    C_Timer.After(2, function() scale.AnswerW(full, w) end)
+    return
+  end
   if #list == 0 then return end
   for i = #wAnswerTimes, 1, -1 do
     if now - wAnswerTimes[i] >= 60 then table.remove(wAnswerTimes, i) end

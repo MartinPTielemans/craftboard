@@ -71,6 +71,10 @@ function Marks.SetWished(itemID, on)
     end
     local e = type(db.wish[itemID]) == "table" and db.wish[itemID] or { t = time() }
     e.n = ItemName(itemID) or e.n
+    -- Its name is what recipe links ("Pattern: <name>") are matched by: saved once it loads.
+    if not e.n and NS.Inventory and NS.Inventory.WhenNamed then
+      NS.Inventory.WhenNamed(itemID, function(n) if n then e.n = n NS.Fire("MARKS_UPDATED") end end)
+    end
     db.wish[itemID] = e
   else
     db.wish[itemID] = nil
@@ -130,6 +134,16 @@ function Marks.WishedIn(text)
 end
 
 local alerted = {}   -- [itemID .. sender] = time of the last line
+local heldChat = {}  -- chat lines waiting for wished names to load (in memory, a minute)
+
+-- Some wished item has no name yet (neither loaded nor saved).
+function Marks.Unnamed()
+  local db = DB()
+  for id, e in pairs(db and db.wish or {}) do
+    if not ItemName(id) and not (type(e) == "table" and e.n) then return true end
+  end
+  return false
+end
 
 -- A chat line from someone: say so when it links something on the wishlist.
 function Marks.CheckChat(text, sender, channel)
@@ -138,7 +152,14 @@ function Marks.CheckChat(text, sender, channel)
   local full = NS.FullName and NS.FullName(sender) or sender
   if not full or (NS.IsMe and NS.IsMe(full)) or (NS.IsIgnored and NS.IsIgnored(full)) then return end
   local wished, linked = Marks.WishedIn(text)
-  if not wished then return end
+  if not wished then
+    -- A recipe link while some wished names are still loading: read again once they are in.
+    if Marks.Unnamed() and text:find("|Hitem:", 1, true) then
+      if #heldChat >= 10 then table.remove(heldChat, 1) end
+      heldChat[#heldChat + 1] = { text = text, sender = sender, channel = channel, t = time() }
+    end
+    return
+  end
   local key = wished .. "\t" .. full
   local now = time()
   if alerted[key] and now - alerted[key] < WISH_GAP then return end
@@ -181,7 +202,14 @@ end
 
 if NS.RegisterCallback then
   NS.RegisterCallback(Marks, "MARKS_UPDATED", function() byNameDirty = true end)
-  NS.RegisterCallback(Marks, "ITEM_NAMES_UPDATED", function() byNameDirty = true end)
+  NS.RegisterCallback(Marks, "ITEM_NAMES_UPDATED", function()
+    byNameDirty = true
+    local list, now = heldChat, time()
+    heldChat = {}
+    for _, h in ipairs(list) do
+      if now - h.t < 60 then Marks.CheckChat(h.text, h.sender, h.channel) end
+    end
+  end)
 end
 
 -- /cb wish remove <name or link>: by the item's link, else its name (the whole name, else the

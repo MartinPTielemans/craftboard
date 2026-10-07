@@ -2629,7 +2629,7 @@ function find.ReagentMenu(owner, itemID, short, need)
         UI.Refresh()
       end
     end },
-    { text = L["My recipes that use this"], fn = function() UI.SearchReagent(name) end },
+    { text = L["My recipes that use this"], fn = function() UI.SearchReagentItem(itemID) end },
   }
   find.ContextMenu(owner, name, actions)
 end
@@ -2712,7 +2712,7 @@ function find.MarkActions(recipeID, itemID, canMake)
     end }
   end
   if itemID then
-    out[#out + 1] = { text = L["My recipes that use this"], fn = function() UI.SearchReagent(ItemName(itemID)) end }
+    out[#out + 1] = { text = L["My recipes that use this"], fn = function() UI.SearchReagentItem(itemID) end }
   end
   return out
 end
@@ -5539,6 +5539,13 @@ end
 
 -- Plan with "Search by reagent" on and text in its search box (/cb uses <text>, the row menus'
 -- "My recipes that use this").
+-- The same for an item: searched by its name once that has loaded (never "Item 1234").
+function UI.SearchReagentItem(itemID)
+  local I = NS.Inventory
+  if not (I and I.WhenNamed) then UI.SearchReagent(ItemName(itemID)) return end
+  I.WhenNamed(itemID, function(name) UI.SearchReagent(name or ItemName(itemID)) end)
+end
+
 function UI.SearchReagent(text)
   local db = UIDB()
   if db then db.planByReagent = true end
