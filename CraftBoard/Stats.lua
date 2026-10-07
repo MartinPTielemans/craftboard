@@ -225,9 +225,19 @@ function Stats.PrintDemand()
     return
   end
   NS.Print(L["Most asked for this week:"])
-  local byItem = {}
+  -- Distinct crafters per item (one who knows two recipes for it counts once).
+  local byItem, seenBy = {}, {}
   for _, e in ipairs(NS.Recipes and NS.Recipes.Search and NS.Recipes.Search("") or {}) do
-    if e.outputItemID then byItem[e.outputItemID] = (byItem[e.outputItemID] or 0) + #(e.crafters or {}) end
+    local out = e.outputItemID
+    if out then
+      seenBy[out] = seenBy[out] or {}
+      for _, c in ipairs(e.crafters or {}) do
+        if type(c.name) == "string" and not seenBy[out][c.name] then
+          seenBy[out][c.name] = true
+          byItem[out] = (byItem[out] or 0) + 1
+        end
+      end
+    end
   end
   for _, e in ipairs(top) do
     local label = NS.ItemLabel and NS.ItemLabel(e.itemID) or format(L["Item %d"], e.itemID)

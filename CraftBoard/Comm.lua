@@ -957,6 +957,19 @@ function Comm.OnDemand()
   return scale.on
 end
 
+-- A channel player heard now. One not heard within the window adds to the count at once, so a
+-- burst of hellos turns on-demand mode on mid-burst instead of a minute later.
+function scale.Heard(full)
+  local p = Touch(full)
+  if not p then return end
+  local now = time()
+  local fresh = type(p.ch) == "number" and now - p.ch < scale.window
+  p.ch = now
+  if fresh or GuildRoster()[full] ~= nil then return end
+  scale.heard = scale.heard + 1
+  if scale.heard > scale.onDemandAt then scale.on = true end
+end
+
 -- Count again on the next question (the forced mode was toggled).
 function Comm.RecheckScale() scale.checkedAt = 0 end
 
@@ -1648,7 +1661,18 @@ function handlers.H(full, data)
     return
   end
   -- Too many players on the channel to swap whole recipe lists: Find asks them (W) instead.
-  if scale.Peer(full) then return end
+  if scale.Peer(full) then
+    -- Their book changed: what I had of it may be gone (an unlearned profession). Searches
+    -- (W / A) bring back what they still know.
+    if p.odHash ~= h then
+      if p.odHash ~= nil and next(p.recipes) then
+        p.recipes = {}
+        Fire("PEERS_UPDATED")
+      end
+      p.odHash = h
+    end
+    return
+  end
   local now = time()
   if (queried[full] and now - queried[full] < QUERY_GAP) or not CanSend() then
     pendingQ[full] = h
@@ -1996,11 +2020,13 @@ function Comm.MatchQuery(q, items)
     if type(r) == "table" then
       local hit = type(r.o) == "number" and want[r.o]
       if not hit and q then
+        -- As Find matches: every word in the recipe name or the output item's name.
         local name = type(r.n) == "string" and strlower(r.n) or ""
-        hit = name:find(q, 1, true) ~= nil
-        if not hit and type(r.o) == "number" and NS.Inventory and NS.Inventory.ItemName then
-          local item = NS.Inventory.ItemName(r.o)
-          hit = type(item) == "string" and strlower(item):find(q, 1, true) ~= nil
+        local item = type(r.o) == "number" and NS.Inventory and NS.Inventory.ItemName and NS.Inventory.ItemName(r.o)
+        item = type(item) == "string" and strlower(item) or ""
+        hit = true
+        for w in q:gmatch("%S+") do
+          if not (name:find(w, 1, true) or item:find(w, 1, true)) then hit = false break end
         end
       end
       if hit then
@@ -2025,7 +2051,7 @@ function Comm.Ask(text, items)
   local now = time()
   local key = (q or "") .. "|" .. table.concat(list, ",")
   if askedKey[key] and now - askedKey[key] < W_REPEAT then return false end
-  if now - lastAsk < W_GAP or not CanSend() then return false end
+  if now - lastAsk < W_GAP or not CanSend() then return false, "wait" end
   local me = MyKey()
   if not me then return false end
   askCounter = askCounter + 1
@@ -2050,7 +2076,10 @@ function Comm.AskSoon(text, items)
     askPending = false
     local t, i = askText, askItems
     askText, askItems = nil, nil
-    Comm.Ask(t, i)
+    local _, why = Comm.Ask(t, i)
+    -- Inside the gap between questions, or in combat: tried again shortly (unless a newer
+    -- search came in meanwhile, which goes instead).
+    if why == "wait" and askText == nil and askItems == nil then Comm.AskSoon(t, i) end
   end)
 end
 
@@ -2154,14 +2183,10 @@ function commObj:OnCommReceived(prefix, message, distribution, from)
   if not RateOk(full) then return end
   local data = Decode(message:sub(2))
   if not data then return end
+  -- Heard on the channel (on-demand mode counts these players), before the handler reads it.
+  if distribution == "CHANNEL" then scale.Heard(full) end
   local ok, err = pcall(handlers[kind], full, data)
   if not ok and NS.debug then Print("comm error: " .. tostring(err)) end
-  -- Heard on the channel (on-demand mode counts these players).
-  if distribution == "CHANNEL" then
-    local db = DB()
-    local p = db and db.peers[full]
-    if type(p) == "table" then p.ch = time() end
-  end
 end
 
 -- Lifecycle -------------------------------------------------------------

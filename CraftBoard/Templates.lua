@@ -34,10 +34,11 @@ function Templates.Request(item, qty)
   return format(L["[CraftBoard] Could you craft %dx %s for me? I have/can get the mats."], qty or 1, item)
 end
 
-function Templates.Offer(item, qty)
+-- builtin: the text without an own template, when it isn't the item one (a profession ask).
+function Templates.Offer(item, qty, builtin)
   local t = Saved("offer")
   if t then return Fill(t, item, qty) end
-  return format(L["[CraftBoard] I can craft %s for you."], item)
+  return builtin or format(L["[CraftBoard] I can craft %s for you."], item)
 end
 
 -- The default wording as a template ("{item}", "{qty}" where the built-in text has them).
@@ -55,7 +56,12 @@ function Templates.Set(kind, text)
   if type(CraftBoardDB) ~= "table" then return end
   if type(CraftBoardDB.templates) ~= "table" then CraftBoardDB.templates = {} end
   text = type(text) == "string" and NS.StripCodes(text):gsub("[%c|]", ""):gsub("^%s+", ""):gsub("%s+$", "") or ""
-  if #text > MAX_LEN then text = text:sub(1, MAX_LEN) end
+  if #text > MAX_LEN then
+    -- Cut on a character boundary (a UTF-8 continuation byte never starts the next one).
+    local i = MAX_LEN
+    while i > 0 and (text:byte(i + 1) or 0) >= 128 and (text:byte(i + 1) or 0) < 192 do i = i - 1 end
+    text = text:sub(1, i)
+  end
   if text == "" or text == DefaultTemplate(kind) then text = nil end
   CraftBoardDB.templates[kind] = text
 end

@@ -407,9 +407,20 @@ end
 local ROW, HEADER = 24, 26   -- px per checkbox / per section header
 
 local function BuildPanel()
-  local p = CreateFrame("Frame", PANEL_NAME)
-  p.name = CATEGORY_NAME
-  p:Hide()
+  local panel = CreateFrame("Frame", PANEL_NAME)
+  panel.name = CATEGORY_NAME
+  panel:Hide()
+  -- The controls scroll: more of them than the options canvas is tall.
+  local p = panel
+  local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+  if scroll then
+    scroll:SetPoint("TOPLEFT", 0, -4)
+    scroll:SetPoint("BOTTOMRIGHT", -28, 4)
+    p = CreateFrame("Frame", nil, scroll)
+    p:SetSize(600, 800)
+    scroll:SetScrollChild(p)
+    scroll:SetScript("OnSizeChanged", function(_, w) if w and w > 0 then p:SetWidth(w) end end)
+  end
 
   local title = p:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   title:SetPoint("TOPLEFT", 16, -16)
@@ -496,13 +507,14 @@ local function BuildPanel()
   Button(L["Show welcome"], 150, 386, WELCOME_TIP, ShowWelcome)
   y = y - 28
   Button(L["Whisper texts"], 200, 20, TEXTS_TIP, ShowTexts)
+  if p ~= panel then p:SetHeight(-y + 40) end
 
-  p:SetScript("OnShow", function()
+  panel:SetScript("OnShow", function()
     for i = 1, #checks do checks[i]:SetChecked(checks[i].get()) end
     for i = 1, #syncs do syncs[i]() end
     if syncAdvertise then syncAdvertise() end
   end)
-  return p
+  return panel
 end
 
 -- Registration --------------------------------------------------------------------

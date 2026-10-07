@@ -598,6 +598,9 @@ local enUS = {
   "You have %d (%d more on alts).",
   "You have %d.",
   "Gatherers: %s",
+
+  -- Chat offers
+  "that",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

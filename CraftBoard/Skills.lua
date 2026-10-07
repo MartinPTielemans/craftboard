@@ -369,11 +369,13 @@ function Skills.SpecList(set)
 end
 
 -- "Dragonscale Leatherworking" for profID among set, or nil.
+-- A master smith also knows Weaponsmith: the master specialization (the higher spell ID) wins.
 function Skills.SpecFor(set, profID)
+  local best
   for _, id in ipairs(Skills.SpecList(set)) do
-    if Skills.SPECS[id].prof == profID then return Skills.SpecName(id) end
+    if Skills.SPECS[id].prof == profID then best = id end
   end
-  return nil
+  return best and Skills.SpecName(best) or nil
 end
 
 -- Trainer reminders ------------------------------------------------------------

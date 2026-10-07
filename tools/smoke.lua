@@ -287,6 +287,8 @@ check(#m == 1 and m[1][1] == 2152 and m[1][3] == 2304, "a question matches my re
 m = C.MatchQuery(nil, { 2304 })
 check(#m == 1 and m[1][1] == 2152, "a question matches my recipe by its output item")
 eq(#C.MatchQuery("mooncloth", { 9999 }), 0, "a peer's recipe isn't mine to answer")
+m = C.MatchQuery("light kit", nil)
+check(#m == 1 and m[1][1] == 2152, "a question matches word by word, as Find does")
 
 -- Marks: pins and the wishlist (a wished item, or the recipe item named after it, linked in chat)
 local M = NS.Marks
@@ -329,6 +331,8 @@ do
     "the default as a template")
   T.Set("offer", "hey, I can do {qty}x {item} (50% done)")
   eq(T.Offer("[Kit]", 2), "hey, I can do 2x [Kit] (50% done)", "own offer text filled in")
+  T.Set("offer", string.rep("a", 199) .. "\195\169")
+  eq(#db.templates.offer, 199, "an own text is cut on a character boundary")
   T.Set("offer", T.Default("offer"))
   check(db.templates.offer == nil, "saving the default goes back to the built-in text")
 end
@@ -514,6 +518,7 @@ do
   local got = C.ReadSpecs({ 10656, 123, "x", 20219 })
   check(got and got[10656] and got[20219] and not got[123], "unknown spell IDs are dropped")
   eq(NS.Skills.SpecFor(got, 165), "Dragonscale Leatherworking", "the specialization of a profession")
+  eq(NS.Skills.SpecFor({ [9787] = true, [17039] = true }, 164), "Master Swordsmith", "a master smith over Weaponsmith")
   local card = NS.UI and NS.UI.CrafterCardText and NS.UI.CrafterCardText({ name = NS.Me, mine = true }) or ""
   check(card:find("Dragonscale", 1, true) ~= nil, "my crafter card names it")
 end

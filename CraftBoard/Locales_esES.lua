@@ -577,3 +577,6 @@ L["You have %d (%d more on alts)."] = "Tienes %d (%d más en alts)."
 L["You have %d."] = "Tienes %d."
 L["Gatherers: %s"] = "Recolectores: %s"
 
+-- Chat offers
+L["that"] = "eso"
+

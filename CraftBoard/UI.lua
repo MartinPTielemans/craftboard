@@ -2627,9 +2627,13 @@ function find.Gatherers(limit)
     out[#out + 1] = format(L["%s (%s %d)"], (mine and GOLD_HEX or "") .. Short(name) .. (mine and "|r" or ""), pname, rank or 0)
   end
   local chars = type(CraftBoardDB) == "table" and type(CraftBoardDB.chars) == "table" and CraftBoardDB.chars or {}
+  local reachable = NS.Inventory and NS.Inventory.Reachable
   for name, c in pairs(chars) do
-    for id, pr in pairs(type(c) == "table" and type(c.profs) == "table" and c.profs or {}) do
-      if GATHER[id] and type(pr) == "table" and not pr.gone then add(name, id, pr, true) end
+    -- Only characters who can mail it here (this realm and faction).
+    if name == NS.Me or not reachable or reachable(name, c) then
+      for id, pr in pairs(type(c) == "table" and type(c.profs) == "table" and c.profs or {}) do
+        if GATHER[id] and type(pr) == "table" and not pr.gone then add(name, id, pr, true) end
+      end
     end
   end
   for name, p in pairs(NS.Comm and NS.Comm.Peers and NS.Comm.Peers() or {}) do
@@ -3275,10 +3279,18 @@ end
 
 function R.WhisperChat(e)
   if not (e and e.chat) then return end
+  OpenWhisper(e.seen.from, nil, nil, R.ChatOfferText(e))
+end
+
+-- The offer for a chat ask: their quantity; a profession ask ("LF enchanter") names what they
+-- asked for in an own template.
+function R.ChatOfferText(e)
   local s = e.seen
   local item = s.itemID or (e.rec and e.rec.o)
-  local text = item and R.OfferText(item) or L["[CraftBoard] I can craft that for you."]
-  OpenWhisper(s.from, nil, nil, text)
+  if item then return R.OfferText(item, s.qty) end
+  local CW = NS.ChatWatch
+  local what = CW and (CW.Topic and CW.Topic(s) or CW.ProfName and CW.ProfName(s))
+  return NS.Templates.Offer(what ~= "" and what or L["that"], s.qty, L["[CraftBoard] I can craft that for you."])
 end
 
 function R.WhisperQueue(e)
@@ -4008,7 +4020,7 @@ function BuildRequests(p)
     if e.chat then
       local item = e.seen.itemID or (e.rec and e.rec.o)
       return format(L["Whisper %s"], Short(e.seen.from)),
-        format(L["Opens the chat box with: %s"], item and R.OfferText(item) or L["[CraftBoard] I can craft that for you."])
+        format(L["Opens the chat box with: %s"], R.ChatOfferText(e))
     end
     return format(L["Whisper %s"], Short(e.post.from)), L["Opens the chat box."]
   end)
@@ -4257,10 +4269,11 @@ local function Annotate()
       local mine = R.IsMyPost(post)
       -- Queued from their chat ask before they posted it (the chat row is left out below as a
       -- duplicate): the queued craft belongs to the post now.
-      if not mine and Q and Q.Adopt then Q.Adopt(post.from, post.item, post.id, qty) end
+      local matsPost = post.k == "m"
+      -- (Not a materials request: it asks for no craft.)
+      if not mine and not matsPost and Q and Q.Adopt then Q.Adopt(post.from, post.item, post.id, qty) end
       local alt = not mine and R.AltOf(post.from)
       local online = mine or alt or R.Online(post.from)
-      local matsPost = post.k == "m"
       if matsPost then know = nil end
       local e = {
         post = post, id = post.id, outputItemID = post.item, mine = mine or alt and true or false, altPost = alt and true or nil,
@@ -4735,6 +4748,12 @@ end
 function P.OpenInFind(recipeID)
   UI.ShowTab(1)
   if find.search then find.search:SetText("") end
+  -- "Only guild crafters" may have left it out (known only outside the guild).
+  if find.GuildOnly() then
+    local db = UIDB()
+    if db then db.findGuild = nil end
+    BuildUniverse()
+  end
   UI.FilterFind(false)
   UI.PickRecipe(recipeID)
 end
