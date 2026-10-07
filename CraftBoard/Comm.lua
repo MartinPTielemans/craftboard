@@ -2425,7 +2425,8 @@ function handlers.A(full, data)
   local ah = CleanString(data.h, 64)   -- the hash of the book it was answered from
   -- Known only from answers so far: their book is partial (from this hash), as an on-demand
   -- peer's is, so leaving on-demand mode asks for the rest.
-  if ah and p.hash == nil and p.odHash == nil then p.odHash = ah end
+  -- (An answer from a book other than the full list I hold makes that list partial too.)
+  if ah and p.odHash == nil and p.hash ~= ah then p.odHash = ah end
   for k = 1, A_MAX do
     local e = data.list[k]
     if type(e) ~= "table" then break end
@@ -2449,7 +2450,11 @@ function handlers.A(full, data)
     end
   end
   local profs = CleanProfs(data.profs)
-  if profs then p.profs = profs end
+  if profs then
+    -- New ranks or names: tooltips and lists showing them follow.
+    if ProfsKey(profs) ~= ProfsKey(p.profs) then added = true end
+    p.profs = profs
+  end
   if added then FirePeersSoon() end
 end
 
