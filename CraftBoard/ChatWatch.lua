@@ -382,7 +382,11 @@ function ChatWatch.RetryHeld()
   local list, now = heldLines, time()
   heldLines = {}
   for _, h in ipairs(list) do
-    if now - h.t < 120 and not ChatWatch.Add(h.text, h.sender, h.channel, h.guild, true) then
+    -- Something newer from the same player came in meanwhile: the held line is out of date.
+    local from = NS.FullName and NS.FullName(h.sender)
+    local cur = from and seen[from]
+    local newer = cur and type(cur.t) == "number" and cur.t >= h.t
+    if not newer and now - h.t < 120 and not ChatWatch.Add(h.text, h.sender, h.channel, h.guild, true) then
       heldLines[#heldLines + 1] = h
     end
   end

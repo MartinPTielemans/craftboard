@@ -2181,8 +2181,24 @@ function Comm.Ask(text, items)
   if not me then return false end
   askCounter = askCounter + 1
   local id = me .. ":" .. now .. ":" .. askCounter
-  if #Broadcast("W", { v = VERSION, id = id, q = q, i = #list > 0 and list or nil }, "NORMAL") == 0 then return false end
+  local payload = { v = VERSION, id = id, q = q, i = #list > 0 and list or nil }
+  local used = Broadcast("W", payload, "NORMAL")
+  if #used == 0 then return false end
   lastAsk, askedKey[key], asked[id] = now, now, now
+  -- The realm channel not joined yet (just after login): the same question goes there once it
+  -- is, while answers are still taken (a few tries).
+  local onChannel = false
+  for _, d in ipairs(used) do onChannel = onChannel or d == "CHANNEL" end
+  if not onChannel and RealmChannelOn() and C_Timer and C_Timer.After then
+    local tries = 0
+    local function again()
+      tries = tries + 1
+      if time() - now > W_TTL - 15 then return end
+      if CanSend() and ResolveChannel() and Send("W", payload, "CHANNEL", channelId, "NORMAL") then return end
+      if tries < 4 then C_Timer.After(10, again) end
+    end
+    C_Timer.After(10, again)
+  end
   return true
 end
 

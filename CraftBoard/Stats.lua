@@ -201,7 +201,18 @@ function Stats.NoteDemand(itemID, who)
   if not d[itemID] then
     local n = 0
     for _ in pairs(d) do n = n + 1 end
-    if n >= MAX_DEMAND and (Stats.PruneDemand() or 0) >= MAX_DEMAND then return end
+    -- Full of items still within the window: the one asked for least recently makes room.
+    if n >= MAX_DEMAND and (Stats.PruneDemand() or 0) >= MAX_DEMAND then
+      local oldest, oldestDay
+      for id, days in pairs(d) do
+        local last = 0
+        for dd in pairs(type(days) == "table" and days or {}) do
+          if type(dd) == "number" and dd > last then last = dd end
+        end
+        if not oldestDay or last < oldestDay then oldest, oldestDay = id, last end
+      end
+      if oldest then d[oldest] = nil end
+    end
     d[itemID] = {}
   end
   d[itemID][day] = (d[itemID][day] or 0) + 1
