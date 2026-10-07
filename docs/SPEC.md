@@ -83,7 +83,7 @@ API on `NS`. SavedVariables: `CraftBoardDB` (account-wide).
   (`CraftBoardDB.wish[itemID]`), with a chat-link notice. Fires `MARKS_UPDATED`.
 - `Templates.lua` — the player's whisper wording (`CraftBoardDB.templates.request/offer`, with
   `{item}` / `{qty}`) and its editor (`/cb texts`).
-- `Stats.lua` — private crafting history (`chars[Me].made[recipeID]`), session counts,
+- `Stats.lua` — private crafting history (`chars[Me].crafts[recipeID]`), session counts,
   milestones, and demand counts (`CraftBoardDB.demand[itemID][day] = asks`, 14 days, no names).
 - Skills reads specializations (`chars[Me].specs[spellID]`); Recipes records where a recipe was
   learned (catalogue field `s`: 1 = trainer, else the recipe item's ID).

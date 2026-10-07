@@ -281,7 +281,8 @@ eq(C.OpenSlots(), slots - 2, "open slots count my posts")
 
 -- Who can craft this (W / A): the question's text, and my recipes that answer it
 eq(C.QueryText("  LF Light   |cff00ff00Armor|r "), "lf light armor", "question text: plain, lower case, one space")
-eq(C.QueryText("ab"), nil, "question text: too short to ask")
+eq(C.QueryText("a"), nil, "question text: too short to ask")
+eq(C.QueryText("ax"), "ax", "two letters are a question, as in Find")
 local m = C.MatchQuery("armor kit", nil)
 check(#m == 1 and m[1][1] == 2152 and m[1][3] == 2304, "a question matches my recipe by name")
 m = C.MatchQuery(nil, { 2304 })
@@ -517,6 +518,10 @@ do
   eq(NS.Stats.Made(2152), before + 1, "a cast of my recipe is counted")
   eq(NS.Stats.SessionMade(2152), 1, "and counted for this session")
   eq(NS.Stats.Made(99999), 0, "a spell that isn't a recipe of mine is not")
+  me.made = me.made or {}
+  me.made[2304] = time() - 100   -- Craft.lua's recent-craft time for the item
+  fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 2152)
+  eq(NS.Stats.Made(2152), before + 2, "lifetime counts aren't mixed with recent-craft times")
 end
 
 -- Specializations: read from the spellbook, sent as spell IDs, read back to known ones only

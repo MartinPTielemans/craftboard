@@ -1750,7 +1750,9 @@ local function FlushBatch()
   local sent = {}
   for _, dist in pairs(b) do
     if sent[dist] == nil then
-      sent[dist] = CanSend() and DistAvailable(dist) and SendRecipes(dist) or false
+      -- Each distribution's broadcast is a list of its own: room is checked for each (its
+      -- askers are whispered through the limit below if there is none).
+      sent[dist] = CanSend() and DistAvailable(dist) and scale.AnswerRoom() and SendRecipes(dist) or false
       if sent[dist] then scale.CountAnswer() end
     end
   end
@@ -2054,7 +2056,7 @@ local function QueryText(text)
   if type(text) ~= "string" then return nil end
   local q = strlower(NS.StripCodes(text)):gsub("[%c|%%]", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
   q = CutChars(q, W_MAX_TEXT)
-  if #q < 3 then return nil end
+  if #q < 2 then return nil end   -- as Find: two letters are a search
   return q
 end
 Comm.QueryText = QueryText

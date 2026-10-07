@@ -1,5 +1,6 @@
 -- CraftBoard Stats: private crafting history, never sent anywhere.
---   Lifetime crafts per recipe on each character: CraftBoardDB.chars[Me].made[recipeID] = n
+--   Lifetime crafts per recipe on each character: CraftBoardDB.chars[Me].crafts[recipeID] = n
+--   (not .made: Craft.lua keeps recent-craft times there)
 --   (every successful cast of one of my recipes, enchants included).
 --   This session: crafts per recipe and the skill gained (Skills.SessionGain).
 --   Milestones (option milestoneNotice, default on): one gold chat line, with a sound, when a
@@ -48,7 +49,7 @@ end
 -- Lifetime crafts of a recipe on my current character (0 when never).
 function Stats.Made(recipeID)
   local c = MyChar()
-  local made = c and type(c.made) == "table" and c.made
+  local made = c and type(c.crafts) == "table" and c.crafts
   return made and made[recipeID] or 0
 end
 
@@ -60,9 +61,9 @@ end
 function Stats.Crafted(recipeID, rec)
   local c = MyChar()
   if not (c and type(recipeID) == "number") then return end
-  if type(c.made) ~= "table" then c.made = {} end
-  local before = c.made[recipeID] or 0
-  c.made[recipeID] = before + 1
+  if type(c.crafts) ~= "table" then c.crafts = {} end
+  local before = c.crafts[recipeID] or 0
+  c.crafts[recipeID] = before + 1
   session[recipeID] = (session[recipeID] or 0) + 1
   sessionTotal = sessionTotal + 1
   -- A first rare (or better) craft of this recipe on this character.
@@ -121,7 +122,7 @@ function Stats.Print()
     #parts > 0 and (", " .. table.concat(parts, ", ")) or ""))
   local c = MyChar()
   local list = {}
-  for id, n in pairs(c and type(c.made) == "table" and c.made or {}) do
+  for id, n in pairs(c and type(c.crafts) == "table" and c.crafts or {}) do
     if type(id) == "number" and type(n) == "number" then list[#list + 1] = { id = id, n = n } end
   end
   if #list == 0 then return end
