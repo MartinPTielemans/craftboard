@@ -957,7 +957,10 @@ function Comm.OnDemand()
     end
   end
   scale.heard = n
+  local was = scale.on
   scale.on = n > scale.onDemandAt or (type(CraftBoardDB) == "table" and CraftBoardDB.forceOnDemand == true)
+  -- Back to swapping full lists: the peers only partly known get theirs asked for now.
+  if was and not scale.on and scale.LeftOnDemand then scale.LeftOnDemand() end
   return scale.on
 end
 
@@ -1630,6 +1633,22 @@ end
 
 -- Guildmates the roster didn't know yet when they were heard on the channel (a login on a
 -- crowded realm) were taken for on-demand peers: their full list is asked for now.
+function scale.LeftOnDemand()
+  local db = DB()
+  local any = false
+  for full, p in pairs(db and db.peers or {}) do
+    if type(p) == "table" and p.odHash ~= nil then
+      pendingQ[full] = p.odHash
+      p.odHash, p.hash = nil, nil
+      any = true
+    end
+  end
+  if any and not pendingQTimer and C_Timer and C_Timer.After then
+    pendingQTimer = true
+    C_Timer.After(1, RetryQueries)
+  end
+end
+
 function scale.ReconcileGuild()
   local db = DB()
   local roster = GuildRoster()

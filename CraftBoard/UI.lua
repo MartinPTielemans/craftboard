@@ -5589,7 +5589,19 @@ end
 function UI.SearchReagentItem(itemID)
   local I = NS.Inventory
   if not (I and I.WhenNamed) then UI.SearchReagent(ItemName(itemID)) return end
-  I.WhenNamed(itemID, function(name) UI.SearchReagent(name or ItemName(itemID)) end)
+  -- Still loading after a few seconds: Plan opens with "Item 1234", and the real name replaces it
+  -- only while that is still what the search box says (never over a newer search).
+  local fallback = ItemName(itemID)
+  local opened = false
+  I.WhenNamed(itemID, function(name)
+    if not opened then
+      opened = true
+      UI.SearchReagent(name or fallback)
+    elseif name and plan.search and plan.search:GetText() == fallback then
+      plan.search:SetText(name)
+      UI.FilterPlan(false)
+    end
+  end)
 end
 
 function UI.SearchReagent(text)

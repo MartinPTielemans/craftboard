@@ -400,7 +400,9 @@ function ChatWatch.RetryHeld()
     local cur = from and seen[from]
     -- (By arrival order: two lines can come in within the same second.)
     local newer = cur and type(cur.seq) == "number" and cur.seq > h.seq
-    if not newer and now - h.t < 120 then
+    -- (Guild lines only while guild chat is still watched.)
+    local allowed = ChatWatch.Enabled() and not (h.guild and not ChatWatch.GuildEnabled())
+    if allowed and not newer and now - h.t < 120 then
       local e = ChatWatch.Add(h.text, h.sender, h.channel, h.guild, h.seq)
       -- Still no item (only its profession, or nothing): it waits for more names.
       if not (e and e.itemName) then heldLines[#heldLines + 1] = h end
