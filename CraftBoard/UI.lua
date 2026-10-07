@@ -2567,8 +2567,11 @@ function find.CrafterCard(c)
     local p = NS.Comm and NS.Comm.Peer and NS.Comm.Peer(c.name)
     if p then
       profs, specs, cd = p.profs, p.specs, p.cd
-      shared = 0
-      for _ in pairs(p.recipes or {}) do shared = shared + 1 end
+      -- Not counted when only part of their book is known (crowded channel, asked per search).
+      if not p.partial then
+        shared = 0
+        for _ in pairs(p.recipes or {}) do shared = shared + 1 end
+      end
     end
   end
   local S = NS.Skills

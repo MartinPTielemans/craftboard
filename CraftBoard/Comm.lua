@@ -1001,8 +1001,10 @@ function Comm.Peer(name)
   local p = db.peers[full]
   if type(p) ~= "table" then return nil end
   local online = OnlineOf(full, p, GuildRoster(), time())
+  -- partial: on demand, their recipes are only what searches brought in.
   return { recipes = p.recipes or {}, profs = p.profs or {}, seen = p.seen, online = online and true or false,
-    busy = online and p.busy and true or false, cd = p.cd, specs = p.specs }
+    busy = online and p.busy and true or false, cd = p.cd, specs = p.specs,
+    partial = (p.odHash ~= nil or scale.Peer(full)) and true or nil }
 end
 
 -- Returns a copy of the stored peers with `online` derived from last message time,
@@ -1583,7 +1585,8 @@ local function RetryQueries()
   local db, now = DB(), time()
   for full, h in pairs(pendingQ) do
     local p = db and db.peers[full]
-    if type(p) ~= "table" or p.hash == h then
+    -- (A peer on demand by now isn't asked for its full list after all.)
+    if type(p) ~= "table" or p.hash == h or scale.Peer(full) then
       pendingQ[full] = nil
     elseif CanSend() and not (queried[full] and now - queried[full] < QUERY_GAP) then
       pendingQ[full] = nil
@@ -1681,6 +1684,9 @@ function handlers.H(full, data)
     end
     return
   end
+  -- Out of on-demand mode again: what I have of them is only what searches brought in, so their
+  -- full list is asked for once, whatever the hash says.
+  if p.odHash ~= nil then p.odHash, p.hash = nil, nil end
   if p.hash == h then return end
   if data.n <= 0 then
     -- Nothing to fetch; record the empty book without a round trip. A query still open for an
@@ -1826,8 +1832,10 @@ function handlers.Q(full)
   -- Joining a broadcast batch costs nothing more: one R reaches them all. Only whispered lists
   -- count toward the per-minute limit (the batch's own R counts once).
   local dist = ReadsPages(full) and heardOn[full]
+  -- A new batch is a full list too: only with room under the per-minute limit (else the queries
+  -- wait in the whisper queue below).
   if dist and C_Timer and C_Timer.After and (batch or (#queryTimes >= R_BATCH
-    and not (batchAt and now - batchAt < ANSWER_GAP))) then
+    and not (batchAt and now - batchAt < ANSWER_GAP) and scale.AnswerRoom())) then
     if not batch then
       batch = {}
       scale.CountAnswer()
@@ -2139,7 +2147,7 @@ end
 scale.heldW = {}          -- [asker] = the question waiting out the gap
 function scale.AnswerW(full, w)
   local now = time()
-  if now - w.t > W_TTL - 10 then return end
+  if now - w.t > W_TTL - 1 then return end
   local wait = answeredW[full] and A_GAP - (now - answeredW[full])
   if wait and wait > 0 then
     local had = scale.heldW[full]
@@ -2176,7 +2184,9 @@ function scale.AnswerW(full, w)
       C_Timer.After(5, answer)
     end
   end
-  if C_Timer and C_Timer.After then C_Timer.After(0.5 + random() * 2.5, answer) else answer() end
+  -- The spreading wait, cut short so the answer still arrives while the asker listens.
+  local delay = min(0.5 + random() * 2.5, max(0, W_TTL - 1 - (now - w.t)))
+  if C_Timer and C_Timer.After and delay > 0 then C_Timer.After(delay, answer) else answer() end
 end
 
 function handlers.A(full, data)
