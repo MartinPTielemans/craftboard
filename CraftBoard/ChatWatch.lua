@@ -710,6 +710,11 @@ function ChatWatch.Add(text, sender, channel, guild, retry)
     and not text:find("|H", 1, true) and text:find("%[[^%]|]+%]") then
     ChatWatch.HoldLine(text, sender, channel, guild, seq)
   end
+  -- A call-off ("nvm", "found one") from someone whose ask is only held (no row yet) drops it.
+  if not (hit or prev) and not retry then
+    local _, off = LastCallOff(WithoutMats(Normalize(ChatWatch.Clean(text))))
+    if off then ChatWatch.DropHeld(from) end
+  end
   if not (hit or prev) then return nil end
   local clean = ChatWatch.Clean(text)
   local s = Normalize(clean)

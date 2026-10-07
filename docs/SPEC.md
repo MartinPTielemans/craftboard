@@ -108,7 +108,7 @@ Payloads are LibSerialize → LibDeflate:CompressDeflate → EncodeForWoWAddonCh
 - `W` who-can-craft: `{v=1, id=, q=lower-case text?, i={outputItemID,...}?}` on GUILD/CHANNEL, sent
   from a Find search (debounced 1.5 s, one per 4 s, the same question once per 5 min). Crafters
   with matching shareable recipes (name or output item name in their language, or the item IDs)
-  whisper `A` `{v=1, id=W id, list={{id,name,outputItemID,profID},...} (<=30), profs=}` after a
+  whisper `A` `{v=1, id=W id, list={{id,name,outputItemID,profID,src},...} (<=30), profs=, h=hash}` after a
   0.5-3 s random wait (one per asker per 30 s, 20 per minute). An `A` is only taken for my own `W`
   within 60 s and is merged into that peer's recipes. Older clients drop both unread.
 - On-demand mode (`Comm.OnDemand()`): over 150 channel players heard within a day (guildmates

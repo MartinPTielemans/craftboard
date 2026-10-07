@@ -14,7 +14,7 @@
 --   X retract {v=1, id=}                                                GUILD/CHANNEL
 --   W who     {v=1, id=, q=lower-case text?, i={itemID,...}?}            GUILD/CHANNEL
 --             ("who can craft this?", sent from a Find search; crafters who know a match answer)
---   A answer  {v=1, id=W's id, list={ {id, name, outputItemID, profID}, ... }, profs=}  WHISPER
+--   A answer  {v=1, id=W's id, list={ {id, name, outputItemID, profID, src}, ... }, profs=, h=hash}  WHISPER
 --             (taken only for a W I sent; merged into what I know of that peer)
 --             Older clients drop W and A unread (unknown kinds).
 -- Scale: with more than SCALE_PEERS channel players heard in a day, channel peers' full recipe
@@ -1729,9 +1729,11 @@ function handlers.H(full, data)
       -- Nothing to compare with yet (only search answers so far): they belong to this book.
       p.odHash = h
     elseif known ~= h then
-      -- Answers since their last hello come from this book already: they stay.
+      -- Answers sent from this very book (the hash they carried) stay; anything older goes.
       local keep = {}
-      for id in pairs(p.aRec or {}) do keep[id] = true end
+      for id, ah in pairs(p.aRec or {}) do
+        if ah == h then keep[id] = true end
+      end
       if next(p.recipes) then
         p.recipes = keep
         Fire("PEERS_UPDATED")
@@ -1957,6 +1959,7 @@ function handlers.R(full, data)
     acc.got[pg], acc.n = true, acc.n + 1
   end
   local recipes, count = acc and acc.recipes or {}, acc and acc.count or 0
+  local sourced = false   -- (a complete list fires PEERS_UPDATED anyway; a page with new sources too)
   for _, e in ipairs(data.list) do
     if count >= MAX_RECIPES then break end
     local id, name, o, prof
@@ -1970,7 +1973,7 @@ function handlers.R(full, data)
       recipes[id] = true
       count = count + 1
       local src = type(e) == "table" and PosInt(e[5], 1e8)
-      if src and NS.Recipes and NS.Recipes.SetSource then NS.Recipes.SetSource(id, src) end
+      if src and NS.Recipes and NS.Recipes.SetSource and NS.Recipes.SetSource(id, src) then sourced = true end
       name = CleanString(name, MAX_NAME)
       o = PosInt(o, 1e8)
       prof = PosInt(prof, 1e6)
@@ -1987,7 +1990,10 @@ function handlers.R(full, data)
   if profs then p.profs = profs end
   if acc then
     acc.count = count
-    if acc.n < acc.pgs then return end    -- more pages to come; the query stays open for them
+    if acc.n < acc.pgs then                -- more pages to come; the query stays open for them
+      if sourced then FirePeersSoon() end
+      return
+    end
     pagesIn[full] = nil
   end
   p.recipes = recipes
@@ -2353,7 +2359,7 @@ function scale.AnswerW(full, w)
     if CanSend() then
       scale.wPending = max(0, scale.wPending - 1)
       scale.pendingA[full] = nil
-      if Send("A", { v = VERSION, id = cur.id, list = pend.list, profs = MyProfs() }, "WHISPER", ShortName(full), "BULK") then
+      if Send("A", { v = VERSION, id = cur.id, list = pend.list, profs = MyProfs(), h = MyHash() }, "WHISPER", ShortName(full), "BULK") then
         answeredW[full] = time()
         wAnswerTimes[#wAnswerTimes + 1] = time()
       end
@@ -2378,17 +2384,19 @@ function handlers.A(full, data)
   local p = Touch(full)
   if not (db and p) then return end
   local added = false
+  local ah = CleanString(data.h, 64)   -- the hash of the book it was answered from
   for k = 1, A_MAX do
     local e = data.list[k]
     if type(e) ~= "table" then break end
     local rid = PosInt(e[1], 1e8)
     if rid then
       if not p.recipes[rid] then p.recipes[rid], added = true, true end
-      -- (Remembered until their next hello, which keeps them whatever its hash.)
+      -- (Remembered until their next hello with the book hash it came from: that hello keeps it
+      -- if its hash is the same.)
       p.aRec = p.aRec or {}
-      p.aRec[rid] = true
+      p.aRec[rid] = ah or false
       local src = PosInt(e[5], 1e8)
-      if src and NS.Recipes and NS.Recipes.SetSource then NS.Recipes.SetSource(rid, src) end
+      if src and NS.Recipes and NS.Recipes.SetSource and NS.Recipes.SetSource(rid, src) then added = true end
       local name, o, prof = CleanString(e[2], MAX_NAME), PosInt(e[3], 1e8), PosInt(e[4], 1e6)
       if name or o then
         local rn = db.recipeNames[rid]

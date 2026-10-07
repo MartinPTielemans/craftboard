@@ -580,7 +580,11 @@ function Recipes.SetSource(recipeID, src)
   if not (cat and type(recipeID) == "number" and type(src) == "number" and src >= 1) then return end
   local e = cat[recipeID]
   if type(e) ~= "table" then e = {}; cat[recipeID] = e end
-  if e.s == nil then e.s = src end
+  if e.s == nil then
+    e.s = src
+    return true    -- newly known (callers refresh what shows sources)
+  end
+  return false
 end
 
 local function IsRecipeItem(itemID)
