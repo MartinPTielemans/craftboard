@@ -1624,7 +1624,8 @@ function handlers.H(full, data)
     sort(ids)
     cdKey = table.concat(ids, ",")
   end
-  if Duplicate(full, "H", h .. (busy and ":b" or "") .. "|" .. cdKey) then return end
+  -- (Specializations too: a hello sent only to announce one isn't a copy of the one before.)
+  if Duplicate(full, "H", h .. (busy and ":b" or "") .. "|" .. cdKey .. "|" .. Comm.SpecKey(Comm.ReadSpecs(data.sp))) then return end
   local p = Touch(full)
   if not p then return end
   if type(data.cd) == "table" then
