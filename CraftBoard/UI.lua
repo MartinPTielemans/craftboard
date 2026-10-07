@@ -3423,7 +3423,8 @@ end
 
 -- My own request (not an alt's, not a linked order): it can go up again for another day.
 function R.CanRenew(e)
-  return e and e.mine and not e.altPost and e.post and not e.post.pa and NS.Comm and NS.Comm.Renew and true or false
+  return e and e.mine and not e.altPost and e.post and not e.post.pa and NS.Comm and NS.Comm.Renew
+    and not (NS.Comm.HasOthersLinked and NS.Comm.HasOthersLinked(e.post.id)) and true or false
 end
 
 function R.Renew(e)

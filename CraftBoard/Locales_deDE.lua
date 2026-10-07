@@ -599,3 +599,6 @@ L["Not on your wishlist (see /cb wish)."] = "Nicht auf deiner Wunschliste (siehe
 L["/cb wish remove <name> takes one off."] = "/cb wish remove <Name> entfernt einen."
 L["/cb wish [remove <name>] - your wishlist"] = "/cb wish [remove <Name>] - deine Wunschliste"
 
+-- Renew with others' linked orders
+L["Another player posted a linked order for this request: it can't be renewed without taking theirs down."] = "Ein anderer Spieler hat einen verknüpften Auftrag zu dieser Anfrage eingestellt: Sie kann nicht erneuert werden, ohne seinen zu entfernen."
+

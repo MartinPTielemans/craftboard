@@ -394,8 +394,10 @@ function ChatWatch.RetryHeld()
     local cur = from and seen[from]
     -- (By arrival order: two lines can come in within the same second.)
     local newer = cur and type(cur.seq) == "number" and cur.seq > h.seq
-    if not newer and now - h.t < 120 and not ChatWatch.Add(h.text, h.sender, h.channel, h.guild, h.seq) then
-      heldLines[#heldLines + 1] = h
+    if not newer and now - h.t < 120 then
+      local e = ChatWatch.Add(h.text, h.sender, h.channel, h.guild, h.seq)
+      -- Still no item (only its profession, or nothing): it waits for more names.
+      if not (e and e.itemName) then heldLines[#heldLines + 1] = h end
     end
   end
 end
@@ -694,7 +696,9 @@ function ChatWatch.Add(text, sender, channel, guild, retry)
   -- An ask whose plain "[Name]" (no link) couldn't be placed may name an item whose data is
   -- still loading: the line is read again once item names come in (in memory a couple of
   -- minutes, never saved). Offers, adverts and lines that aren't asks aren't kept.
-  if not hit and why == "nothing" and not retry and not text:find("|H", 1, true) and text:find("%[[^%]|]+%]") then
+  -- (Also an ask matched by its profession alone: "LF tailor for [Mooncloth]".)
+  if (not hit and why == "nothing" or hit and not hit.itemName) and not retry
+    and not text:find("|H", 1, true) and text:find("%[[^%]|]+%]") then
     ChatWatch.HoldLine(text, sender, channel, guild)
   end
   if not (hit or prev) then return nil end

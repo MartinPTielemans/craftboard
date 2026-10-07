@@ -333,6 +333,11 @@ do
   local k2 = k1[1] and C.Linked(k1[1].id) or {}
   check(#k1 == 1 and #k2 == 1 and k2[1].item == 2320, "renewed with its whole chain")
   pid = nid
+  -- Another player's linked order under it: no Renew (it would take theirs down).
+  db.posts["Bob-Forever:5:1"] = { id = "Bob-Forever:5:1", from = "Bob-Forever", item = 2318, qty = 1, t = time(), pa = pid }
+  clock.skip = clock.skip + 11
+  check(C.Renew(pid) == nil and db.posts["Bob-Forever:5:1"] ~= nil, "no Renew over another player's linked order")
+  db.posts["Bob-Forever:5:1"] = nil
 end
 
 -- Whisper texts: the built-in wording until the player saves their own

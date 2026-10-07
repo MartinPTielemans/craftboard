@@ -608,6 +608,9 @@ local enUS = {
   "Not on your wishlist (see /cb wish).",
   "/cb wish remove <name> takes one off.",
   "/cb wish [remove <name>] - your wishlist",
+
+  -- Renew with others' linked orders
+  "Another player posted a linked order for this request: it can't be renewed without taking theirs down.",
 }
 for i = 1, #enUS do L[enUS[i]] = enUS[i] end
 

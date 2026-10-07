@@ -1352,12 +1352,32 @@ function Comm.Retract(id)
   return true
 end
 
+-- A linked order by another player anywhere under post id.
+function Comm.HasOthersLinked(id, seen)
+  local db, me = DB(), MyKey()
+  if not db then return false end
+  seen = seen or {}
+  seen[id] = true
+  for cid, c in pairs(db.posts) do
+    if type(c) == "table" and c.pa == id and not seen[cid] then
+      if c.from ~= me or Comm.HasOthersLinked(cid, seen) then return true end
+    end
+  end
+  return false
+end
+
 -- Renew: one of my posts goes up again as a new post (the old one is retracted), with its
 -- linked orders, for another POST_TTL. Returns the new id.
 function Comm.Renew(id)
   local db, me = DB(), MyKey()
   local p = db and type(id) == "string" and db.posts[id]
   if not (type(p) == "table" and p.from == me) then return nil end
+  -- Another player's linked order under it can't be posted again under the new request, and
+  -- retracting this one would take it down: no Renew then.
+  if Comm.HasOthersLinked(id) then
+    Print(L["Another player posted a linked order for this request: it can't be renewed without taking theirs down."])
+    return nil
+  end
   -- The whole chain of my linked orders under it, however deep, goes up again the same shape.
   local function Tree(pid, seen)
     seen[pid] = true

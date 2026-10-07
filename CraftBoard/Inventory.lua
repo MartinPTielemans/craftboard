@@ -129,21 +129,31 @@ function Inventory.ItemName(itemID)
   return nil
 end
 
--- fn(name) with the item's name: now when it is cached, else once it has loaded (or, failing
--- that, after a few seconds with whatever is known then, possibly nil).
+-- fn(name) with the item's name: now when it is cached, else once it has loaded. An item still
+-- loading after a few seconds gets fn(nil) then, and fn(name) again when the name does arrive.
 function Inventory.WhenNamed(itemID, fn)
   local name = Inventory.ItemName(itemID)
   if name or type(itemID) ~= "number" then fn(name) return end
-  local done = false
-  local function finish()
-    if done then return end
-    done = true
-    fn(CachedName(itemID))
+  local named, waited = false, false
+  local function loaded()
+    local n = CachedName(itemID)
+    if named or not n then return end
+    named = true
+    fn(n)
   end
   if Item and Item.CreateFromItemID then
-    pcall(function() Item:CreateFromItemID(itemID):ContinueOnItemLoad(finish) end)
+    pcall(function() Item:CreateFromItemID(itemID):ContinueOnItemLoad(loaded) end)
   end
-  if C_Timer and C_Timer.After then C_Timer.After(3, finish) else finish() end
+  if C_Timer and C_Timer.After then
+    C_Timer.After(3, function()
+      if named or waited then return end
+      waited = true
+      local n = CachedName(itemID)
+      if n then loaded() else fn(nil) end
+    end)
+  else
+    fn(CachedName(itemID))
+  end
 end
 
 -- Retry failed lookups when the client reports item data arriving (fallback path).
